@@ -1,6 +1,6 @@
 -- Mock-FlyWithLua smoke test for CitationX_MissionGenerator.lua
--- Exercises generation, takeoff, fix, landing, scoring, rules, abort and the
--- emergency injection/clear path without X-Plane.
+-- Exercises briefing/accept/skip, leg-by-leg progression, landing, scoring,
+-- rules, abort and the emergency injection/clear path without X-Plane.
 
 local TMP = os.getenv("TMPDIR") or "/tmp/"
 SCRIPT_DIRECTORY = TMP
@@ -53,6 +53,8 @@ local SCRIPT = arg[1] or "CitationX_MissionGenerator.lua"
 os.remove(SCRIPT_DIRECTORY .. "CitationX_MissionProgress.txt")
 dofile(SCRIPT)
 
+local MG_IDLE, MG_BRIEF, MG_ARMED, MG_ACTIVE, MG_DONE = 0, 1, 2, 3, 4
+
 local function frame(t)
     mg_simtime = t
     mg_frame()
@@ -67,52 +69,84 @@ local function check(name, cond, detail)
     end
 end
 
--- 1. generate on the ground -------------------------------------------------
+-- 1. briefing page ------------------------------------------------------------
 check("datarefs registered", #registered_datarefs >= 13, #registered_datarefs)
 mg_onground, mg_gs = 1, 0
 check("generate on ground", mg_generate() == true)
-check("state is ARMED", mg_state == 1, mg_state)
+check("state is BRIEF", mg_state == MG_BRIEF, mg_state)
 local m = mg_mission
-check("mission has fix + budget", m and m.fix_lat and m.budget_s > 0)
+check("mission has story", m and type(m.story) == "table" and #m.story > 0)
+check("mission has legs", type(m.legs) == "table" and #m.legs >= 2, m.legs and #m.legs)
+check("last leg is home", m.legs[#m.legs].home == true, m.legs[#m.legs].name)
+check("fix names unique", (function()
+    local seen = {}
+    for _, leg in ipairs(m.legs) do
+        if seen[leg.name] then return false end
+        seen[leg.name] = true
+    end
+    return true
+end)())
+check("budget set", m.budget_s > 0, m.budget_s)
 check("title built", m.title:find(" - ") ~= nil, m.title)
-mg_draw()   -- ARMED panel must render
-check("armed panel has a button", #mg_buttons == 1, #mg_buttons)
+mg_draw()   -- briefing page must render
+check("briefing has accept + skip", #mg_buttons == 2, #mg_buttons)
 print("      mission: " .. m.title .. "  [difficulty " .. m.difficulty .. "]")
-print("      fix brg " .. m.brg_deg .. " / " .. m.leg_nm .. " NM, budget " .. m.budget_s .. " s")
+for _, ln in ipairs(m.story) do print("      | " .. ln) end
+print("      plan:")
+for i, leg in ipairs(m.legs) do
+    print(string.format("        %d  %-7s %03.0f deg / %.0f NM", i, leg.name, leg.brg, leg.dist_nm))
+end
 
--- 2. takeoff starts the clock ----------------------------------------------
+-- 2. skip draws a fresh briefing ---------------------------------------------
+check("skip draws new briefing", mg_skip() == true)
+check("still briefing", mg_state == MG_BRIEF, mg_state)
+check("new mission object", mg_mission ~= m)
+m = mg_mission
+
+-- 3. accept arms the mission --------------------------------------------------
+check("accept arms", mg_accept() == true)
+check("state is ARMED", mg_state == MG_ARMED, mg_state)
+mg_draw()
+check("armed panel has abort button", #mg_buttons == 1, #mg_buttons)
+
+-- 4. takeoff starts the clock -------------------------------------------------
 mg_onground, mg_gs = 0, 90
 frame(1)
-check("state is ACTIVE after wheels up", mg_state == 2, mg_state)
+check("state is ACTIVE after wheels up", mg_state == MG_ACTIVE, mg_state)
 
--- 3. fly to the fix ---------------------------------------------------------
-mg_lat, mg_lon = m.fix_lat, m.fix_lon
+-- 5. fly the plan, leg by leg -------------------------------------------------
 mg_elev, mg_agl = 3048.0, 3048.0
 mg_mach, mg_ias, mg_bank, mg_gload = 0.80, 240, 5, 1.0
-frame(2)
-check("fix reached", m.reached_fix == true)
+local t = 2
+for i, leg in ipairs(m.legs) do
+    mg_lat, mg_lon = leg.lat, leg.lon
+    frame(t)
+    t = t + 1
+    check("leg " .. i .. " done (" .. leg.name .. ")",
+        m.legs_done == i, m.legs_done)
+end
 check("clock running", mg_clock > 0.9, mg_clock)
 mg_draw()   -- ACTIVE panel must render
 check("active panel has a button", #mg_buttons == 1, #mg_buttons)
 
--- 4. rule engine: edge-triggered violations --------------------------------
+-- 6. rule engine: edge-triggered violations ----------------------------------
 m.constraints = { "ias250" }
 m.cstate = { ias250 = { viol = 0, was_bad = false, done = false } }
 mg_ias, mg_agl = 300, 1000.0   -- 300 KT below 10k = violation
-frame(3)
-frame(4)
+frame(t); t = t + 1
+frame(t); t = t + 1
 check("rule counts one episode", m.cstate.ias250.viol == 1, m.cstate.ias250.viol)
 mg_ias = 200
-frame(5)
+frame(t); t = t + 1
 mg_ias = 300
-frame(6)
+frame(t); t = t + 1
 check("rule counts second episode", m.cstate.ias250.viol == 2, m.cstate.ias250.viol)
 
--- 5. return home and stop ---------------------------------------------------
+-- 7. land at home and stop ----------------------------------------------------
 mg_lat, mg_lon = m.home_lat, m.home_lon
 mg_onground, mg_gs, mg_vs = 1, 1.0, -120
-frame(7)
-check("mission completed", mg_state == 3, mg_state)
+frame(t); t = t + 1
+check("mission completed", mg_state == MG_DONE, mg_state)
 check("result is pass", mg_result and mg_result.ok == true)
 check("score positive", mg_result.score > 0, mg_result.score)
 print("      score: " .. mg_result.score)
@@ -121,51 +155,54 @@ check("streak incremented", mg_streak == 1, mg_streak)
 check("best updated", mg_best == mg_result.score, mg_best)
 check("flown counter", mg_completed == 1, mg_completed)
 
--- 6. draw works in every state ---------------------------------------------
+-- 8. draw works in every state ------------------------------------------------
 mg_draw()
 check("done panel has a button", #mg_buttons == 1, #mg_buttons)
 
--- 7. abort path -------------------------------------------------------------
+-- 9. abort from briefing is silent, abort in flight fails --------------------
 mg_onground, mg_gs = 1, 0
 mg_generate()
-check("second mission armed", mg_state == 1)
+check("brief again", mg_state == MG_BRIEF)
 mg_abort()
-check("abort -> done", mg_state == 3)
+check("brief abort -> idle, mission cleared", mg_state == MG_IDLE and mg_mission == nil)
+mg_generate()
+mg_accept()
+check("second mission armed", mg_state == MG_ARMED)
+mg_abort()
+check("flight abort -> done", mg_state == MG_DONE)
 check("abort result", mg_result and mg_result.ok == false)
 
--- 8. emergency injected through the QRH trainer ----------------------------
+-- 10. emergency injected through the QRH trainer -----------------------------
 mg_generate()
+mg_accept()
 m = mg_mission
 m.emergency = true
 mg_onground, mg_gs, mg_elev = 0, 90, 3048.0
-mg_simtime = 20
-mg_frame()   -- ARMED -> ACTIVE
-mg_simtime = 21
-mg_frame()   -- now the emergency logic runs
+frame(20)
+frame(21)
 check("QRH emergency injected", qrh_inject_calls == 1, qrh_inject_calls)
 check("mission marked injected", m.injected == true and m.qrh_injected == true)
 mg_abort()
 check("QRH cleared on abort", qrh_clear_calls == 1, qrh_clear_calls)
 
--- 9. emergency direct-failure fallback -------------------------------------
+-- 11. emergency direct-failure fallback --------------------------------------
 local saved_qrh = qrh_inject_by_key
 qrh_inject_by_key = nil
 mg_onground, mg_gs = 1, 0
 mg_generate()
+mg_accept()
 m = mg_mission
 m.emergency = true
 mg_onground, mg_gs, mg_elev = 0, 90, 3048.0
-mg_simtime = 40
-mg_frame()   -- ARMED -> ACTIVE
-mg_simtime = 41
-mg_frame()   -- now the emergency logic runs
+frame(40)
+frame(41)
 check("direct failure fallback set", mg_engfla0 == 6, mg_engfla0)
 check("raw failure flagged", m.raw_failure == true)
 mg_abort()
 check("direct failure cleared", mg_engfla0 == 0, mg_engfla0)
 qrh_inject_by_key = saved_qrh
 
--- 10. persistence -----------------------------------------------------------
+-- 12. persistence -------------------------------------------------------------
 local fd = io.open(SCRIPT_DIRECTORY .. "CitationX_MissionProgress.txt", "r")
 check("progress file written", fd ~= nil)
 if fd then

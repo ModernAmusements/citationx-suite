@@ -33,16 +33,14 @@ Last updated: 2026-10-19
 ### 3. Mission generator (`CitationX_MissionGenerator.lua`)
 - Bottom-center panel. Missions only generate on the ground (< 25 kt); the clock starts at
   wheels up.
-- Out-and-back: reach a generated fix (bearing + distance), return home, full stop within 3 NM.
-- Mission types: TURNAROUND, ALTITUDE RUN, FAST LANE (mach hold), FUEL DISCIPLINE, EMERGENCY
-  SORTIE (uses `qrh_inject_by_key("flameout_l")` if Failure Trainer is loaded, otherwise fires
-  `sim/operation/failures/rel_engfla0` directly and clears it afterwards).
+- Story missions with briefing → accept/skip → flight → debrief pages. See the 2026-10-20
+  section below for the story-mission redesign.
 - Rules (2–4 random): speed ≤ 250 KT below 10K, bank ≤ 35°, g-load −0.3…+2.5, mach ≤ 0.87,
   touchdown ≥ −300 fpm, reserve fuel on landing.
 - Four difficulties scale distance/clock/score. Streak, best score, completed count persist in
   `Scripts/CitationX_MissionProgress.txt`.
-- Commands/macros: `MissionGen/generate`, `MissionGen/abort`, `MissionGen/toggle_panel`,
-  `MissionGen/report`.
+- Commands/macros: `MissionGen/generate`, `MissionGen/accept`, `MissionGen/skip`,
+  `MissionGen/abort`, `MissionGen/toggle_panel`, `MissionGen/report`.
 
 ### 4. Panel anchoring fixed
 - FlyWithLua's y-axis starts at the **bottom** (`draw_string` docs). CabinOps and FailureTrainer
@@ -71,6 +69,21 @@ Last updated: 2026-10-19
 - Every script load appended `=== LEARN MODE STOP ===` because FlyWithLua runs the macro's
   deactivate chunk on load. The file therefore looked like a session had run when it had not.
 - `citationx_set_input_learn(false)` now logs/toasts only when a session was actually open.
+
+### 8. Mission Generator: story missions redesign
+- GENERATE now opens a **briefing page** (client, payload, story, flight plan, goals, rules)
+  with ACCEPT / SKIP; aborting from briefing discards silently, aborting in flight fails.
+- Missions are **multi-leg** (2–4 short legs, 12–48 NM each per difficulty) with generated
+  fix names (`mg_fix_name` syllables); the last leg is always HOME. Legs are checked off in
+  order within `fix_radius_nm` (home leg uses `home_radius_nm`).
+- Seven archetypes drive the goals: `MG_ARCHETYPES` (charter/airtaxi/medevac/ferry/survey/
+  testflight/reliability). `setup(m, diff)` returns the story lines and sets goals
+  (touchdown limit, comfort-G extra rule, door-to-pad clock, fuel budget, altitude or mach
+  targets, emergency). Extra story rules live in `m.extra_rules` and flow through the same
+  violation engine via `m.rule_defs`.
+- Altitude profile is evaluated against `m.max_alt_ft` (peak altitude during the flight),
+  mach hold only counts while airborne.
+- States: `MG_IDLE=0, MG_BRIEF=1, MG_ARMED=2, MG_ACTIVE=3, MG_DONE=4`.
 
 ## Validation performed
 - `luac -p` on every active script.

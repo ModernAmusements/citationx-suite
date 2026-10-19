@@ -10,7 +10,7 @@ random-mission generator that turns free flight into a scored challenge.
 | `Scripts/CitationX_MasterSuite.lua` | Telemetry HUD, C750 systems readback, 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored). |
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
-| `Scripts/CitationX_MissionGenerator.lua` | Random scored missions: out-and-back to a generated fix, clock, difficulty levels, hard rules, fuel/altitude/mach objectives, emergency sorties via the QRH trainer. Persists best score and streak. |
+| `Scripts/CitationX_MissionGenerator.lua` | Random scored story missions: a client and payload briefing, a short multi-leg flight plan with named fixes, story-driven goals (smooth VIP ride, medevac clock, ferry fuel budget, photo level, mach hold, engine-out), hard rules and difficulty levels. Persists best score and streak. |
 
 ## Requirements
 
@@ -35,21 +35,27 @@ stays untracked via `.gitignore`.
 
 1. Park on the ground (below 25 kt) and click **GENERATE MISSION** on the bottom-center panel,
    press the assigned command `MissionGen/generate`, or use the FlyWithLua macro menu.
-2. The clock starts at wheels up. Fly to the generated fix point (bearing + distance shown on
-   the panel), then return and come to a full stop within 3 NM of home.
-3. Obey the mission's rules. Violations subtract points; landing clean and fast scores more.
-4. Progress (streak, best score, missions flown) is saved to
+2. Read the **briefing**: client, payload, the short multi-leg flight plan, the goals the
+   story demands and the hard rules. **ACCEPT MISSION** to fly it or **SKIP** to draw another.
+3. The clock starts at wheels up. Fly the plan leg by leg (the panel checks each fix off and
+   shows bearing + distance to the next); the last leg is home — land and come to a full stop
+   within 3 NM of where you started.
+4. Obey the mission's rules. Violations subtract points; a clean, fast, story-accurate flight
+   scores more.
+5. Progress (streak, best score, missions flown) is saved to
    `Scripts/CitationX_MissionProgress.txt`.
 
-Mission types: TURNAROUND, ALTITUDE RUN, FAST LANE (mach hold), FUEL DISCIPLINE, EMERGENCY
-SORTIE. Difficulties: EASY, NORMAL, HARD, BRUTAL.
+Mission stories: VIP CHARTER (smooth cabin + gentle touchdown), AIR TAXI (multi-stop hopper),
+MEDEVAC (tight clock + door-to-pad bonus), FERRY FLIGHT (fuel budget + reserve), PHOTO SURVEY
+(climb to a photo level), TEST FLIGHT (mach hold), RELIABILITY FLT (engine flameout via the
+QRH trainer). Difficulties: EASY, NORMAL, HARD, BRUTAL.
 
 Bindable commands:
 
 ```
-MissionGen/generate      MissionGen/abort
-MissionGen/toggle_panel  MissionGen/report
-CitationXSuite/*         CitationXQRH/*        CabinOps/*
+MissionGen/generate      MissionGen/accept       MissionGen/skip
+MissionGen/abort         MissionGen/toggle_panel MissionGen/report
+CitationXSuite/*         CitationXQRH/*          CabinOps/*
 ```
 
 ## Configuration
