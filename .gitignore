@@ -1,0 +1,24 @@
+# Track only the first-party Citation X suite inside this live FlyWithLua install.
+# Everything else is third-party plugin data or runtime state.
+/*
+!/.gitignore
+!/README.md
+!/AGENTS.md
+!/CONTEXT.md
+
+# OpenCode project agent
+!/.opencode/
+/.opencode/*
+!/.opencode/agents/
+/.opencode/agents/*
+!/.opencode/agents/*.md
+
+# Citation X Lua scripts (live in the sim's Scripts folder)
+!/Scripts/
+/Scripts/*
+!/Scripts/CitationX_*.lua
+
+# Mock-FlyWithLua test harnesses
+!/tests/
+/tests/*
+!/tests/*.lua
