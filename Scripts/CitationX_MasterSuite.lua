@@ -319,7 +319,11 @@ end
 -- sit near CONFIG.stick_hdg_center. Sticks rest at center; analog triggers
 -- (L2/R2) and pedals rest at an extreme, so they can never be picked and the
 -- heading bug stays on the right stick no matter what else is squeezed.
-local function stick_axis_centered(idx)
+-- Boolean predicate, deliberately NOT named stick_axis_centered(): that name
+-- already belongs to the numeric re-centering helper used by AXIS MONITOR.
+-- Shadowing it made that panel call math.abs() on this boolean and killed the
+-- whole draw callback every frame.
+local function stick_axis_is_centered(idx)
     local base = stick_base_raw[idx]
     if base == nil then return false end
     return math.abs(base - CONFIG.stick_hdg_center) <= CONFIG.stick_hdg_center_tol
@@ -344,7 +348,7 @@ local function detect_stick_hdg_axis()
         if a ~= 1 and a ~= 2 and a ~= 3 and a ~= 4
             and not stick_dead_axis[i]
             and not stick_axis_excluded(i)
-            and stick_axis_centered(i) then
+            and stick_axis_is_centered(i) then
             local mag = math.abs(stick_axis_deflection(i))
             if mag > best_mag then best_idx, best_mag = i, mag end
         end
@@ -875,6 +879,7 @@ function citationx_mouse_wheel()
 end
 
 function citationx_set_input_learn(on)
+    local was_on = (CONFIG.input_learn_mode == true)
     CONFIG.input_learn_mode = (on == true)
     learn_last_event = "(waiting for input)"
     learn_events     = 0
@@ -882,7 +887,10 @@ function citationx_set_input_learn(on)
         probe_log("=== LEARN MODE START ===")
         logMsg("Citation X Suite: input learn mode ON -> " .. probe_path())
         toast("LEARN MODE: ON")
-    else
+    elseif was_on then
+        -- Only close a session that was really open. FlyWithLua runs the
+        -- macro's deactivate chunk on every script load, which used to append
+        -- a STOP line each reload and made the probe look like it had run.
         probe_log("=== LEARN MODE STOP ===")
         logMsg("Citation X Suite: input learn mode OFF")
         toast("LEARN MODE: OFF")

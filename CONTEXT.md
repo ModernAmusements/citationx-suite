@@ -50,6 +50,28 @@ Last updated: 2026-10-19
   panels now anchor at the bottom offset and extend upward. Overlap-free on 2560×1440:
   Failure Trainer bottom-left, Mission Gen bottom-center, Cabin Ops bottom-right.
 
+## Work completed (2026-10-20)
+
+### 5. Mission Generator no longer quarantined
+- Log: `The variable "mg_engfla0" wants to write a DataRef, that is already handled by another
+  variable` → FlyWithLua moved the script to `Scripts (Quarantine)` on every load.
+- Cause: both FailureTrainer (`ft_fail_engfla0`) and MissionGenerator (`mg_engfla0`) bound
+  `sim/operation/failures/rel_engfla0` as **writable**. Only one writable handle is allowed.
+- Fix: MissionGenerator reuses `ft_fail_engfla0` when the trainer is loaded and only binds its
+  own ref when it is absent; all writes go through `mg_set_engfla()`.
+
+### 6. MasterSuite draw callback crash fixed
+- Log: `...CitationX_MasterSuite.lua:1281: bad argument #1 to 'abs' (number expected, got boolean)`.
+- Cause: two different functions were both named `stick_axis_centered`; the later boolean
+  predicate shadowed the numeric re-centering helper, so AXIS MONITOR called `math.abs()` on a
+  boolean and the whole draw callback aborted every frame.
+- Fix: boolean predicate renamed `stick_axis_is_centered`; the numeric helper keeps its name.
+
+### 7. Input probe noise removed
+- Every script load appended `=== LEARN MODE STOP ===` because FlyWithLua runs the macro's
+  deactivate chunk on load. The file therefore looked like a session had run when it had not.
+- `citationx_set_input_learn(false)` now logs/toasts only when a session was actually open.
+
 ## Validation performed
 - `luac -p` on every active script.
 - Every `dataref(...)` path checked against `Resources/plugins/DataRefs.txt`.

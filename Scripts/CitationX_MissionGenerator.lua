@@ -79,7 +79,23 @@ dataref("mg_simtime",  "sim/time/total_running_time_sec", "readonly")
 dataref("mg_paused",   "sim/time/paused", "readonly")
 
 -- Written only by the EMERGENCY objective (when the QRH trainer is absent).
-dataref("mg_engfla0",  "sim/operation/failures/rel_engfla0", "writable")
+-- The Failure Trainer already owns this DataRef whenever it is loaded, and
+-- FlyWithLua quarantines a script that opens a second *writable* handle to the
+-- same ref. Reuse the trainer's variable in that case; only bind our own when
+-- the trainer is not installed.
+local mg_engfla_own = false
+if type(ft_fail_engfla0) ~= "number" then
+    dataref("mg_engfla0", "sim/operation/failures/rel_engfla0", "writable")
+    mg_engfla_own = true
+end
+
+local function mg_set_engfla(value)
+    if mg_engfla_own then
+        mg_engfla0 = value
+    else
+        ft_fail_engfla0 = value
+    end
+end
 
 -- ---------------------------------------------------------------- CONSTS ----
 local MG_IDLE, MG_ARMED, MG_ACTIVE, MG_DONE = 0, 1, 2, 3
@@ -255,7 +271,7 @@ local function mg_inject_emergency(m)
         via_qrh = pcall(qrh_inject_by_key, "flameout_l")
     end
     if not via_qrh then
-        mg_engfla0 = 6
+        mg_set_engfla(6)
         m.raw_failure = true
     end
     m.qrh_injected = via_qrh
@@ -266,7 +282,7 @@ end
 
 local function mg_clear_emergency(m)
     if not m or not m.injected then return end
-    if m.raw_failure then mg_engfla0 = 0 end
+    if m.raw_failure then mg_set_engfla(0) end
     if m.qrh_injected and type(qrh_clear) == "function" then
         pcall(qrh_clear)
     end
