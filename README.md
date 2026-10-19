@@ -48,13 +48,15 @@ stays untracked via `.gitignore`.
 Mission stories: VIP CHARTER (smooth cabin + gentle touchdown), AIR TAXI (multi-stop hopper),
 MEDEVAC (tight clock + door-to-pad bonus), FERRY FLIGHT (fuel budget + reserve), PHOTO SURVEY
 (climb to a photo level), TEST FLIGHT (mach hold), RELIABILITY FLT (engine flameout via the
-QRH trainer). Difficulties: EASY, NORMAL, HARD, BRUTAL.
+QRH trainer), FLIGHT SCHOOL (graded lessons: steep turns, pattern work, precision approach,
+climb & level). Difficulties: EASY, NORMAL, HARD, BRUTAL.
 
 Bindable commands:
 
 ```
 MissionGen/generate      MissionGen/accept       MissionGen/skip
-MissionGen/abort         MissionGen/toggle_panel MissionGen/report
+MissionGen/lesson        MissionGen/abort        MissionGen/toggle_panel
+MissionGen/report
 CitationXSuite/*         CitationXQRH/*          CabinOps/*
 ```
 

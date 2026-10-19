@@ -1,6 +1,7 @@
 -- Mock-FlyWithLua smoke test for CitationX_MissionGenerator.lua
 -- Exercises briefing/accept/skip, leg-by-leg progression, landing, scoring,
--- rules, abort and the emergency injection/clear path without X-Plane.
+-- rules, abort, the emergency injection/clear path and the flight-school
+-- lesson grading without X-Plane.
 
 local TMP = os.getenv("TMPDIR") or "/tmp/"
 SCRIPT_DIRECTORY = TMP
@@ -202,7 +203,60 @@ mg_abort()
 check("direct failure cleared", mg_engfla0 == 0, mg_engfla0)
 qrh_inject_by_key = saved_qrh
 
--- 12. persistence -------------------------------------------------------------
+-- 12. story promises become real rules ---------------------------------------
+mg_onground, mg_gs = 1, 0
+mg_generate_archetype("charter")
+local has_td = false
+for _, id in ipairs(mg_mission.constraints) do
+    if id == "touchdown" then has_td = true end
+end
+check("charter forces its touchdown rule",
+    has_td and mg_mission.touchdown_min == -250, mg_mission.touchdown_min)
+mg_abort()
+
+-- 13. flight school lesson ----------------------------------------------------
+mg_onground, mg_gs = 1, 0
+check("lesson generates a school briefing", mg_generate_archetype("school") == true)
+m = mg_mission
+check("school briefing has a lesson", m.lesson ~= nil, m.lesson)
+check("title names the lesson", m.title:find("FLIGHT SCHOOL") ~= nil, m.title)
+print("      lesson: " .. m.title)
+mg_accept()
+-- force the steep-turn tracker on regardless of the drawn lesson
+m.steep_hold_s   = 10
+m.steep_hold_acc = 0
+m.constraints    = {}
+m.cstate         = {}
+mg_onground, mg_gs, mg_elev = 0, 90, 3048.0
+mg_bank = 40
+frame(50)   -- ARMED -> ACTIVE
+frame(51)   -- inside 30-45: +1 s
+frame(52)   -- inside 30-45: +1 s
+mg_bank = 50
+frame(53)   -- outside the window: must not count
+check("steep turns accumulate inside 30-45",
+    math.abs((m.steep_hold_acc or 0) - 2.0) < 0.01, m.steep_hold_acc)
+mg_bank = 0
+m.steep_hold_s   = 1     -- target met for the grade
+m.alt_target_ft  = nil   -- ignore any climb lesson goal
+t = 54
+for i, leg in ipairs(m.legs) do
+    mg_lat, mg_lon = leg.lat, leg.lon
+    frame(t); t = t + 1
+end
+mg_lat, mg_lon = m.home_lat, m.home_lon
+mg_onground, mg_gs, mg_vs = 1, 1.0, -100
+frame(t)
+check("lesson completed", mg_state == MG_DONE, mg_state)
+local has_grade, has_clean = false, false
+for _, ln in ipairs(mg_result.lines) do
+    if ln:find("INSTRUCTOR GRADE  A", 1, true) then has_grade = true end
+    if ln:find("CLEAN CHECKRIDE", 1, true) then has_clean = true end
+end
+check("instructor grade A", has_grade)
+check("checkride bonus paid", has_clean)
+
+-- 14. persistence -------------------------------------------------------------
 local fd = io.open(SCRIPT_DIRECTORY .. "CitationX_MissionProgress.txt", "r")
 check("progress file written", fd ~= nil)
 if fd then

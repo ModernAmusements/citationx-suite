@@ -1,6 +1,6 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-10-19
+Last updated: 2026-10-20
 
 ## Environment
 - X-Plane 12: `/Users/modernamusmenet/X-Plane 12` (macOS, arm64)
@@ -84,15 +84,21 @@ Last updated: 2026-10-19
 - Altitude profile is evaluated against `m.max_alt_ft` (peak altitude during the flight),
   mach hold only counts while airborne.
 - States: `MG_IDLE=0, MG_BRIEF=1, MG_ARMED=2, MG_ACTIVE=3, MG_DONE=4`.
+- FLIGHT SCHOOL lessons (steep turns / pattern work / precision approach / climb & level) carry
+  an instructor grade A-F: every rule bust or missed maneuver costs one letter, a clean ride
+  pays +100. `MissionGen/lesson` forces a school briefing via `MG_CONFIG.force_archetype`.
+- Story promises are always enforced: a mission that sets `m.touchdown_min` forces the
+  touchdown rule; ferry forces the reserve rule. Don't assume the random rule draw covers them.
 
 ## Validation performed
 - `luac -p` on every active script.
 - Every `dataref(...)` path checked against `Resources/plugins/DataRefs.txt`.
 - Every `laminar/CitX/...` command and runtime dataref checked against the Citation X's own
   `plugins/xlua/scripts/*.lua`.
-- Mock-FlyWithLua smoke tests (Lua 5.4) for mission generate/takeoff/fix/landing/scoring/
-  persistence/emergency and for the DS4 heading logic (triggers ignored, sticky lock, dead-slot
-  recovery).
+- Mock-FlyWithLua smoke tests (Lua 5.4): mission briefing/accept/skip, leg-by-leg progression,
+  landing, scoring, persistence and both emergency paths; DS4 heading logic (triggers ignored,
+  sticky lock, dead-slot recovery); FailureTrainer+MissionGenerator load order with a strict
+  duplicate-writable-dataref check.
 
 ## Gotchas / facts
 - A bad DataRef anywhere in a script makes FlyWithLua quarantine the whole file and reload Lua.

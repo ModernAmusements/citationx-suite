@@ -23,6 +23,9 @@
 --        TEST FLIGHT      hold a mach number for a set time
 --        RELIABILITY FLT  engine flameout in flight (uses the QRH trainer
 --                         if installed, else fires the failure directly)
+--        FLIGHT SCHOOL    graded lesson: steep turns, pattern work, precision
+--                         approach or climb & level - with an A-F instructor
+--                         grade in the debrief (MissionGen/lesson)
 --    * every mission also draws 2-4 hard rules, each violation scores minus:
 --        SPEED <= 250 KT below 10,000 FT        MACH <= 0.87
 --        BANK <= 35 DEG                         G-LOAD -0.3 .. +2.5
@@ -33,7 +36,8 @@
 --
 --  Commands (bindable in Settings > Keyboard / Joystick):
 --    MissionGen/generate      MissionGen/accept       MissionGen/skip
---    MissionGen/abort         MissionGen/toggle_panel MissionGen/report
+--    MissionGen/abort         MissionGen/lesson       MissionGen/toggle_panel
+--    MissionGen/report
 -- ============================================================================
 
 MG_CONFIG = {
@@ -51,6 +55,7 @@ MG_CONFIG = {
 
     qrh_bridge         = true,    -- use the QRH Failure Trainer when present
     persist            = true,    -- save best / streak / count to disk
+    force_archetype    = nil,     -- set by MissionGen/lesson, cleared afterwards
 }
 
 MG_STYLE = {
@@ -498,9 +503,81 @@ MG_ARCHETYPES.reliability = {
     end,
 }
 
+-- Flight school: a graded lesson with an instructor in the right seat.
+-- The debrief carries a letter grade derived from rule busts and missed
+-- maneuvers (see mg_grade), and a clean ride pays a checkride bonus.
+MG_ARCHETYPES.school = {
+    title = "FLIGHT SCHOOL",
+    legs  = function() return 3 end,
+    clock = 1.10,
+    setup = function(m, diff)
+        local instructor = "Capt. " .. mg_pick({
+            "Voss", "Mercer", "Halden", "Okafor", "Lindqvist", "Reyes",
+        })
+        local lesson = mg_pick({ "steep", "pattern", "precision", "climb" })
+
+        if lesson == "steep" then
+            m.lesson        = "steep"
+            m.lesson_title  = "STEEP TURNS"
+            m.steep_hold_s  = 45 + (diff - 1) * 10
+            m.steep_hold_acc = 0
+            m.touchdown_min = -250
+            m.extra_rules = {
+                bankbust = { label = "BANK <= 50 DEG", penalty = 30,
+                    check = function()
+                        return (mg_onground or 0) == 0
+                           and math.abs(mg_bank or 0) > 50
+                    end },
+            }
+            return {
+                string.format("INSTRUCTOR: %s. LESSON: STEEP TURNS.", instructor),
+                string.format("Hold 30-45 deg of bank for %s in total.",
+                    mg_fmt_time(m.steep_hold_s)),
+                "Roll in smoothly, hold it, roll out on a heading. Anything",
+                "past 50 deg of bank busts the ride. Then fly the plan home.",
+            }
+        elseif lesson == "pattern" then
+            m.lesson        = "pattern"
+            m.lesson_title  = "PATTERN WORK"
+            m.touchdown_min = -200
+            return {
+                string.format("INSTRUCTOR: %s. LESSON: PATTERN WORK.", instructor),
+                "Three short legs, one landing - every turn flown like the",
+                "examiner is watching. Set it down at -200 fpm or better",
+                "and stop inside the box. Smooth is the whole lesson.",
+            }
+        elseif lesson == "precision" then
+            m.lesson        = "precision"
+            m.lesson_title  = "PRECISION APPROACH"
+            m.touchdown_min = -180
+            return {
+                string.format("INSTRUCTOR: %s. LESSON: PRECISION APPROACH.", instructor),
+                "Fly the plan, then give me the softest touchdown of your",
+                "life: -180 fpm or better, on centerline, no float. The",
+                "chief pilot signs off on this one, so make it count.",
+            }
+        else
+            local fl_min = ({180, 220, 260, 300})[diff]
+            local fl_max = ({240, 280, 320, 340})[diff]
+            m.lesson        = "climb"
+            m.lesson_title  = "CLIMB & LEVEL"
+            m.alt_target_ft = math.random(math.floor(fl_min / 10),
+                                          math.floor(fl_max / 10)) * 1000
+            return {
+                string.format("INSTRUCTOR: %s. LESSON: CLIMB & LEVEL.", instructor),
+                string.format("Climb to FL%.0f before the last leg, level off",
+                    m.alt_target_ft / 100),
+                "cleanly and hold it. Then descend on the plan and land",
+                "without chasing the power levers all the way down.",
+            }
+        end
+    end,
+}
+
 local MG_ARCH_WEIGHTS = {
     "charter", "charter", "airtaxi", "airtaxi", "medevac",
     "ferry", "ferry", "survey", "survey", "testflight", "reliability",
+    "school", "school",
 }
 
 -- ------------------------------------------------------------- GENERATE ----
@@ -534,7 +611,9 @@ local function mg_build_mission()
     local roll = math.random(1, 10)
     local diff = roll <= 2 and 1 or (roll <= 5 and 2 or (roll <= 8 and 3 or 4))
 
-    local arch = MG_ARCHETYPES[mg_pick(MG_ARCH_WEIGHTS)]
+    local forced = MG_CONFIG.force_archetype
+    local arch = (forced and MG_ARCHETYPES[forced])
+        or MG_ARCHETYPES[mg_pick(MG_ARCH_WEIGHTS)]
     local n_legs = math.max(2, arch.legs(diff))
 
     local home_lat = mg_lat or 0.0
@@ -573,17 +652,26 @@ local function mg_build_mission()
         mach_hold_acc = 0,
         max_alt_ft  = 0,
     }
-    m.title = m.callsign .. " - " .. arch.title .. " " ..
-        string.format("%.0f NM", total_nm)
-
     -- story sets the goals (and may add rules) before the rule list closes
     m.story = arch.setup(m, diff) or {}
+
+    local kind_title = arch.title
+    if m.lesson_title then
+        kind_title = kind_title .. " - " .. m.lesson_title
+    end
+    m.title = m.callsign .. " - " .. kind_title .. " " ..
+        string.format("%.0f NM", total_nm)
 
     if m.force_reserve and not cstate.reserve then
         cids[#cids + 1] = "reserve"
         cstate.reserve = { viol = 0, was_bad = false, done = false }
     end
-    if m.touchdown_min and cstate.touchdown then
+    -- a story that promises a touchdown limit must always enforce it
+    if m.touchdown_min and not cstate.touchdown then
+        cids[#cids + 1] = "touchdown"
+        cstate.touchdown = { viol = 0, was_bad = false, done = false }
+    end
+    if m.touchdown_min then
         cstate.touchdown.label = string.format(
             "TOUCHDOWN >= %d FPM", m.touchdown_min)
     end
@@ -625,6 +713,13 @@ function mg_generate()
         mg_fmt_time(m.budget_s)))
     mg_toast("BRIEFING READY - " .. m.title)
     return true
+end
+
+function mg_generate_archetype(key)
+    MG_CONFIG.force_archetype = key
+    local ok = mg_generate()
+    MG_CONFIG.force_archetype = nil
+    return ok
 end
 
 function mg_accept()
@@ -675,6 +770,26 @@ function mg_abort()
 end
 
 -- --------------------------------------------------------------- FINISH ----
+-- Instructor grade for FLIGHT SCHOOL lessons: every busted rule or missed
+-- maneuver costs one letter. A clean ride is an A and pays a checkride bonus.
+local MG_GRADES = { "A", "B", "C", "D", "F", "F" }
+local function mg_grade(m)
+    local busts = 0
+    for _, id in ipairs(m.constraints) do
+        local st = m.cstate[id]
+        if st and st.viol > 0 then busts = busts + st.viol end
+    end
+    local missed = 0
+    if m.steep_hold_s and (m.steep_hold_acc or 0) < m.steep_hold_s then
+        missed = missed + 1
+    end
+    if m.alt_target_ft and (m.max_alt_ft or 0) < m.alt_target_ft - 200 then
+        missed = missed + 1
+    end
+    local idx = math.min(#MG_GRADES, busts + missed + 1)
+    return MG_GRADES[idx], busts, missed
+end
+
 local function mg_finish(success, reason)
     local m = mg_mission
     if not m then return end
@@ -724,6 +839,14 @@ local function mg_finish(success, reason)
             score = score + 200
             lines[#lines + 1] = string.format(
                 "DOOR TO PAD  +200  (under %s)", mg_fmt_time(m.door_bonus_s))
+        end
+        if m.lesson then
+            local grade = mg_grade(m)
+            if grade == "A" then
+                score = score + 100
+                lines[#lines + 1] = "CLEAN CHECKRIDE  +100"
+            end
+            lines[#lines + 1] = "INSTRUCTOR GRADE  " .. grade
         end
 
         -- reserve rule is evaluated at the moment of completion
@@ -850,6 +973,13 @@ function mg_frame()
         and (mg_mach or 0) >= m.mach_target then
         m.mach_hold_acc = (m.mach_hold_acc or 0) + dt
     end
+    -- flight school: steep-turn time only counts inside the 30-45 deg window
+    if m.steep_hold_s and (mg_onground or 0) == 0 then
+        local bank = math.abs(mg_bank or 0)
+        if bank >= 30 and bank <= 45 then
+            m.steep_hold_acc = (m.steep_hold_acc or 0) + dt
+        end
+    end
     if m.emergency and not m.injected
         and (m.legs_done >= 1 or alt_ft >= 8000 or mg_clock >= 240) then
         mg_inject_emergency(m)
@@ -953,6 +1083,11 @@ local function mg_draw_brief(rows, row, spacer, button, st)
     if m.emergency then
         row(mg_mark(false) .. "SURVIVE ENGINE FAILURE + LAND", "", st.warn)
     end
+    if m.steep_hold_s then
+        row(mg_mark(false) .. string.format(
+                "STEEP TURNS %s IN 30-45 DEG BANK",
+                mg_fmt_time(m.steep_hold_s)), "", st.value)
+    end
     if m.door_bonus_s then
         row(mg_mark(false) .. string.format("BONUS: HOME INSIDE %s",
                 mg_fmt_time(m.door_bonus_s)), "", st.gold)
@@ -1032,6 +1167,14 @@ local function mg_draw_flight(rows, row, spacer, button, st)
         else state_word, state_col = "IN FLIGHT", st.alert end
         row(mg_mark(m.landed) .. "SURVIVE ENGINE FAILURE + LAND",
             state_word, m.landed and st.ok or st.warn)
+    end
+    if m.steep_hold_s then
+        local acc  = m.steep_hold_acc or 0
+        local done = acc >= m.steep_hold_s
+        row(mg_mark(done) .. "STEEP TURNS 30-45 DEG",
+            string.format("%s / %s", mg_fmt_time(acc),
+                mg_fmt_time(m.steep_hold_s)),
+            done and st.ok or st.value)
     end
 
     -- rules
@@ -1132,7 +1275,7 @@ function mg_draw()
             r.ok and st.ok or st.alert)
         row(string.format("SCORE  %d", r.score), "",
             r.ok and st.gold or st.alert)
-        for i = 1, math.min(#r.lines, 7) do
+        for i = 1, math.min(#r.lines, 9) do
             row(r.lines[i], "", st.label)
         end
         row(string.format("STREAK %d   BEST %d   FLOWN %d",
@@ -1255,6 +1398,9 @@ create_command("MissionGen/accept",
     "Mission Gen: accept the briefed mission", "mg_accept()", "", "")
 create_command("MissionGen/skip",
     "Mission Gen: skip to a new briefing", "mg_skip()", "", "")
+create_command("MissionGen/lesson",
+    "Mission Gen: generate a flight-school lesson",
+    "mg_generate_archetype('school')", "", "")
 create_command("MissionGen/abort",
     "Mission Gen: abort the active mission", "mg_abort()", "", "")
 create_command("MissionGen/toggle_panel",
@@ -1267,5 +1413,6 @@ add_macro("Mission Gen: toggle panel", "mg_toggle_panel(true)", "mg_toggle_panel
 add_macro("Mission Gen: generate", "mg_generate()")
 add_macro("Mission Gen: accept", "mg_accept()")
 add_macro("Mission Gen: skip briefing", "mg_skip()")
+add_macro("Mission Gen: flight school lesson", "mg_generate_archetype('school')")
 add_macro("Mission Gen: abort", "mg_abort()")
 add_macro("Mission Gen: status report", "mg_report()")
