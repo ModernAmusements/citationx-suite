@@ -82,6 +82,7 @@ end
 
 local SCRIPT = arg[1] or "CitationX_MissionGenerator.lua"
 os.remove(SCRIPT_DIRECTORY .. "CitationX_MissionProgress.txt")
+MG_ENABLED_OVERRIDE = true
 dofile(SCRIPT)
 
 local MG_IDLE, MG_BRIEF, MG_ARMED, MG_ACTIVE, MG_DONE = 0, 1, 2, 3, 4

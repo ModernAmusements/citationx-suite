@@ -10,7 +10,7 @@ random-mission generator that turns free flight into a scored challenge.
 | `Scripts/CitationX_MasterSuite.lua` | Telemetry HUD, C750 systems readback, 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored). |
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
-| `Scripts/CitationX_MissionGenerator.lua` | Random scored story missions: a client and payload briefing, a short multi-leg flight plan with real airports when navdata is available, story-driven goals (smooth VIP ride, medevac clock, ferry fuel budget, photo level, mach hold, engine-out), hard rules, difficulty levels and an automatic cruise time warp. Persists best score and streak. |
+| `Scripts/CitationX_MissionGenerator.lua` | Random scored story missions: a client and payload briefing, a short multi-leg flight plan with real airports when navdata is available, story-driven goals (smooth VIP ride, medevac clock, ferry fuel budget, photo level, mach hold, engine-out), hard rules, difficulty levels and an automatic cruise time warp. Persists best score and streak. **Shipped disabled:** set `MG_CONFIG.enabled = true` to load it. |
 
 ## Requirements
 
@@ -32,6 +32,10 @@ suite, while the rest of the FlyWithLua install (binaries, Modules, Internals, D
 stays untracked via `.gitignore`.
 
 ## Mission Generator quick start
+
+> **Disabled by default.** The mission generator ships with `MG_CONFIG.enabled = false`
+> and registers no panel, commands or callbacks. Set it to `true` in
+> `Scripts/CitationX_MissionGenerator.lua` and reload Lua to turn it back on.
 
 1. Park on the ground (below 25 kt) and click **GENERATE MISSION** on the bottom-center panel,
    press the assigned command `MissionGen/generate`, or use the FlyWithLua macro menu.
@@ -72,11 +76,11 @@ CitationXSuite/*         CitationXQRH/*          CabinOps/*
 - `CitationX_MasterSuite.lua` — `CONFIG` table: HUD, flight recorder, axis optimizer,
   emergency generator, input mapper and the right-stick heading knob
   (`stick_hdg_*`, including `stick_hdg_exclude_axes` and a fixed `stick_hdg_axis` pin).
-- `CitationX_MissionGenerator.lua` — `MG_CONFIG` table: cruise speed used for clock math,
-  reserve fuel, fix/home radii, airport snapping (`home_airport_max_nm`,
-  `leg_airport_snap_nm`) and the time-warp limits (`warp_cruise`, `warp_max`,
-  `warp_engage_nm`, `warp_drop_nm`, `warp_min_agl_ft`, `warp_max_bank_deg`,
-  `warp_max_vs_fpm`), plus the `MG_DIFF_*` difficulty tables.
+- `CitationX_MissionGenerator.lua` — `MG_CONFIG` table: the `enabled` kill switch, cruise
+  speed used for clock math, reserve fuel, fix/home radii, airport snapping
+  (`home_airport_max_nm`, `leg_airport_snap_nm`) and the time-warp limits
+  (`warp_cruise`, `warp_max`, `warp_engage_nm`, `warp_drop_nm`, `warp_min_agl_ft`,
+  `warp_max_bank_deg`, `warp_max_vs_fpm`), plus the `MG_DIFF_*` difficulty tables.
 - `CitationX_CabinOps.lua` — `CAB_CONFIG`; `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG`.
 
 ## Development and validation

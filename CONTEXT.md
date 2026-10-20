@@ -6,9 +6,10 @@ Last updated: 2026-10-21
 - X-Plane 12: `/Users/modernamusmenet/X-Plane 12` (macOS, arm64)
 - FlyWithLua NG+ 2.8.16 (mac_x64)
 - Active scripts in `Scripts/`: `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
-  `CitationX_CabinOps.lua`, `CitationX_MissionGenerator.lua`, `LandingPerformance.lua`;
-  third-party add-ons `kpcrew23.lua` (+ optional kpcrew tools) and `Sim_Rate.lua` are also
-  installed (see section 10).
+  `CitationX_CabinOps.lua`, `LandingPerformance.lua`; `CitationX_MissionGenerator.lua` is
+  present but **disabled** (`MG_CONFIG.enabled = false`, returns before registering
+  anything). Third-party add-ons `kpcrew23.lua` (+ optional kpcrew tools) and `Sim_Rate.lua`
+  are also installed (see section 10).
 - Controller: Sony DUALSHOCK 4 (VID 054c:09cc), enumerated twice — USB and Bluetooth
 
 ## Work completed (2026-10-19)
@@ -138,6 +139,15 @@ Last updated: 2026-10-21
   172 `laminar/CitX/...` refs in the C750 SOP exist in the aircraft's xlua scripts; no
   duplicate command names and no duplicate writable DataRefs with the suite. The add-ons are
   ignored by git and are **not** part of the citationx-suite repository.
+
+### 11. Mission Generator disabled (2026-10-21)
+- `MG_CONFIG.enabled = false` by default. The guard sits immediately after the config table
+  and returns before any dataref, command, macro, draw or frame callback is registered.
+  Result: no mission panel and no sim-speed time warp while kpcrew/SimRate are in use.
+- `tests/smoke_mission.lua` sets `MG_ENABLED_OVERRIDE = true` before `dofile()` so the full
+  mission suite still runs in CI/local tests.
+- Re-enable with one edit: `MG_CONFIG.enabled = true` (or define
+  `MG_ENABLED_OVERRIDE = true` before loading), then reload Lua scripts.
 
 ## Validation performed
 - `luac -p` on every active script.

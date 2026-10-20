@@ -47,6 +47,10 @@
 -- ============================================================================
 
 MG_CONFIG = {
+    -- The suite ships with the mission generator disabled. Set this to true
+    -- (or define MG_ENABLED_OVERRIDE = true before loading) to bring it back.
+    enabled            = false,
+
     panel_enabled      = true,
     panel_w            = 560,
     panel_bottom       = 60,      -- panel sits bottom-center
@@ -81,6 +85,17 @@ MG_CONFIG = {
     persist            = true,    -- save best / streak / count to disk
     force_archetype    = nil,     -- set by MissionGen/lesson, cleared afterwards
 }
+
+-- Runtime kill switch: when disabled, none of the datarefs, commands, macros,
+-- panels or frame callbacks below are registered. This keeps kpcrew/SimRate
+-- free of the mission panel and its time warp.
+if MG_ENABLED_OVERRIDE ~= nil then
+    MG_CONFIG.enabled = MG_ENABLED_OVERRIDE
+end
+if not MG_CONFIG.enabled then
+    logMsg("Mission Gen: disabled (MG_CONFIG.enabled = false)")
+    return
+end
 
 MG_STYLE = {
     bg        = {0.02, 0.05, 0.08, 0.62},
