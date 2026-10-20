@@ -6,7 +6,9 @@ Last updated: 2026-10-21
 - X-Plane 12: `/Users/modernamusmenet/X-Plane 12` (macOS, arm64)
 - FlyWithLua NG+ 2.8.16 (mac_x64)
 - Active scripts in `Scripts/`: `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
-  `CitationX_CabinOps.lua`, `CitationX_MissionGenerator.lua`, `LandingPerformance.lua`
+  `CitationX_CabinOps.lua`, `CitationX_MissionGenerator.lua`, `LandingPerformance.lua`;
+  third-party add-ons `kpcrew23.lua` (+ optional kpcrew tools) and `Sim_Rate.lua` are also
+  installed (see section 10).
 - Controller: Sony DUALSHOCK 4 (VID 054c:09cc), enumerated twice — USB and Bluetooth
 
 ## Work completed (2026-10-19)
@@ -118,6 +120,24 @@ Last updated: 2026-10-21
   `warp_min_agl_ft`, `warp_max_bank_deg`, `warp_max_vs_fpm`.
 - Smoke tests extended for airport snapping, magnetic bearings, FMS loading, auto/manual warp,
   warp drop near the fix, warp reset after completion and the no-navdata fallback.
+
+### 10. Third-party add-ons installed (2026-10-21)
+- **KPCrew 2.3-alpha11** (`prokopiu/kpcrew`): `Scripts/kpcrew23.lua` plus the optional
+  `kppanels.lua`, `kpxbrief.lua`, `kpsoundmute.lua`, `kpredline.lua`; modules in
+  `Modules/kpcrew` and `Modules/kpcrew_prefs` (including `SOP_C750.lua`). The 171-command
+  `kphardware.lua` hardware profile was deliberately **not** installed (DS4 controller, no
+  Honeycomb/Saitek hardware; the kpcrew README warns about the `create_command` limit).
+- **SimRateMonitor** (`N1K340/SimRateMonitor`): `Scripts/Sim_Rate.lua`, ground-speed
+  acceleration 1x/2x/4x via macros and `FlyWithLUA/SimRateBuddy/*` commands. Note: this is
+  **ground-speed compression** (`sim/time/ground_speed_flt`), not sim-time acceleration.
+- **Not installed:** `karlvr/x-plane-citation-x` (patches the aircraft's own xlua files and is
+  built for Honeycomb/Saitek hardware), the Saitek panel configuration (the Xsaitekpanels
+  plugin is not installed), *Long Flights Compression* (x-plane.org login required) and
+  *Smart Time Accelerator* (x-plane.to login required).
+- Validation done before install: every kpcrew `dataref` path exists in `DataRefs.txt`; all
+  172 `laminar/CitX/...` refs in the C750 SOP exist in the aircraft's xlua scripts; no
+  duplicate command names and no duplicate writable DataRefs with the suite. The add-ons are
+  ignored by git and are **not** part of the citationx-suite repository.
 
 ## Validation performed
 - `luac -p` on every active script.
