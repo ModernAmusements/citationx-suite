@@ -10,7 +10,7 @@ random-mission generator that turns free flight into a scored challenge.
 | `Scripts/CitationX_MasterSuite.lua` | Telemetry HUD, C750 systems readback, 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored). |
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
-| `Scripts/CitationX_MissionGenerator.lua` | Random scored story missions: a client and payload briefing, a short multi-leg flight plan with named fixes, story-driven goals (smooth VIP ride, medevac clock, ferry fuel budget, photo level, mach hold, engine-out), hard rules and difficulty levels. Persists best score and streak. |
+| `Scripts/CitationX_MissionGenerator.lua` | Random scored story missions: a client and payload briefing, a short multi-leg flight plan with real airports when navdata is available, story-driven goals (smooth VIP ride, medevac clock, ferry fuel budget, photo level, mach hold, engine-out), hard rules, difficulty levels and an automatic cruise time warp. Persists best score and streak. |
 
 ## Requirements
 
@@ -38,11 +38,17 @@ stays untracked via `.gitignore`.
 2. Read the **briefing**: client, payload, the short multi-leg flight plan, the goals the
    story demands and the hard rules. **ACCEPT MISSION** to fly it or **SKIP** to draw another.
 3. The clock starts at wheels up. Fly the plan leg by leg (the panel checks each fix off and
-   shows bearing + distance to the next); the last leg is home — land and come to a full stop
-   within 3 NM of where you started.
-4. Obey the mission's rules. Violations subtract points; a clean, fast, story-accurate flight
+   shows magnetic bearing + distance to the next); the last leg is home — land and come to a
+   full stop within 5 NM of the departure airport. Every leg is snapped to a real airport when
+   X-Plane navdata is available, so the ICAO can be entered in the FMS. **LOAD PLAN INTO FMS**
+   on the briefing page (or `MissionGen/load_fms`) writes the whole route into the default FMS.
+4. Long cruise legs are not dead time: auto time warp engages at 4x in stable cruise, drops to
+   1x before the next fix and on any bank/climb/descent. Click **TIME WARP** on the panel or
+   bind `MissionGen/warp` to cycle 1x/2x/4x/8x; `MissionGen/warp_auto` hands control back to
+   the automatic mode.
+5. Obey the mission's rules. Violations subtract points; a clean, fast, story-accurate flight
    scores more.
-5. Progress (streak, best score, missions flown) is saved to
+6. Progress (streak, best score, missions flown) is saved to
    `Scripts/CitationX_MissionProgress.txt`.
 
 Mission stories: VIP CHARTER (smooth cabin + gentle touchdown), AIR TAXI (multi-stop hopper),
@@ -56,6 +62,7 @@ Bindable commands:
 ```
 MissionGen/generate      MissionGen/accept       MissionGen/skip
 MissionGen/lesson        MissionGen/abort        MissionGen/toggle_panel
+MissionGen/warp          MissionGen/warp_auto    MissionGen/load_fms
 MissionGen/report
 CitationXSuite/*         CitationXQRH/*          CabinOps/*
 ```
@@ -66,7 +73,10 @@ CitationXSuite/*         CitationXQRH/*          CabinOps/*
   emergency generator, input mapper and the right-stick heading knob
   (`stick_hdg_*`, including `stick_hdg_exclude_axes` and a fixed `stick_hdg_axis` pin).
 - `CitationX_MissionGenerator.lua` — `MG_CONFIG` table: cruise speed used for clock math,
-  reserve fuel, radii and the `MG_DIFF_*` difficulty tables.
+  reserve fuel, fix/home radii, airport snapping (`home_airport_max_nm`,
+  `leg_airport_snap_nm`) and the time-warp limits (`warp_cruise`, `warp_max`,
+  `warp_engage_nm`, `warp_drop_nm`, `warp_min_agl_ft`, `warp_max_bank_deg`,
+  `warp_max_vs_fpm`), plus the `MG_DIFF_*` difficulty tables.
 - `CitationX_CabinOps.lua` — `CAB_CONFIG`; `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG`.
 
 ## Development and validation

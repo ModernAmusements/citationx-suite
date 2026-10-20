@@ -1,6 +1,6 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-10-20
+Last updated: 2026-10-21
 
 ## Environment
 - X-Plane 12: `/Users/modernamusmenet/X-Plane 12` (macOS, arm64)
@@ -40,7 +40,8 @@ Last updated: 2026-10-20
 - Four difficulties scale distance/clock/score. Streak, best score, completed count persist in
   `Scripts/CitationX_MissionProgress.txt`.
 - Commands/macros: `MissionGen/generate`, `MissionGen/accept`, `MissionGen/skip`,
-  `MissionGen/abort`, `MissionGen/toggle_panel`, `MissionGen/report`.
+  `MissionGen/abort`, `MissionGen/lesson`, `MissionGen/toggle_panel`, `MissionGen/warp`,
+  `MissionGen/warp_auto`, `MissionGen/load_fms`, `MissionGen/report`.
 
 ### 4. Panel anchoring fixed
 - FlyWithLua's y-axis starts at the **bottom** (`draw_string` docs). CabinOps and FailureTrainer
@@ -90,6 +91,34 @@ Last updated: 2026-10-20
 - Story promises are always enforced: a mission that sets `m.touchdown_min` forces the
   touchdown rule; ferry forces the reserve rule. Don't assume the random rule draw covers them.
 
+## Work completed (2026-10-21)
+
+### 9. Mission Generator: airport-aware legs, time warp, FMS loading
+- **Root cause of "it does nothing":** the generated legs were synthetic lat/lon points with
+  invented names, checked within 2 NM. There was nothing to see on the map or enter in the
+  FMS, so flying to the "right airport" never counted. The panel now uses XPLMNavigation
+  (`XPLMFindNavAid` / `XPLMGetNavAidInfo`) to snap every leg to a **real airport** near the
+  projected point and to identify the departure airport (`m.home_icao`, `m.home_name`).
+  Synthetic fixes remain as a fallback when navdata is unavailable.
+- Radii widened: `fix_radius_nm` 2 → 3, `home_radius_nm` 3 → 5.
+- Bearing readouts are **magnetic** (true bearing minus `sim/flightmodel/position/
+  magnetic_variation`), matching the HSI. Briefing and flight plan show `MAG`, the airport
+  ICAOs and the airport names (UTF-8-safe truncation).
+- **Time warp:** `sim/time/sim_speed` is written only while the script owns it. Auto mode
+  engages `warp_cruise` (4x) in stable cruise (AGL ≥ 1500 ft, bank ≤ 15°, |VS| ≤ 1200 fpm)
+  more than `warp_engage_nm` from the next fix, holds through the leg and drops to 1x within
+  `warp_drop_nm`. `MissionGen/warp` cycles 1x/2x/4x/8x by hand; `MissionGen/warp_auto`
+  returns to automatic; the panel has a TIME WARP button on the flight page. It never fights
+  a speed set by the pilot or another script, and resets to 1x on finish/abort/new mission.
+- **FMS loading:** `MissionGen/load_fms` (and a briefing-page button) clears the default FMS
+  and writes every leg as a lat/lon entry via `XPLMSetFMSEntryLatLon`.
+- The mission clock now tolerates accelerated sim time (`dt` clamp 2 → 10 s).
+- New `MG_CONFIG` knobs: `home_airport_max_nm`, `leg_airport_snap_nm`, `leg_airport_min_nm`,
+  `warp_enabled`, `warp_auto`, `warp_cruise`, `warp_max`, `warp_engage_nm`, `warp_drop_nm`,
+  `warp_min_agl_ft`, `warp_max_bank_deg`, `warp_max_vs_fpm`.
+- Smoke tests extended for airport snapping, magnetic bearings, FMS loading, auto/manual warp,
+  warp drop near the fix, warp reset after completion and the no-navdata fallback.
+
 ## Validation performed
 - `luac -p` on every active script.
 - Every `dataref(...)` path checked against `Resources/plugins/DataRefs.txt`.
@@ -99,6 +128,9 @@ Last updated: 2026-10-20
   landing, scoring, persistence and both emergency paths; DS4 heading logic (triggers ignored,
   sticky lock, dead-slot recovery); FailureTrainer+MissionGenerator load order with a strict
   duplicate-writable-dataref check.
+- Mission-generator tests also cover airport snapping and magnetic bearings (mocked
+  XPLMNavigation), FMS loading, auto/manual time warp, warp drop near the fix, warp reset
+  after completion and the no-navdata fallback.
 
 ## Gotchas / facts
 - A bad DataRef anywhere in a script makes FlyWithLua quarantine the whole file and reload Lua.

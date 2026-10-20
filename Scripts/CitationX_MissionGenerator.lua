@@ -9,11 +9,16 @@
 --  aircraft (the Citation X simply gets the nicest numbers).
 --
 --    * missions start on the ground - park up, then GENERATE
+--    * the briefing names the departure airport and every leg is snapped to
+--      a real airport nearby, so the plan can be entered in the FMS/GPS
 --    * read the BRIEFING (client, payload, flight plan, goals, hard rules)
 --      and ACCEPT - or SKIP to draw another one
 --    * the clock starts the moment the wheels leave the runway
 --    * fly the plan leg by leg; the last leg is always home, land to a
---      full stop within 3 NM of where you started
+--      full stop within 5 NM of the departure airport
+--    * long cruise legs are boring: AUTO time warp (2x/4x/8x) speeds the sim
+--      up between fixes and drops back to 1x before the next one. The panel
+--      button and MissionGen/warp cycle it by hand.
 --    * the story picks the goals:
 --        VIP CHARTER      smooth cabin, gentle touchdown, on the clock
 --        AIR TAXI         hop several stops in sequence
@@ -37,6 +42,7 @@
 --  Commands (bindable in Settings > Keyboard / Joystick):
 --    MissionGen/generate      MissionGen/accept       MissionGen/skip
 --    MissionGen/abort         MissionGen/lesson       MissionGen/toggle_panel
+--    MissionGen/warp          MissionGen/warp_auto    MissionGen/load_fms
 --    MissionGen/report
 -- ============================================================================
 
@@ -48,10 +54,28 @@ MG_CONFIG = {
 
     cruise_tas_kt      = 300,     -- used for the clock budget math
     max_start_gs_kt    = 25,      -- generate only when this slow on the ground
-    fix_radius_nm      = 2.0,     -- this close counts as "fix reached"
-    home_radius_nm     = 3.0,     -- land this close to home to complete
+    fix_radius_nm      = 3.0,     -- this close counts as "fix reached"
+    home_radius_nm     = 5.0,     -- land this close to home to complete
     ground_quiet_kt    = 6,       -- "full stop" threshold
     reserve_kg         = 350,     -- reserve fuel the RESERVE rule checks
+
+    -- Airport-aware legs. XPLM navdata gives us real ICAO identifiers, so a
+    -- mission waypoint is a place you can actually find and enter in the FMS.
+    home_airport_max_nm = 5.0,    -- departure airport search radius
+    leg_airport_snap_nm = 35.0,   -- snap a projected fix to an airport this near
+    leg_airport_min_nm  = 6.0,    -- ignore an airport this close to the last one
+
+    -- Time warp for the cruise legs. Auto mode engages only in stable,
+    -- high-altitude cruise and always drops back to 1x before the next fix.
+    warp_enabled       = true,
+    warp_auto          = true,
+    warp_cruise        = 4,
+    warp_max           = 8,
+    warp_engage_nm     = 10.0,
+    warp_drop_nm       = 5.0,
+    warp_min_agl_ft    = 1500,
+    warp_max_bank_deg  = 15,
+    warp_max_vs_fpm    = 1200,
 
     qrh_bridge         = true,    -- use the QRH Failure Trainer when present
     persist            = true,    -- save best / streak / count to disk
@@ -87,6 +111,8 @@ dataref("mg_onground", "sim/flightmodel/failures/onground_any", "readonly")
 dataref("mg_fuel_kg",  "sim/flightmodel/weight/m_fuel_total", "readonly")
 dataref("mg_simtime",  "sim/time/total_running_time_sec", "readonly")
 dataref("mg_paused",   "sim/time/paused", "readonly")
+dataref("mg_magvar",   "sim/flightmodel/position/magnetic_variation", "readonly")
+dataref("mg_sim_speed", "sim/time/sim_speed", "writable")
 
 -- Written only by the RELIABILITY objective (when the QRH trainer is absent).
 -- The Failure Trainer already owns this DataRef whenever it is loaded, and
@@ -184,6 +210,12 @@ mg_buttons    = {}
 mg_toast_text = nil
 mg_toast_until = 0
 
+-- time warp state: who owns the sim-speed handle and whether auto is suspended
+mg_warp_owned  = false
+mg_warp_set    = 1
+mg_warp_manual = false
+mg_warp_last_t = 0
+
 -- --------------------------------------------------------------- HELPERS ---
 local function mg_rad(d) return d * math.pi / 180.0 end
 
@@ -228,6 +260,159 @@ local function mg_bearing(lat1, lon1, lat2, lon2)
     return (mg_atan2(y, x) * 180.0 / math.pi + 360.0) % 360.0
 end
 
+-- True bearing -> magnetic (the HSI and the panel both read magnetic).
+local function mg_mag_brg(true_brg)
+    return ((true_brg or 0) - (mg_magvar or 0) + 360.0) % 360.0
+end
+
+-- -------------------------------------------------------------- AIRPORTS ---
+-- FlyWithLua exposes the XPLMNavigation SDK (see the NG+ manual, section 9).
+-- The wrappers below are defensive: if a host build has no navdata, missions
+-- simply fall back to the old synthetic fixes.
+local MG_NAV_AIRPORT = xplm_Nav_Airport or 1
+
+local function mg_nav_airport_at(lat, lon)
+    if type(XPLMFindNavAid) ~= "function"
+        or type(XPLMGetNavAidInfo) ~= "function" then
+        return nil
+    end
+    local ok, ref = pcall(XPLMFindNavAid, nil, nil, lat, lon, nil,
+        MG_NAV_AIRPORT)
+    if not ok or ref == nil or ref == 0 or ref == -1 then return nil end
+
+    local ok2, atype, alat, alon, _elev, _freq, _hdg, aid, aname =
+        pcall(XPLMGetNavAidInfo, ref)
+    if not ok2 or type(alat) ~= "number" or type(alon) ~= "number" then
+        return nil
+    end
+    if atype ~= MG_NAV_AIRPORT then return nil end
+    local icao = (type(aid) == "string" and aid ~= "") and aid or "????"
+    return {
+        icao = icao,
+        name = (type(aname) == "string") and aname or "",
+        lat  = alat,
+        lon  = alon,
+    }
+end
+
+-- Nearest airport to the aircraft, but only if we are still parked at it.
+local function mg_home_airport(lat, lon)
+    local ap = mg_nav_airport_at(lat, lon)
+    if ap and mg_dist_nm(lat, lon, ap.lat, ap.lon)
+        <= MG_CONFIG.home_airport_max_nm then
+        return ap
+    end
+    return nil
+end
+
+-- ------------------------------------------------------------ TIME WARP ---
+local mg_toast   -- defined with the other helpers further down
+
+local function mg_warp_current()
+    return math.floor((mg_sim_speed or 1) + 0.5)
+end
+
+-- Write the sim-speed dataref, but only when this script owns it. In auto mode
+-- we must not fight the pilot (or another time-warp script) if they turned
+-- X-Plane's own time acceleration on.
+local function mg_warp_apply(speed, manual)
+    if not MG_CONFIG.warp_enabled then return end
+    speed = math.floor((speed or 1) + 0.5)
+    if speed < 1 then speed = 1 end
+    if speed > MG_CONFIG.warp_max then speed = MG_CONFIG.warp_max end
+
+    local cur = mg_warp_current()
+    if not manual and cur > 0 and cur ~= mg_warp_set then
+        -- The pilot (or another script) changed the time compression behind
+        -- our back. Stop auto mode instead of fighting them.
+        mg_warp_manual = true
+        mg_warp_owned  = false
+        return
+    end
+    if cur ~= speed then mg_sim_speed = speed end
+    mg_warp_set = speed
+    if speed > 1 then
+        mg_warp_owned = true
+    else
+        mg_warp_owned = false
+    end
+end
+
+local function mg_warp_reset()
+    if mg_warp_owned and mg_warp_current() ~= 1 then
+        mg_sim_speed = 1
+    end
+    mg_warp_owned  = false
+    mg_warp_set    = 1
+    mg_warp_manual = false
+    mg_warp_last_t = 0
+end
+
+-- Called once a second from mg_frame. Engages cruise warp far from the next
+-- fix, holds it through the middle of the leg, then drops to 1x for arrival.
+local function mg_warp_update(dt)
+    if not MG_CONFIG.warp_enabled then return end
+    mg_warp_last_t = mg_warp_last_t + dt
+    if mg_warp_last_t < 1.0 then return end
+    mg_warp_last_t = 0
+    if mg_state ~= MG_ACTIVE or not mg_mission then return end
+    if mg_warp_manual or (mg_paused or 0) == 1 then return end
+    if not MG_CONFIG.warp_auto then
+        -- Manual-only mode: never engage on our own, but clean up a warp we
+        -- previously owned.
+        if mg_warp_owned then mg_warp_apply(1, false) end
+        return
+    end
+
+    local cur = mg_warp_current()
+    if not mg_warp_owned and cur > 1 then
+        mg_warp_manual = true      -- pilot set the time compression by hand
+        return
+    end
+
+    local m      = mg_mission
+    local dist   = m.dist_next or 0
+    local bank   = math.abs(mg_bank or 0)
+    local agl_ft = (mg_agl or 0) * 3.28084
+    local stable = (mg_onground or 0) == 0
+                and agl_ft >= MG_CONFIG.warp_min_agl_ft
+                and bank <= MG_CONFIG.warp_max_bank_deg
+                and math.abs(mg_vs or 0) <= MG_CONFIG.warp_max_vs_fpm
+    local cruising = stable and (dist >= MG_CONFIG.warp_engage_nm
+        or (mg_warp_owned and mg_warp_set > 1
+            and dist > MG_CONFIG.warp_drop_nm))
+
+    mg_warp_apply(cruising and MG_CONFIG.warp_cruise or 1, false)
+end
+
+function mg_warp_cycle()
+    if not MG_CONFIG.warp_enabled then
+        mg_toast("TIME WARP DISABLED IN MG_CONFIG")
+        return false
+    end
+    local cur = mg_warp_current()
+    local maxw = MG_CONFIG.warp_max or 8
+    local nxt
+    if cur < 2 then nxt = 2
+    elseif cur < 4 and maxw >= 4 then nxt = 4
+    elseif cur < 8 and maxw >= 8 then nxt = 8
+    else nxt = 1 end
+
+    mg_warp_manual = true
+    mg_warp_apply(nxt, true)
+    mg_toast(string.format("TIME WARP x%d - AUTO PAUSED", nxt))
+    logMsg("Mission Gen: time warp x" .. nxt)
+    return true
+end
+
+function mg_warp_auto()
+    mg_warp_manual = false
+    mg_warp_last_t = 0
+    mg_toast("TIME WARP AUTO")
+    logMsg("Mission Gen: time warp returned to auto")
+    return true
+end
+
 local function mg_fmt_time(sec)
     sec = math.max(0, math.floor(sec or 0))
     return string.format("%d:%02d", math.floor(sec / 60), sec % 60)
@@ -240,7 +425,7 @@ local function mg_mark(done)
     return "[ ] "
 end
 
-local function mg_toast(text)
+function mg_toast(text)
     mg_toast_text  = text
     mg_toast_until = (mg_simtime or 0) + 3.0
 end
@@ -276,6 +461,20 @@ local function mg_wrap(text, max_px)
     end
     if cur ~= "" then lines[#lines + 1] = cur end
     return lines
+end
+
+-- Byte-safe truncation (X-Plane airport names contain UTF-8 umlauts).
+local function mg_trunc(text, max_bytes)
+    if not text or text == "" then return "" end
+    if #text <= max_bytes then return text end
+    local cut = max_bytes - 3
+    while cut > 0 do
+        local b = string.byte(text, cut + 1)
+        if not b or b < 128 or b >= 192 then break end
+        cut = cut - 1
+    end
+    if cut <= 0 then return "" end
+    return string.sub(text, 1, cut) .. "..."
 end
 
 local mg_name_used = {}
@@ -581,27 +780,57 @@ local MG_ARCH_WEIGHTS = {
 }
 
 -- ------------------------------------------------------------- GENERATE ----
-local function mg_build_legs(home_lat, home_lon, n_legs, diff)
+local function mg_build_legs(home, n_legs, diff)
+    local home_lat, home_lon = home.lat, home.lon
     local legs = {}
+    local used = {}
+    if home.icao then used[home.icao] = true end
+
     local lat, lon = home_lat, home_lon
     local brg = math.random(0, 359)
     local total = 0.0
-    for i = 1, n_legs - 1 do
+    for _ = 1, n_legs - 1 do
         local d = math.random(MG_DIFF_LEG_NM[diff][1], MG_DIFF_LEG_NM[diff][2])
         local nlat, nlon = mg_dest(lat, lon, brg, d)
+        local name, place, apt = mg_fix_name(), nil, false
+
+        -- Prefer a real airport near the projected point. That turns the
+        -- invisible synthetic fix into somewhere the pilot can look up,
+        -- enter in the FMS and actually find on the map.
+        local ap = mg_nav_airport_at(nlat, nlon)
+        if ap and not used[ap.icao] then
+            local snap = mg_dist_nm(nlat, nlon, ap.lat, ap.lon)
+            local from_last = mg_dist_nm(lat, lon, ap.lat, ap.lon)
+            if snap <= MG_CONFIG.leg_airport_snap_nm
+                and from_last >= MG_CONFIG.leg_airport_min_nm then
+                nlat, nlon = ap.lat, ap.lon
+                d = from_last
+                name, place, apt = ap.icao, ap.name, true
+                used[ap.icao] = true
+            end
+        end
+
+        local out_brg = mg_bearing(lat, lon, nlat, nlon)
         legs[#legs + 1] = {
-            name = mg_fix_name(), lat = nlat, lon = nlon,
-            brg = brg, dist_nm = d,
+            name = name, place = place, apt = apt,
+            lat = nlat, lon = nlon,
+            brg = out_brg, brg_mag = mg_mag_brg(out_brg),
+            dist_nm = d,
         }
         total = total + d
         lat, lon = nlat, nlon
         brg = (brg + 180 + math.random(-70, 70)) % 360
     end
-    -- final leg: back home
+
+    -- final leg: back home (the departure airport when navdata knows it)
     local home_d = mg_dist_nm(lat, lon, home_lat, home_lon)
+    local hbrg   = mg_bearing(lat, lon, home_lat, home_lon)
     legs[#legs + 1] = {
-        name = "HOME", lat = home_lat, lon = home_lon,
-        brg = mg_bearing(lat, lon, home_lat, home_lon),
+        name  = home.icao or "HOME",
+        place = home.name,
+        apt   = home.icao ~= nil,
+        lat   = home_lat, lon = home_lon,
+        brg   = hbrg, brg_mag = mg_mag_brg(hbrg),
         dist_nm = home_d, home = true,
     }
     return legs, total + home_d
@@ -616,10 +845,18 @@ local function mg_build_mission()
         or MG_ARCHETYPES[mg_pick(MG_ARCH_WEIGHTS)]
     local n_legs = math.max(2, arch.legs(diff))
 
-    local home_lat = mg_lat or 0.0
-    local home_lon = mg_lon or 0.0
+    local start_lat = mg_lat or 0.0
+    local start_lon = mg_lon or 0.0
+    local home_ap   = mg_home_airport(start_lat, start_lon)
+    local home = {
+        lat  = home_ap and home_ap.lat or start_lat,
+        lon  = home_ap and home_ap.lon or start_lon,
+        icao = home_ap and home_ap.icao or nil,
+        name = home_ap and home_ap.name or nil,
+    }
+
     mg_name_used = {}
-    local legs, total_nm = mg_build_legs(home_lat, home_lon, n_legs, diff)
+    local legs, total_nm = mg_build_legs(home, n_legs, diff)
 
     local budget = math.floor((total_nm / MG_CONFIG.cruise_tas_kt)
         * 3600 * MG_DIFF_TIME[diff] * arch.clock + 300)
@@ -638,8 +875,12 @@ local function mg_build_mission()
         legs        = legs,
         legs_done   = 0,
         total_nm    = total_nm,
-        home_lat    = home_lat,
-        home_lon    = home_lon,
+        home_lat    = home.lat,
+        home_lon    = home.lon,
+        home_icao   = home.icao,
+        home_name   = home.name,
+        start_lat   = start_lat,
+        start_lon   = start_lon,
         budget_s    = budget,
         constraints = cids,
         cstate      = cstate,
@@ -701,6 +942,7 @@ function mg_generate()
         mg_clear_emergency(mg_mission)
     end
 
+    mg_warp_reset()
     mg_mission = mg_build_mission()
     mg_result  = nil
     mg_clock   = 0
@@ -708,9 +950,9 @@ function mg_generate()
 
     local m = mg_mission
     logMsg(string.format(
-        "Mission Gen: briefing '%s' [%s] %.0f NM, %d legs, budget %s",
+        "Mission Gen: briefing '%s' [%s] %.0f NM, %d legs, budget %s, home %s",
         m.title, MG_DIFF_NAMES[m.difficulty], m.total_nm, #m.legs,
-        mg_fmt_time(m.budget_s)))
+        mg_fmt_time(m.budget_s), m.home_icao or "unnamed strip"))
     mg_toast("BRIEFING READY - " .. m.title)
     return true
 end
@@ -757,6 +999,7 @@ function mg_abort()
         logMsg("Mission Gen: briefing discarded " .. m.title)
         return
     end
+    mg_warp_reset()
     mg_result = {
         ok    = false,
         score = 0,
@@ -892,6 +1135,7 @@ local function mg_finish(success, reason)
 
     mg_save_progress()
     mg_clear_emergency(m)
+    mg_warp_reset()
 
     mg_result = {
         ok    = success,
@@ -915,7 +1159,7 @@ function mg_frame()
     local now = mg_simtime or 0
     local dt  = now - mg_last_t
     mg_last_t = now
-    if dt < 0 or dt > 2 then dt = 0 end
+    if dt < 0 then dt = 0 elseif dt > 10 then dt = 10 end
     if (mg_paused or 0) == 1 then dt = 0 end
 
     local m = mg_mission
@@ -929,6 +1173,7 @@ function mg_frame()
     if nxt then
         m.dist_next = mg_dist_nm(lat, lon, nxt.lat, nxt.lon)
         m.brg_next  = mg_bearing(lat, lon, nxt.lat, nxt.lon)
+        m.brg_next_mag = mg_mag_brg(m.brg_next)
     end
 
     if mg_state == MG_ARMED then
@@ -957,16 +1202,19 @@ function mg_frame()
     if nxt and (m.dist_next or 99)
         <= (nxt.home and MG_CONFIG.home_radius_nm or MG_CONFIG.fix_radius_nm) then
         m.legs_done = m.legs_done + 1
+        local after = m.legs[m.legs_done + 1]
         if nxt.home then
             mg_toast("HOME LEG REACHED - LAND AND FULL STOP")
         else
-            mg_toast(string.format("LEG %d/%d DONE - NEXT %s  %03.0f DEG",
-                m.legs_done, #m.legs, m.legs[m.legs_done + 1].name,
-                m.legs[m.legs_done + 1].brg or 0))
+            mg_toast(string.format("LEG %d/%d DONE - NEXT %s  %03.0f MAG",
+                m.legs_done, #m.legs, after.name, after.brg_mag or 0))
         end
         logMsg(string.format("Mission Gen: leg %s reached at %.0f ft after %s",
             nxt.name, alt_ft, mg_fmt_time(mg_clock)))
     end
+
+    -- cruise time compression (1x near fixes and in any non-stable attitude)
+    mg_warp_update(dt)
 
     -- special objectives
     if m.mach_target and (mg_onground or 0) == 0
@@ -1018,6 +1266,9 @@ function mg_frame()
         end
         logMsg(string.format("Mission Gen: touchdown %.0f fpm",
             m.touchdown_fpm))
+        if m.legs_done < #m.legs then
+            mg_toast("TOUCHDOWN - RETURN HOME TO COMPLETE")
+        end
     end
     m.was_onground = ong
 
@@ -1059,10 +1310,18 @@ local function mg_draw_brief(rows, row, spacer, button, st)
     end
     spacer()
     row("FLIGHT PLAN  (fly in order, last leg home)", "", st.subhdr)
+    row("  DEPART " .. (m.home_icao or "HOME")
+        .. (m.home_name and m.home_name ~= ""
+            and (" - " .. mg_trunc(m.home_name, 34)) or ""),
+        "", st.gold)
     for i, leg in ipairs(m.legs) do
-        row(string.format("  %d  %-7s %03.0f DEG / %.0f NM",
-                i, leg.name, leg.brg, leg.dist_nm),
-            leg.home and "FULL STOP" or "", leg.home and st.gold or st.label)
+        local label = string.format("  %d  %-5s %03.0f MAG / %3.0f NM",
+            i, leg.name, leg.brg_mag or leg.brg or 0, leg.dist_nm or 0)
+        if leg.place and leg.place ~= "" and not leg.home then
+            label = label .. "  " .. mg_trunc(leg.place, 24)
+        end
+        row(label, leg.home and "FULL STOP" or "",
+            leg.home and st.gold or (leg.apt and st.value or st.label))
     end
     spacer()
     row("OBJECTIVES", "", st.subhdr)
@@ -1101,8 +1360,13 @@ local function mg_draw_brief(rows, row, spacer, button, st)
     spacer()
     row(string.format("CLOCK  %s  -  STARTS AT WHEELS UP",
             mg_fmt_time(m.budget_s)), "", st.value)
+    if MG_CONFIG.warp_enabled then
+        row(string.format("CRUISE WARP AUTO x%d - MissionGen/warp TO CHANGE",
+            MG_CONFIG.warp_cruise), "", st.label)
+    end
     spacer()
     button("accept", "ACCEPT MISSION  (click)", st.ok)
+    button("fms",    "LOAD PLAN INTO FMS  (click)", st.subhdr)
     button("skip",   "SKIP - NEW BRIEFING  (click)", st.subhdr)
 end
 
@@ -1128,13 +1392,18 @@ local function mg_draw_flight(rows, row, spacer, button, st)
         if done then
             rtext, rcol = "DONE", st.ok
         elseif i == m.legs_done + 1 then
-            rtext = string.format("%03.0f  %4.1f NM",
-                m.brg_next or leg.brg, m.dist_next or leg.dist_nm)
+            rtext = string.format("%03.0f MAG  %4.1f NM",
+                m.brg_next_mag or leg.brg_mag or leg.brg or 0,
+                m.dist_next or leg.dist_nm or 0)
             rcol  = st.gold
         else
-            rtext, rcol = string.format("%.0f NM", leg.dist_nm), st.dim
+            rtext, rcol = string.format("%.0f NM", leg.dist_nm or 0), st.dim
         end
-        row(mg_mark(done) .. leg.name, rtext,
+        local label = mg_mark(done) .. leg.name
+        if i == m.legs_done + 1 and leg.place and leg.place ~= "" then
+            label = label .. "  " .. mg_trunc(leg.place, 14)
+        end
+        row(label, rtext,
             done and st.ok or (i == m.legs_done + 1 and st.value or st.dim), rcol)
     end
     row("", string.format("HOME %4.1f NM", m.dist_home or 0.0), st.dim, st.dim)
@@ -1205,6 +1474,11 @@ local function mg_draw_flight(rows, row, spacer, button, st)
         row("RULE  " .. (cs.label or def.label), rtext, st.label, rcol)
     end
     spacer()
+    if MG_CONFIG.warp_enabled then
+        button("warp", string.format("TIME WARP  x%d  (%s)  - CLICK",
+            mg_warp_current(), mg_warp_manual and "MANUAL" or "AUTO"),
+            st.subhdr)
+    end
     button("abort", "ABORT MISSION", st.warn)
 end
 
@@ -1338,6 +1612,8 @@ function mg_mouse_click()
             if b.key == "gen" then mg_generate()
             elseif b.key == "accept" then mg_accept()
             elseif b.key == "skip" then mg_skip()
+            elseif b.key == "fms" then mg_load_fms()
+            elseif b.key == "warp" then mg_warp_cycle()
             elseif b.key == "abort" then mg_abort()
             end
             return
@@ -1359,16 +1635,21 @@ function mg_report()
     logMsg("Mission Gen: report ----------------------------------")
     logMsg(string.format("  state=%s streak=%d best=%d flown=%d",
         tostring(mg_state), mg_streak, mg_best, mg_completed))
+    logMsg(string.format("  time warp x%d (manual=%s owned=%s)",
+        mg_warp_current(), tostring(mg_warp_manual),
+        tostring(mg_warp_owned)))
     logMsg("  progress file: " .. mg_progress_path())
     local m = mg_mission
     if m then
         logMsg(string.format("  mission=%s [%s] budget=%s clock=%s",
             m.title, MG_DIFF_NAMES[m.difficulty],
             mg_fmt_time(m.budget_s), mg_fmt_time(mg_clock)))
+        logMsg(string.format("  home=%s %s", m.home_icao or "???",
+            m.home_name or ""))
         for i, leg in ipairs(m.legs) do
-            logMsg(string.format("  leg %d %-7s %03.0f/%4.0f NM %s",
-                i, leg.name, leg.brg, leg.dist_nm,
-                (i <= (m.legs_done or 0)) and "DONE" or ""))
+            logMsg(string.format("  leg %d %-5s %03.0fM/%4.0f NM %-28s %s",
+                i, leg.name, leg.brg_mag or leg.brg, leg.dist_nm,
+                leg.place or "", (i <= (m.legs_done or 0)) and "DONE" or ""))
         end
         for _, id in ipairs(m.constraints) do
             local cs = m.cstate[id]
@@ -1378,6 +1659,33 @@ function mg_report()
                 cs and cs.viol or 0))
         end
     end
+end
+
+-- Load the mission flight plan into the default X-Plane FMS as lat/lon
+-- entries. Optional and explicit: only runs when the pilot asks for it.
+function mg_load_fms()
+    local m = mg_mission
+    if not m then
+        mg_toast("GENERATE A MISSION FIRST")
+        return false
+    end
+    if type(XPLMClearFMSEntry) ~= "function"
+        or type(XPLMSetFMSEntryLatLon) ~= "function" then
+        mg_toast("FMS ENTRY NOT AVAILABLE IN THIS BUILD")
+        return false
+    end
+    for i = 0, 20 do pcall(XPLMClearFMSEntry, i) end
+    local n = 0
+    for i, leg in ipairs(m.legs) do
+        if pcall(XPLMSetFMSEntryLatLon, i - 1, leg.lat, leg.lon, 0) then
+            n = n + 1
+        else
+            break
+        end
+    end
+    mg_toast(string.format("FMS: %d LEGS LOADED", n))
+    logMsg(string.format("Mission Gen: loaded %d legs into the FMS", n))
+    return n > 0
 end
 
 -- --------------------------------------------------------- LIFECYCLE -------
@@ -1403,6 +1711,12 @@ create_command("MissionGen/lesson",
     "mg_generate_archetype('school')", "", "")
 create_command("MissionGen/abort",
     "Mission Gen: abort the active mission", "mg_abort()", "", "")
+create_command("MissionGen/warp",
+    "Mission Gen: cycle time warp 1x/2x/4x/8x", "mg_warp_cycle()", "", "")
+create_command("MissionGen/warp_auto",
+    "Mission Gen: hand time warp back to automatic", "mg_warp_auto()", "", "")
+create_command("MissionGen/load_fms",
+    "Mission Gen: load the mission plan into the FMS", "mg_load_fms()", "", "")
 create_command("MissionGen/toggle_panel",
     "Mission Gen: toggle the mission panel", "mg_toggle_panel()", "", "")
 create_command("MissionGen/report",
@@ -1415,4 +1729,7 @@ add_macro("Mission Gen: accept", "mg_accept()")
 add_macro("Mission Gen: skip briefing", "mg_skip()")
 add_macro("Mission Gen: flight school lesson", "mg_generate_archetype('school')")
 add_macro("Mission Gen: abort", "mg_abort()")
+add_macro("Mission Gen: time warp 1x/2x/4x/8x", "mg_warp_cycle()")
+add_macro("Mission Gen: time warp auto", "mg_warp_auto()")
+add_macro("Mission Gen: load plan into FMS", "mg_load_fms()")
 add_macro("Mission Gen: status report", "mg_report()")
