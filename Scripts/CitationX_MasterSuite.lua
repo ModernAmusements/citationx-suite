@@ -270,6 +270,7 @@ local stick_base_raw = {}
 -- They are skipped by detection until their value comes back to center.
 local stick_dead_axis  = {}
 local stick_hdg_hold_s = 0.0
+local stick_hdg_diag_at = 0.0
 
 -- Center a raw 0..1 axis value to -1..1 around CONFIG.stick_hdg_center
 -- (used by the AXIS MONITOR display only).
@@ -1034,6 +1035,21 @@ function citationx_frame()
                         logMsg("Citation X Suite: heading knob locked to raw axis "
                             .. axis .. " (right stick)")
                     end
+                elseif now >= stick_hdg_diag_at then
+                    -- Nothing eligible yet. Log every live axis (raw index,
+                    -- deflection, assignment enum, learned rest) once every
+                    -- 10 s so a bad pick can be pinned without guessing.
+                    stick_hdg_diag_at = now + 10.0
+                    local parts = {}
+                    for i = 0, 31 do
+                        local raw = joy_raw_axes[i]
+                        if raw ~= nil then
+                            parts[#parts + 1] = string.format("%d:d%.2f/a%d/b%.2f",
+                                i, math.abs(stick_axis_deflection(i)),
+                                joy_raw_assign[i] or 0, stick_base_raw[i] or -1)
+                        end
+                    end
+                    logMsg("Citation X Suite: HDG scan " .. table.concat(parts, " "))
                 end
             end
         end
