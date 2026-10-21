@@ -345,8 +345,11 @@ FlyWithLua helper script that declares `sim_time` will collide again — keep th
   mod's AviTab layer only: `AviTab.json`, `objects/ipad/*`, `plugins/xlua/scripts/avitab_guard`
   and acf objects 25/26 (`xPad_arm.obj`, `Ipad.obj`, both hidden by `citationx/gtnxi/hide_avitab`).
   The GTN object (obja 27), `TDSGTN.ini`, the GTN bezel meshes and the 14 TDS manipulator blocks
-  in `cockpit_panel_interactive.obj` were stripped; the two `vrconfig` knobs were restored to
-  the stock `sim/instruments/map_zoom_*` commands.
+  in `cockpit_panel_interactive.obj` were stripped; the two now-orphaned `vrconfig` blocks
+  (`map_zoom`, `map_copilot_zoom`) were removed as well. X-Plane aborts vrconfig parsing
+  ("minor problem parsing the VRCONFIG") when a `BEGIN_MANIP` has no matching object
+  manipulator, so every remaining block was re-checked against the object (56/56 match).
+  Those two FMC zoom knobs simply have no VR manipulator any more.
 - `acf/_name` = `Cessna Citation X AviTab`, `acf/_ICAO` stays `C750` so the suite and KPCrew
   treat it like the stock aircraft. Stock `Cessna Citation X` untouched.
 - AviTab.json's panel rect (1358,235,688,775) is sized for the mod's 2048² `Panel.png`; keep
