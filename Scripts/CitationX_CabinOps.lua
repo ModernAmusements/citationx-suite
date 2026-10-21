@@ -22,9 +22,9 @@
 
 CAB_CONFIG = {
     panel_enabled    = true,
-    panel_w          = 340,
+    panel_w          = 360,
     panel_bottom     = 60,     -- panel sits bottom-right
-    row_h            = 17,
+    row_h            = 22,
     pax_total        = 8,      -- passengers (C750 cabin is 8-12 typical)
     boarding_seconds = 150,    -- real seconds from START to boarding complete
     require_c750     = true,   -- only run the flow when flying the C750
@@ -311,38 +311,38 @@ function cab_draw()
     local x   = sw - w - 20
     local bottom = cfg.panel_bottom
 
-    local h = 20 + 36 + 7 * rh + 14
+    local h = 24 + 42 + 7 * rh + 16
     local top = bottom + h
 
     XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0)
 
     bar(x, bottom, top, w, CS.bg, 0.75)
-    bar(x, top - 20, top, w, CS.header_bg, 0.92)
+    bar(x, top - 24, top, w, CS.header_bg, 0.92)
     bar(x, top - 2, top, w, CS.accent)
-    txt(x + 10, top - 15, "CABIN & GROUND OPS", CS.accent)
-    txt_right(x + w - 10, top - 15, PHASE_NAME[phase + 1],
+    txt(x + 10, top - 17, "CABIN & GROUND OPS", CS.accent)
+    txt_right(x + w - 10, top - 17, PHASE_NAME[phase + 1],
         phase == PHASE_STANDBY and CS.dim or CS.ok)
 
-    local y = top - 20
+    local y = top - 24
 
     -- pax progress
-    txt(x + 10, y - 10, string.format("PAX  %d / %d",
+    txt(x + 10, y - 13, string.format("PAX  %d / %d",
         math.floor(pax_boarded + 0.5), cfg.pax_total), CS.value)
     if phase == PHASE_DEPARTED then
-        txt_right(x + w - 10, y - 10, "ALL ABOARD", CS.ok)
+        txt_right(x + w - 10, y - 13, "ALL ABOARD", CS.ok)
     elseif phase == PHASE_PREP then
-        txt_right(x + w - 10, y - 10, "PREFLIGHT", CS.warn)
+        txt_right(x + w - 10, y - 13, "PREFLIGHT", CS.warn)
     else
-        txt_right(x + w - 10, y - 10,
+        txt_right(x + w - 10, y - 13,
             string.format("%d%%", math.floor(100 * pax_boarded / cfg.pax_total + 0.5)),
             CS.accent)
     end
     -- progress bar
-    local pbx, pby, pbw = x + 10, y - 22, w - 20
-    bar(pbx, pby, pby + 6, pbw, {0.05, 0.10, 0.14}, 0.9)
+    local pbx, pby, pbw = x + 10, y - 28, w - 20
+    bar(pbx, pby, pby + 8, pbw, {0.05, 0.10, 0.14}, 0.9)
     local frac = pax_boarded / cfg.pax_total
-    if frac > 0 then bar(pbx, pby, pby + 6, pbw * frac, CS.accent, 0.95) end
-    y = y - 36
+    if frac > 0 then bar(pbx, pby, pby + 8, pbw * frac, CS.accent, 0.95) end
+    y = y - 44
 
     -- status / action rows
     local rows = {}
@@ -369,21 +369,21 @@ function cab_draw()
         if key == "start" or key == "skip" then
             bar(x + 8, y - rh + 6, y + 4, w - 16,
                 key == "start" and CS.ok or CS.warn, 0.75)
-            txt(x + 16, y - 11, name, {0.05, 0.05, 0.05})
+            txt(x + 16, y - 16, name, {0.05, 0.05, 0.05})
         else
             glColor4f((on == true) and CS.ok[1] or CS.dim[1],
                       (on == true) and CS.ok[2] or CS.dim[2],
                       (on == true) and CS.ok[3] or CS.dim[3], 1.0)
-            glRectf(x + 10, y - 10, x + 15, y - 5)
-            txt(x + 24, y - 11, name, col)
+            glRectf(x + 10, y - 13, x + 16, y - 7)
+            txt(x + 26, y - 16, name, col)
             if key ~= "trucks" then
-                txt_right(x + w - 10, y - 11, on == true and "ON" or "OFF",
+                txt_right(x + w - 10, y - 16, on == true and "ON" or "OFF",
                     on == true and CS.ok or CS.dim)
             end
         end
 
         cb_rows[#cb_rows + 1] = {
-            key = key, x0 = x, x1 = x + w, y0 = y - rh + 5, y1 = y + 5,
+            key = key, x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
         }
         y = y - rh
     end

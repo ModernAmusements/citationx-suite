@@ -2,14 +2,64 @@
 
 Last updated: 2026-10-21
 
+## Session handoff — read this first
+
+This session repaired the panel layout and un-quarantined KPCrew. Everything below passed
+offline harnesses; **the one thing still outstanding is a single in-sim confirmation run.**
+
+### What changed this session
+
+| Area | Change |
+| --- | --- |
+| Mission generator | **Deleted** (script, test, progress file, quarantine copy) |
+| Panel spacing | `row_h` 17→22, `status_row_h` 15→20, `sys_row_h` 15→19; panels widened |
+| HUD | 3 new clickable rows: `CABIN OPS`, `QRH TRAINER`, `LANDING PERF` (13 total) |
+| KPCrew | 8 missing `C750/*Definitions.lua` added; `metargen.lua` dataref bugs fixed |
+| Tooling | 6 offline harnesses; `luajit` installed for correct Lua semantics |
+
+### Verification status
+
+```
+syntax ........................ ok
+runtime load (LuaJIT, shared) .. 52 bindings, 0 failures, 0 problems
+dataref bindings .............. ok
+kpcrew require graph (C750) ... 0 missing
+mastersuite smoke ............. PASSED
+hud toggles smoke ............. PASSED
+panel geometry ................ PASSED (21 checks)
+```
+
+### The one open item
+
+**No in-sim run has happened since these edits.** Reload Lua in X-Plane
+(*FlyWithLua → Reload all Lua script files*), then check `Log.txt` for
+`FlyWithLua Error:` and `Moved Bad Script`. Expected: neither appears, and
+`All script files loaded successfully.` is the last loading line.
+
+If something does appear, the harnesses below reproduce the load path offline —
+add the failing script to `Scripts/` and run `luajit tests/probe_load_order.lua`.
+
+## Current runtime state (2026-10-21, after the KPCrew repair)
+- **Suite scripts (tracked):** `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
+  `CitationX_CabinOps.lua`. All three load clean; no `FlyWithLua Error:` lines.
+- **Mission Generator: deleted 2026-10-21** at the user's request, together with
+  `tests/smoke_mission.lua`. The `MissionGen/*` commands, the briefing panel and the cruise
+  time warp no longer exist. Do not resurrect it without being asked.
+- **Third-party add-ons (untracked, now loading):** KPCrew 2.3 (`kpcrew23.lua`, `kppanels.lua`,
+  `kpxbrief.lua`, `kpsoundmute.lua`, `kpredline.lua`; modules in `Modules/kpcrew*`),
+  `LandingPerformance.lua` (landing scoring), `Sim_Rate.lua` (ground-speed compression).
+  All five KPCrew scripts were in quarantine at the start of the session and now load.
+- **Panel spacing** was widened on request (`row_h` 17 → 22, `status_row_h` 15 → 20,
+  `sys_row_h` 15 → 19) because the text was too cramped.
+- **Not installed:** karlvr Citation X patches, Saitek panel config (Xsaitekpanels absent),
+  Long Flights Compression and Smart Time Accelerator (both login-gated).
+
 ## Environment
 - X-Plane 12: `/Users/modernamusmenet/X-Plane 12` (macOS, arm64)
 - FlyWithLua NG+ 2.8.16 (mac_x64)
 - Active scripts in `Scripts/`: `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
-  `CitationX_CabinOps.lua`, `LandingPerformance.lua`; `CitationX_MissionGenerator.lua` is
-  present but **disabled** (`MG_CONFIG.enabled = false`, returns before registering
-  anything). Third-party add-ons `kpcrew23.lua` (+ optional kpcrew tools) and `Sim_Rate.lua`
-  are also installed (see section 10).
+  `CitationX_CabinOps.lua`, `LandingPerformance.lua`, `Sim_Rate.lua`, `kpcrew23.lua`,
+  `kppanels.lua`, `kpxbrief.lua`, `kpredline.lua`, `kpsoundmute.lua`.
 - Controller: Sony DUALSHOCK 4 (VID 054c:09cc), enumerated twice — USB and Bluetooth
 
 ## Work completed (2026-10-19)
@@ -34,6 +84,11 @@ Last updated: 2026-10-21
 - Log line when locked: `Citation X Suite: heading knob locked to raw axis N (right stick)`.
 
 ### 3. Mission generator (`CitationX_MissionGenerator.lua`)
+
+> **ARCHIVED — this script no longer exists.** Sections 3, 5, 8, 9 and 11 below describe work
+> done on the mission generator between 2026-10-19 and 2026-10-21. It was deleted at the user's
+> request; see §11. They are kept only as history of what was tried.
+
 - Bottom-center panel. Missions only generate on the ground (< 25 kt); the clock starts at
   wheels up.
 - Story missions with briefing → accept/skip → flight → debrief pages. See the 2026-10-20
@@ -140,27 +195,160 @@ Last updated: 2026-10-21
   duplicate command names and no duplicate writable DataRefs with the suite. The add-ons are
   ignored by git and are **not** part of the citationx-suite repository.
 
-### 11. Mission Generator disabled (2026-10-21)
-- `MG_CONFIG.enabled = false` by default. The guard sits immediately after the config table
-  and returns before any dataref, command, macro, draw or frame callback is registered.
-  Result: no mission panel and no sim-speed time warp while kpcrew/SimRate are in use.
-- `tests/smoke_mission.lua` sets `MG_ENABLED_OVERRIDE = true` before `dofile()` so the full
-  mission suite still runs in CI/local tests.
-- Re-enable with one edit: `MG_CONFIG.enabled = true` (or define
-  `MG_ENABLED_OVERRIDE = true` before loading), then reload Lua scripts.
+### 11. Mission Generator disabled, then deleted (2026-10-21)
+- First disabled behind `MG_CONFIG.enabled = false`, then **deleted outright** at the user's
+  request together with `tests/smoke_mission.lua` and the stale quarantine copy.
+- Nothing in the repo references `MissionGen` any more. The remaining suite is the HUD, the
+  QRH trainer and the cabin-ops flow.
+
+### 12. KPCrew 2.3 C750 scripts un-quarantined (2026-10-21)
+
+`kpcrew23.lua`, `kppanels.lua` and `kpxbrief.lua` were all being moved to
+`Scripts (Quarantine)` on every load with
+
+```
+FlyWithLua Error: CopyDataRefsToLua() failed, can't execute script file: .../kpcrew23.lua
+```
+
+**Root cause (proven, not guessed).** Every DFLT system module ends with
+
+```lua
+local def = require("kpcrew.systems." .. kc_acf_icao .. ".sysLightsDefinitions")
+```
+
+KPCrew 2.3-alpha11 ships `Modules/kpcrew/systems/C750/sys*.lua` but **never shipped the matching
+`C750/*Definitions.lua` files**. Every C750 module requires the DFLT module first, and with
+`kc_acf_icao == "C750"` that `require` resolved to a non-existent file. It aborted the whole
+script chunk, which FlyWithLua reports as the misleading `CopyDataRefsToLua() failed` message.
+
+Eight requires were unresolvable: `sysAice`, `sysAir`, `sysControls`, `sysElectric`,
+`sysEngines`, `sysFuel`, `sysHydraulic`, `sysLights` — all `…Definitions`.
+
+**This is not C750-specific.** Sweeping every aircraft with
+`lua tests/check_kpcrew_modules.lua --all` shows the same gap on 28 of the 34 aircraft
+directories: A306, A33L, A3TL, ADC3, B46X, B738, B742, B744, B748, B7x7, C172, E1FF, E1XX,
+E55P, EPIC, ER1X, EVIC, MD82, MD88, PC12, SF34, SF50, TMPL and more, each missing 8. Only five
+directories ship `*Definitions.lua` at all (B737, C510, C750, DFLT, DHC8). KPCrew 2.3-alpha11 is
+incomplete upstream; only the C750 path was repaired here because that is the aircraft this
+install flies.
+
+**Fix.** Added the eight missing `Modules/kpcrew/systems/C750/<sys>Definitions.lua` files as thin
+wrappers: `return require("kpcrew.systems.DFLT.<sys>Definitions")`. That is correct because the
+C750 system modules override every switch they care about immediately after loading the DFLT
+module, and requiring the DFLT table also sets the `kc_has_*` / `kc_num_*` capability globals
+that the DFLT module reads.
+
+**Second defect, same file chain.** `Modules/kpcrew/metargen.lua` bound two `float[13]` arrays as
+scalars:
+
+```
+dataref("temperatures_aloft_deg_c","sim/weather/aircraft/temperatures_aloft_deg_c","readonly")
+dataref("dewpoint_deg_c",         "sim/weather/aircraft/dewpoint_deg_c",         "readonly")
+```
+
+FlyWithLua logged `should have an index. I set it to 0.` for both. They are now `dataref_table`
+bindings, and the METAR builder reads element `[0]` into locals instead of writing the formatted
+string back into the dataref. `sim/weather/visibility_reported_m` was marked **REPLACED** in
+`DataRefs.txt`; it is no longer bound and the ceiling check uses the statute-mile ref.
+
+**Verification.** Three offline harnesses were added so this is reproducible without launching
+X-Plane:
+
+- `tests/check_datarefs.lua` — parses `DataRefs.txt`, flags `dataref()` on a missing path or on
+  an array without an index, and accepts the legal 4th-argument form.
+- `tests/check_kpcrew_modules.lua` — walks the module tree, computes which DFLT
+  system modules each aircraft actually inherits from disk, and reports modules that do not
+  exist. For C750: 8 missing before the fix, 0 after. Takes an ICAO argument
+  (`lua tests/check_kpcrew_modules.lua B738`) or `--all` to sweep every aircraft.
+- `tests/probe_kpcrew.lua` — loads a KPCrew script against a mock FlyWithLua API and reports the
+  exact `require`/line that aborted the chunk.
+- `tests/probe_load_order.lua` — **the authoritative one.** Loads every script in `Scripts/` in
+  FlyWithLua's alphabetical order in one shared LuaJIT state, exactly like X-Plane.
+
+**Causation proven by A/B, not assumed.** Removing the eight `C750/*Definitions.lua` files and
+re-running `probe_load_order.lua` reproduces the original failure verbatim:
+
+```
+FAIL  kpcrew23.lua   Modules/kpcrew/systems/DFLT/sysLights.lua:90:
+                     module 'kpcrew.systems.C750.sysLightsDefinitions' not found
+FAIL  kppanels.lua   Scripts/kppanels.lua:35:
+                     loop or previous error loading module 'kpcrew.systems.C750.sysLights'
+```
+
+Restoring them yields `0 load failure(s), 0 binding problem(s)` across all 10 scripts.
+
+**Why `kpxbrief.lua` failed too — it was a cascade, not its own bug.** `kpxbrief` never requires
+`kpcrew.preferences.defaultPrefs`; it uses the globals `activePrefSet` and `activeBckVars` that
+`kpcrew23.lua` creates. FlyWithLua loads `Scripts/` alphabetically, so `kpcrew23` normally runs
+first and defines them. Once `kpcrew23` was quarantined, `kpxbrief` then died at line 1640 with
+`attempt to index global 'activePrefSet' (a nil value)`. Fixing `kpcrew23` fixes `kpxbrief`
+automatically. **Caveat:** `kpxbrief` still will not load on its own without `kpcrew23.lua`
+present — that is upstream's design, and the `kpxbrief` test in isolation must not be used as a
+pass/fail signal.
+
+**Lua version matters for the harnesses.** FlyWithLua runs LuaJIT (Lua 5.1). The local `lua` is
+5.5, which removed `module()` and makes loop variables const, so KPCrew modules abort under it
+with errors like `attempt to call a nil value (global 'module')` and
+`attempt to assign to const variable 'k'` — neither of which happens in-sim. `luajit` was
+installed via Homebrew and is what `probe_load_order.lua` and the smoke tests should be run
+with.
+
+### 13. Panel spacing widened (2026-10-21)
+- `CitationX_MasterSuite.lua`: `HUD_STYLE.row_h` 17 → 22, `status_row_h` 15 → 20,
+  `sys_row_h` 15 → 19, plus matching header/group/pill/axis-monitor offsets.
+- `CitationX_CabinOps.lua`: `CAB_CONFIG.row_h` 17 → 22, panel width 340 → 360, inner offsets
+  retuned so nothing clips.
+- `CitationX_FailureTrainer.lua`: `TRAINER_CONFIG.row_h` 17 → 22, panel width 430 → 460, same
+  treatment.
+- The rows are still anchored bottom-up, per FlyWithLua's bottom-left origin.
+
+### 14. HUD toggles every control (2026-10-21)
+- `SUITE_MODULES` grew from 10 to 13 rows: `cabin`, `qrh`, `landperf` were added so the three
+  sibling scripts' panels are switchable from the HUD without leaving the cockpit.
+- Each new row is nil-guarded (`type(CAB_CONFIG) == "table"`, `type(qrh_toggle_panel) ==
+  "function"`, …), so a missing script shows `ABSENT` and clicking it is a no-op instead of a
+  Lua error.
+- `tests/smoke_hud_toggles.lua` asserts every row has `key`/`label`/`get`/`set`/`state`, that
+  keys are unique, that `state()` returns a string plus a colour, that the sibling rows are safe
+  with the other scripts absent, and that the draw callback runs.
+
+## Not yet verified in-sim (as of 2026-10-21)
+
+Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
+record these as confirmed working:
+
+- The **visual result** of the spacing change. Geometry is now *measured*, not assumed
+  (`tests/smoke_panel_geometry.lua`: 21 checks — panels fit the screen, no vertical text
+  collisions, no text overflowing its panel, click sweep reaches every row). What remains
+  unproven is purely aesthetic: whether 22 px rows look right to the eye and whether the three
+  panels still avoid each other on other resolutions.
+- The HUD rows' live readouts (`ABSENT` / `ON` / `SHOWN`) as rendered text. Clickability and
+  toggle wiring are proven by the click sweep.
+- The KPCrew copilot, panels and briefings. Only the *loading* path was fixed; the KPCrew UI,
+  the SOP checklists and the SimBrief import have had no functional test.
+- The `metargen.lua` METAR fix (array weather refs → `dataref_table`, visibility in statute
+  miles). Statically clean, but the METAR string it builds has not been read in flight.
+
+The last confirmed in-sim run predates every edit in this session.
 
 ## Validation performed
-- `luac -p` on every active script.
-- Every `dataref(...)` path checked against `Resources/plugins/DataRefs.txt`.
+- `luac -p` on every script in `Scripts/`, including the three KPCrew ones.
+- Every `dataref(...)` declaration in `Scripts/CitationX_*.lua` checked with
+  `tests/check_datarefs.lua`: 0 problems.
+- Every `require()` reachable for the C750 checked with
+  `tests/check_kpcrew_modules.lua C750`: 0 missing (`--all` sweeps every aircraft).
 - Every `laminar/CitX/...` command and runtime dataref checked against the Citation X's own
   `plugins/xlua/scripts/*.lua`.
-- Mock-FlyWithLua smoke tests (Lua 5.4): mission briefing/accept/skip, leg-by-leg progression,
-  landing, scoring, persistence and both emergency paths; DS4 heading logic (triggers ignored,
-  sticky lock, dead-slot recovery); FailureTrainer+MissionGenerator load order with a strict
-  duplicate-writable-dataref check.
-- Mission-generator tests also cover airport snapping and magnetic bearings (mocked
-  XPLMNavigation), FMS loading, auto/manual time warp, warp drop near the fix, warp reset
-  after completion and the no-navdata fallback.
+- Mock-FlyWithLua smoke tests, all run under **luajit** (the sim's Lua, see below):
+  - `tests/smoke_mastersuite.lua` — DS4 heading: triggers ignored, sticky lock, dead-slot
+    recovery.
+  - `tests/smoke_hud_toggles.lua` — 13 rows well formed, unique keys, sibling toggles safe
+    with the other scripts absent, draw callback clean.
+  - `tests/smoke_panel_geometry.lua` — renders all three panels into a recording canvas and
+    asserts: everything fits 2560×1440, no vertical text collisions, no text overflows its
+    panel, the HUD and C750 panels do not overlap, and a click sweep reaches every row.
+  - `tests/probe_load_order.lua` — loads all of `Scripts/` in one shared LuaJIT state in
+    FlyWithLua's alphabetical order. The authoritative load test.
 
 ## Gotchas / facts
 - A bad DataRef anywhere in a script makes FlyWithLua quarantine the whole file and reload Lua.
@@ -177,11 +365,14 @@ Last updated: 2026-10-21
   agent. Plugin binaries, Modules, Internals, Documentation and runtime files stay untracked.
 - Private remote: <https://github.com/ModernAmusements/citationx-suite>
 - Project agent: `.opencode/agents/citationx.md` (mode `all`), rules in `AGENTS.md`.
-- Test harnesses: `tests/smoke_mission.lua`, `tests/smoke_mastersuite.lua`.
+- Test harnesses (all under `tests/`): `check_datarefs.lua`, `check_kpcrew_modules.lua`,
+  `probe_kpcrew.lua`, `probe_kpcrew_run.lua`, `probe_load_order.lua`,
+  `smoke_mastersuite.lua`, `smoke_hud_toggles.lua`, `smoke_panel_geometry.lua`.
 - Deploy = edit live scripts in place, validate, commit and push; reload FlyWithLua in-sim.
 
 ## Tuning knobs
-- Mission balance: `MG_CONFIG` at the top of `CitationX_MissionGenerator.lua`
-  (`cruise_tas_kt`, `reserve_kg`, radii, `MG_DIFF_*` tables).
+- Panel spacing: `HUD_STYLE` (`row_h`, `status_row_h`, `sys_row_h`) in
+  `CitationX_MasterSuite.lua`; `CAB_CONFIG.row_h` in `CitationX_CabinOps.lua`;
+  `TRAINER_CONFIG.row_h` in `CitationX_FailureTrainer.lua`.
 - Heading knob: `CONFIG` in `CitationX_MasterSuite.lua`; `stick_hdg_axis` can be pinned to a
   RAW index shown by AXIS MONITOR, or slots vetoed via `stick_hdg_exclude_axes`.

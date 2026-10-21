@@ -97,8 +97,8 @@ CONFIG = {
 HUD_STYLE = {
     x            = 28,
     width        = 396,
-    row_h        = 17,
-    status_row_h = 15,
+    row_h        = 22,
+    status_row_h = 20,
     pad          = 12,
     bg           = {0.02, 0.05, 0.08, 0.62},
     header_bg    = {0.03, 0.15, 0.21, 0.90},
@@ -115,7 +115,7 @@ HUD_STYLE = {
     -- right-hand C750 systems panel
     sys_w        = 336,
     sys_pad      = 12,
-    sys_row_h    = 15,
+    sys_row_h    = 19,
     sys_cols     = 3,
 }
 
@@ -462,6 +462,52 @@ SUITE_MODULES = {
         state = function()
             if CONFIG.axis_monitor then return "ON",  HUD_STYLE.learn end
             return "OFF", HUD_STYLE.dim
+        end,
+    },
+    -- --- sibling panels from the other suite scripts -------------------------
+    -- These scripts share one Lua state, so their globals are reachable here.
+    -- Every accessor is nil-guarded so the HUD keeps working if a script is
+    -- missing, disabled or simply loaded in a different order.
+    {
+        key = "cabin", label = "CABIN OPS", macro = "cabin ops panel",
+        get = function()
+            return (type(CAB_CONFIG) == "table") and CAB_CONFIG.panel_enabled or false
+        end,
+        set = function(on)
+            if type(cab_toggle_panel) == "function" then cab_toggle_panel(on) end
+        end,
+        state = function()
+            if type(CAB_CONFIG) ~= "table" then return "ABSENT", HUD_STYLE.dim end
+            if CAB_CONFIG.panel_enabled then return "ON", HUD_STYLE.ok end
+            return "OFF", HUD_STYLE.dim
+        end,
+    },
+    {
+        key = "qrh", label = "QRH TRAINER", macro = "QRH panel",
+        get = function()
+            return (type(TRAINER_CONFIG) == "table") and TRAINER_CONFIG.panel_enabled or false
+        end,
+        set = function(on)
+            if type(qrh_toggle_panel) == "function" then qrh_toggle_panel(on) end
+        end,
+        state = function()
+            if type(TRAINER_CONFIG) ~= "table" then return "ABSENT", HUD_STYLE.dim end
+            if TRAINER_CONFIG.panel_enabled then return "ON", HUD_STYLE.ok end
+            return "OFF", HUD_STYLE.dim
+        end,
+    },
+    {
+        key = "landperf", label = "LANDING PERF", macro = "landing report",
+        get = function() return la_displayOn == true end,
+        set = function(on)
+            if type(la_toggle_last_result) ~= "function" then return end
+            -- la_toggle_last_result flips; only call it when the state differs.
+            if (la_displayOn == true) ~= (on == true) then la_toggle_last_result() end
+        end,
+        state = function()
+            if la_show_last_result == nil then return "ABSENT", HUD_STYLE.dim end
+            if la_displayOn == true then return "SHOWN", HUD_STYLE.ok end
+            return "HIDDEN", HUD_STYLE.dim
         end,
     },
 }
@@ -1090,12 +1136,12 @@ end
 
 local function systems_panel_height()
     local st = HUD_STYLE
-    local h  = st.sys_pad + 20 + 14
+    local h  = st.sys_pad + 26 + 20
     for _, grp in ipairs(SYSTEMS_GROUPS) do
-        h = h + 15
+        h = h + 20
         local n = grp.last - grp.first + 1
         h = h + math.ceil(n / st.sys_cols) * st.sys_row_h
-        h = h + 9
+        h = h + 12
     end
     return h + st.sys_pad
 end
@@ -1109,18 +1155,18 @@ local function draw_systems_panel(screen_w, screen_h)
     local bottom = top - h
 
     draw_bar(x, bottom, top, w, st.bg)
-    draw_bar(x, top - 18, top, w, st.header_bg, 0.90)
-    draw_bar(x, top - 20, top - 18, w, st.accent)
-    draw_string(x + st.sys_pad, top - 14, "C750 SYSTEMS", st.accent[1], st.accent[2], st.accent[3])
+    draw_bar(x, top - 24, top, w, st.header_bg, 0.90)
+    draw_bar(x, top - 26, top - 24, w, st.accent)
+    draw_string(x + st.sys_pad, top - 18, "C750 SYSTEMS", st.accent[1], st.accent[2], st.accent[3])
     if not is_c750 then
-        draw_text_right(x + w - st.sys_pad, top - 14, "NO DATA", st.warn[1], st.warn[2], st.warn[3])
+        draw_text_right(x + w - st.sys_pad, top - 18, "NO DATA", st.warn[1], st.warn[2], st.warn[3])
     end
 
     local col_w = (w - st.sys_pad * 2) / st.sys_cols
-    local y = top - 18 - 16
+    local y = top - 24 - 20
     for _, grp in ipairs(SYSTEMS_GROUPS) do
         draw_string(x + st.sys_pad, y, grp.title, st.subhdr[1], st.subhdr[2], st.subhdr[3])
-        y = y - 15
+        y = y - 20
         local i = grp.first
         while i <= grp.last do
             for c = 0, st.sys_cols - 1 do
@@ -1147,7 +1193,7 @@ local function draw_systems_panel(screen_w, screen_h)
             y = y - st.sys_row_h
             i = i + st.sys_cols
         end
-        y = y - 9
+        y = y - 12
     end
 end
 
@@ -1156,7 +1202,7 @@ local function draw_status_section(x, w, pad, top_y)
     status_rects = {}
 
     draw_string(x + pad, top_y, "SUITE STATUS", st.subhdr[1], st.subhdr[2], st.subhdr[3])
-    local first_y = top_y - 15
+    local first_y = top_y - 20
 
     for i = 1, #SUITE_MODULES do
         local m = SUITE_MODULES[i]
@@ -1198,7 +1244,7 @@ function citationx_hud()
 
     if show_body or show_status then
         local panel_top = screen_h - 20
-        local title_y   = panel_top - 17
+        local title_y   = panel_top - 20
 
         local entries = {}
         if show_body then
@@ -1216,18 +1262,18 @@ function citationx_hud()
             }
         end
 
-        local row1_y = title_y - 24
+        local row1_y = title_y - 28
         local last_body_y = row1_y - (#entries == 0 and 0 or (#entries - 1) * st.row_h)
         if #entries == 0 then last_body_y = title_y - 8 end
 
-        local status_header_y = last_body_y - 22
-        local status_first_y  = status_header_y - 15
+        local status_header_y = last_body_y - 26
+        local status_first_y  = status_header_y - 20
         local status_last_y   = status_first_y - (#SUITE_MODULES - 1) * st.status_row_h
-        local panel_bottom    = status_last_y - 12
+        local panel_bottom    = status_last_y - 16
 
         draw_bar(x, panel_bottom, panel_top, w, st.bg)
-        draw_bar(x, title_y - 7, panel_top, w, st.header_bg, 0.90)
-        draw_bar(x, title_y - 9, title_y - 7, w, st.accent)
+        draw_bar(x, title_y - 10, panel_top, w, st.header_bg, 0.90)
+        draw_bar(x, title_y - 12, title_y - 10, w, st.accent)
 
         draw_string(x + pad, title_y, "CITATION X   MASTER SUITE", st.accent[1], st.accent[2], st.accent[3])
 
@@ -1251,12 +1297,12 @@ function citationx_hud()
         end
 
         -- alert pills
-        local pill_y = panel_bottom - 10
+        local pill_y = panel_bottom - 14
         local function pill(text, color)
             local text_w = measure_string(text)
-            draw_bar(x, pill_y - 15, pill_y + 5, text_w + 18, color, 0.80)
-            draw_string(x + 9, pill_y - 10, text, 0.04, 0.04, 0.04)
-            pill_y = pill_y - 24
+            draw_bar(x, pill_y - 18, pill_y + 6, text_w + 22, color, 0.80)
+            draw_string(x + 11, pill_y - 12, text, 0.04, 0.04, 0.04)
+            pill_y = pill_y - 30
         end
 
         if show_body then
@@ -1293,12 +1339,12 @@ function citationx_hud()
         local box_w = 300
         local box_x = 20
         local box_y = 20
-        local box_h = 34 + (#rows + 2) * 14
+        local box_h = 44 + (#rows + 2) * 18
         glColor4f(st.learn_bg[1], st.learn_bg[2], st.learn_bg[3], st.learn_bg[4])
         glRectf(box_x, box_y, box_x + box_w, box_y + box_h)
-        draw_string(box_x + 10, box_y + box_h - 16, "AXIS MONITOR",
+        draw_string(box_x + 10, box_y + box_h - 20, "AXIS MONITOR",
             st.learn[1], st.learn[2], st.learn[3])
-        local ry = box_y + box_h - 34
+        local ry = box_y + box_h - 42
         for _, a in ipairs(rows) do
             local live = (a.idx == stick_hdg_live_axis)
             local r, g, b = st.label[1], st.label[2], st.label[3]
@@ -1311,11 +1357,11 @@ function citationx_hud()
             glColor4f(r, g, b, 1.0)
             glRectf(cx, ry + 1, cx + a.c * 40, ry + 7)
             draw_string(box_x + 238, ry, string.format("%+.2f", a.c), r, g, b)
-            ry = ry - 14
+            ry = ry - 18
         end
         draw_string(box_x + 10, ry, "Push the right stick; triggers (L2/R2) are ignored.",
             0.60, 0.80, 0.90)
-        draw_string(box_x + 10, ry - 14, "Green = locked heading-knob axis.", 0.60, 0.80, 0.90)
+        draw_string(box_x + 10, ry - 18, "Green = locked heading-knob axis.", 0.60, 0.80, 0.90)
     end
 
     if toast_text and (sim_time or 0.0) < toast_until then

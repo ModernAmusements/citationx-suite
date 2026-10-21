@@ -31,9 +31,9 @@ TRAINER_CONFIG = {
     panel_enabled    = true,
     panel_x          = 28,     -- panel anchor, bottom-left corner
     panel_y          = 60,
-    panel_w          = 430,
+    panel_w          = 460,
     require_c750     = true,   -- only inject failures when flying the C750
-    row_h            = 17,
+    row_h            = 22,
 }
 
 -- Glass-panel palette, matching the Citation X Master Suite style.
@@ -384,10 +384,10 @@ function qrh_draw()
     -- measure panel height from content
     local h
     if active then
-        h = 20 + 26 + (#active.steps) * rh + 16 + 10
-            + (proc_done and (rh + 16) or 0)
+        h = 24 + 30 + (#active.steps) * rh + 20 + 12
+            + (proc_done and (rh + 20) or 0)
     else
-        h = 20 + 12 + (#SCENARIOS + 1) * rh + 10
+        h = 24 + 16 + (#SCENARIOS + 1) * rh + 12
     end
     local top = bottom + h
 
@@ -395,20 +395,20 @@ function qrh_draw()
 
     -- body background, then header strip on top
     bar(x, bottom, top, w, ST.bg, 0.75)
-    bar(x, top - 20, top, w, active and ST.header_act or ST.header_bg, 0.92)
+    bar(x, top - 24, top, w, active and ST.header_act or ST.header_bg, 0.92)
     bar(x, top - 2, top, w, active and ST.alert or ST.accent)
     if active then
-        txt(x + 10, top - 15, "QRH  " .. active.title, ST.alert)
+        txt(x + 10, top - 17, "QRH  " .. active.title, ST.alert)
     else
-        txt(x + 10, top - 15, "FAILURE TRAINER - SELECT SCENARIO", ST.accent)
+        txt(x + 10, top - 17, "FAILURE TRAINER - SELECT SCENARIO", ST.accent)
     end
 
-    local y = top - 20
+    local y = top - 24
 
     if active then
         -- condition line
-        txt(x + 10, y - 10, active.condition, ST.warn)
-        y = y - 26
+        txt(x + 10, y - 13, active.condition, ST.warn)
+        y = y - 30
 
         for i, step in ipairs(active.steps) do
             local done = step_done[i]
@@ -423,59 +423,59 @@ function qrh_draw()
 
             -- check box
             if step.advisory then
-                txt(x + 12, y - 10, "~", ST.dim)
+                txt(x + 12, y - 14, "~", ST.dim)
             elseif done then
-                txt(x + 12, y - 10, "X", ST.ok)
+                txt(x + 12, y - 14, "X", ST.ok)
             else
                 glColor4f(ST.dim[1], ST.dim[2], ST.dim[3], 1.0)
-                glRectf(x + 11, y - 11, x + 19, y - 3)
+                glRectf(x + 11, y - 14, x + 20, y - 5)
             end
 
-            txt(x + 28, y - 10, string.format("%d.", i), ST.label)
-            txt(x + 46, y - 10, step.label, col)
+            txt(x + 30, y - 14, string.format("%d.", i), ST.label)
+            txt(x + 50, y - 14, step.label, col)
 
             qrh_rows[#qrh_rows + 1] = {
                 kind = "step", step = step,
-                x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 3,
+                x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
             }
             y = y - rh
         end
 
         if proc_done then
-            y = y - 6
-            txt(x + 12, y - 10, "PROCEDURE COMPLETE", ST.ok)
+            y = y - 8
+            txt(x + 12, y - 14, "PROCEDURE COMPLETE", ST.ok)
             y = y - rh
-            bar(x + 8, y - rh + 7, y + 4, w - 16, ST.alert, 0.80)
-            txt(x + 16, y - 10, "CLEAR FAILURE  (click)", {0.05, 0.05, 0.05})
+            bar(x + 8, y - rh + 8, y + 5, w - 16, ST.alert, 0.80)
+            txt(x + 16, y - 14, "CLEAR FAILURE  (click)", {0.05, 0.05, 0.05})
             qrh_rows[#qrh_rows + 1] = {
                 kind = "clear",
-                x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 3,
+                x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
             }
         else
-            y = y - 4
-            txt(x + 12, y - 10, "Fly the switches - steps self-check.", ST.dim)
+            y = y - 6
+            txt(x + 12, y - 14, "Fly the switches - steps self-check.", ST.dim)
         end
     else
-        y = y - 12
+        y = y - 16
         for _, sc in ipairs(SCENARIOS) do
             local col = (ft_on_ground or 0) == 1 and ST.value or ST.warn
             glColor4f(ST.accent[1], ST.accent[2], ST.accent[3], 0.8)
-            glRectf(x + 10, y - 10, x + 15, y - 5)
-            txt(x + 24, y - 12, sc.title, col)
-            txt_right(x + w - 10, y - 12, "INJECT", ST.dim)
+            glRectf(x + 10, y - 13, x + 16, y - 6)
+            txt(x + 26, y - 16, sc.title, col)
+            txt_right(x + w - 10, y - 16, "INJECT", ST.dim)
 
             qrh_rows[#qrh_rows + 1] = {
                 kind = "scenario", sc = sc,
-                x0 = x, x1 = x + w, y0 = y - rh + 5, y1 = y + 5,
+                x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
             }
             y = y - rh
         end
         -- random row
-        bar(x + 8, y - rh + 6, y + 4, w - 16, ST.warn, 0.75)
-        txt(x + 16, y - 12, "RANDOM FAILURE (surprise me)", {0.05, 0.05, 0.05})
+        bar(x + 8, y - rh + 8, y + 5, w - 16, ST.warn, 0.75)
+        txt(x + 16, y - 16, "RANDOM FAILURE (surprise me)", {0.05, 0.05, 0.05})
         qrh_rows[#qrh_rows + 1] = {
             kind = "random",
-            x0 = x, x1 = x + w, y0 = y - rh + 5, y1 = y + 5,
+            x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
         }
     end
 

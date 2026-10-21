@@ -1,5 +1,5 @@
 ---
-description: Specialist for the FlyWithLua Citation X suite — X-Plane 12 Lua scripts, DataRefs, QRH/failures, mission generator, DS4 heading mapping.
+description: Specialist for the FlyWithLua Citation X suite — X-Plane 12 Lua scripts, DataRefs, QRH/failures, DS4 heading mapping, panel layout, and coexistence with installed KPCrew/SimRate add-ons.
 mode: all
 ---
 
@@ -15,14 +15,29 @@ every DataRef and command must exist; a single bad DataRef quarantines the whole
 
 - `Scripts/CitationX_MasterSuite.lua` — HUD telemetry, C750 systems readback, flight recorder,
   axis optimizer, input mapper, PS4 right-stick heading-bug knob (L2/R2 triggers must never
-  drive it; sticky lock + dead-slot watchdog).
+  drive it; sticky lock + dead-slot watchdog), and the master status panel that toggles every
+  subsystem (including the sibling scripts' panels) by clicking a row.
 - `Scripts/CitationX_FailureTrainer.lua` — QRH scenarios, self-checking checklists, failure
   datarefs and CitX switch commands.
 - `Scripts/CitationX_CabinOps.lua` — boarding/GPU/lights flow panel.
-- `Scripts/CitationX_MissionGenerator.lua` — random scored missions, rules, difficulties,
-  persistence, emergency objective bridged to the Failure Trainer.
-- `tests/` — mock-FlyWithLua harnesses for the mission generator and the DS4 heading logic.
-- `README.md`, `AGENTS.md`, `CONTEXT.md` — documentation and engineering history.
+- `tests/` — offline harnesses, all runnable without X-Plane:
+  `check_datarefs.lua`, `check_kpcrew_modules.lua`, `probe_kpcrew.lua`,
+  `smoke_mastersuite.lua`, `smoke_hud_toggles.lua`.
+- `README.md`, `AGENTS.md`, `CONTEXT.md`, `SCRIPT_STATUS.md` — documentation and history.
+
+**The mission generator no longer exists.** It was deleted on 2026-10-21 along with
+`tests/smoke_mission.lua`. Do not resurrect it unless explicitly asked.
+
+## Third-party add-ons (untracked, do not edit)
+
+- `Scripts/kpcrew23.lua` + optional `kppanels.lua`, `kpxbrief.lua`, `kpsoundmute.lua`,
+  `kpredline.lua`; modules in `Modules/kpcrew/` and `Modules/kpcrew_prefs/`.
+  `kphardware.lua` (171 commands, Honeycomb/Saitek profiles) is intentionally not installed.
+- `Scripts/LandingPerformance.lua` — landing scoring card.
+- `Scripts/Sim_Rate.lua` — SimRateMonitor ground-speed compression (1x/2x/4x).
+- These are ignored by git and are not part of the citationx-suite repository. Never modify
+  or commit them while working on the suite — **except** for the documented KPCrew repair in
+  `CONTEXT.md` section 12, which is the only sanctioned change.
 
 ## How to work
 
@@ -35,28 +50,23 @@ every DataRef and command must exist; a single bad DataRef quarantines the whole
 3. Remember FlyWithLua's y-axis starts at the bottom of the screen. Bottom-anchored panels
    extend upward.
 4. Prefer small, surgical edits; do not reformat unrelated code.
+5. **Prove it with code, don't reason in a loop.** If you are unsure whether something works,
+   write or run a harness (`tests/`) or grep the log. Two guesses in a row without new
+   evidence means stop and measure instead.
 
 ## Required validation
 
 ```sh
-luac -p Scripts/CitationX_*.lua
+luac -p Scripts/*.lua
+
+for f in Scripts/CitationX_*.lua; do
+  lua tests/check_datarefs.lua ../../Resources/plugins/DataRefs.txt "$f"
+done
+lua tests/check_kpcrew_modules.lua
+
 export TMPDIR="$(mktemp -d)/"
-lua tests/smoke_mission.lua Scripts/CitationX_MissionGenerator.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
 ```
 
-Also run the DataRef existence check from `AGENTS.md`. If X-Plane is running, inspect
-`Log.txt` for `FlyWithLua Error` and `Moved Bad Script`.
-
-## Deployment
-
-- Edit the live `Scripts/CitationX_*.lua` in place; git tracks only the suite files.
-- Commit with a focused message and push to `origin main`
-  (`https://github.com/ModernAmusements/citationx-suite`, private).
-- Remind the user to reload Lua scripts in X-Plane after changes.
-
-## Communication
-
-Report which files changed, what was verified (syntax, DataRefs, commands, smoke tests) and
-any remaining in-sim checks. If a change requires tuning, point at the relevant config table
-(`CONFIG`, `MG_CONFIG`, `CAB_CONFIG`, `TRAINER_CONFIG`).
+If X-Plane is running, inspect `Log.txt` for `FlyWithLua Error` and `Moved Bad Script`.

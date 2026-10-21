@@ -1,16 +1,41 @@
 # Citation X Suite for FlyWithLua (X-Plane 12)
 
-Four FlyWithLua NG+ scripts for the Laminar Research Cessna Citation X (C750), plus a
-random-mission generator that turns free flight into a scored challenge.
+Three FlyWithLua NG+ scripts for the Laminar Research Cessna Citation X (C750), plus a
+standalone landing-performance scorer.
 
 ## Scripts
 
 | File | Purpose |
 | --- | --- |
-| `Scripts/CitationX_MasterSuite.lua` | Telemetry HUD, C750 systems readback, 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored). |
+| `Scripts/CitationX_MasterSuite.lua` | Telemetry HUD, C750 systems readback, 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored), and the master status panel that toggles every suite subsystem by clicking a row. |
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
-| `Scripts/CitationX_MissionGenerator.lua` | Random scored story missions: a client and payload briefing, a short multi-leg flight plan with real airports when navdata is available, story-driven goals (smooth VIP ride, medevac clock, ferry fuel budget, photo level, mach hold, engine-out), hard rules, difficulty levels and an automatic cruise time warp. Persists best score and streak. **Shipped disabled:** set `MG_CONFIG.enabled = true` to load it. |
+| `Scripts/LandingPerformance.lua` | Standalone landing scoring and debrief card (third-party, untracked in git). |
+
+## HUD status panel
+
+The left-hand panel lists every subsystem with a live ON/OFF state. Click a row to toggle it.
+The same toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as
+FlyWithLua macro menu entries.
+
+| Row | Key | What it toggles |
+| --- | --- | --- |
+| HUD DISPLAY | `hud` | The telemetry body (MACH / IAS / ALT / G-LOAD …) |
+| STATUS PANEL | `status` | This panel itself |
+| C750 PANEL | `systems` | The right-hand C750 systems readback |
+| AXIS OPTIMIZER | `axis` | Custom pitch/roll response curve |
+| FLIGHT RECORDER | `log` | 1 Hz CSV recorder |
+| EMERGENCY GEN | `emerg` | Bleed-air / pressurization emergency triggers |
+| INPUT MAPPER | `input` | Keyboard/mouse/joystick binding engine |
+| LEARN MODE | `learn` | Input probe overlay |
+| STICK HDG KNOB | `stick` | Heading bug on the right stick |
+| AXIS MONITOR | `axmon` | Raw axis overlay |
+| CABIN OPS | `cabin` | `CitationX_CabinOps` panel |
+| QRH TRAINER | `qrh` | `CitationX_FailureTrainer` panel |
+| LANDING PERF | `landperf` | `LandingPerformance` result card |
+
+The three sibling rows are nil-guarded: if that script is not installed the row shows
+`ABSENT` and clicking it does nothing.
 
 ## Requirements
 
@@ -31,68 +56,46 @@ repository is designed to live directly inside that folder: git tracks only the 
 suite, while the rest of the FlyWithLua install (binaries, Modules, Internals, Documentation)
 stays untracked via `.gitignore`.
 
-## Mission Generator quick start
-
-> **Disabled by default.** The mission generator ships with `MG_CONFIG.enabled = false`
-> and registers no panel, commands or callbacks. Set it to `true` in
-> `Scripts/CitationX_MissionGenerator.lua` and reload Lua to turn it back on.
-
-1. Park on the ground (below 25 kt) and click **GENERATE MISSION** on the bottom-center panel,
-   press the assigned command `MissionGen/generate`, or use the FlyWithLua macro menu.
-2. Read the **briefing**: client, payload, the short multi-leg flight plan, the goals the
-   story demands and the hard rules. **ACCEPT MISSION** to fly it or **SKIP** to draw another.
-3. The clock starts at wheels up. Fly the plan leg by leg (the panel checks each fix off and
-   shows magnetic bearing + distance to the next); the last leg is home — land and come to a
-   full stop within 5 NM of the departure airport. Every leg is snapped to a real airport when
-   X-Plane navdata is available, so the ICAO can be entered in the FMS. **LOAD PLAN INTO FMS**
-   on the briefing page (or `MissionGen/load_fms`) writes the whole route into the default FMS.
-4. Long cruise legs are not dead time: auto time warp engages at 4x in stable cruise, drops to
-   1x before the next fix and on any bank/climb/descent. Click **TIME WARP** on the panel or
-   bind `MissionGen/warp` to cycle 1x/2x/4x/8x; `MissionGen/warp_auto` hands control back to
-   the automatic mode.
-5. Obey the mission's rules. Violations subtract points; a clean, fast, story-accurate flight
-   scores more.
-6. Progress (streak, best score, missions flown) is saved to
-   `Scripts/CitationX_MissionProgress.txt`.
-
-Mission stories: VIP CHARTER (smooth cabin + gentle touchdown), AIR TAXI (multi-stop hopper),
-MEDEVAC (tight clock + door-to-pad bonus), FERRY FLIGHT (fuel budget + reserve), PHOTO SURVEY
-(climb to a photo level), TEST FLIGHT (mach hold), RELIABILITY FLT (engine flameout via the
-QRH trainer), FLIGHT SCHOOL (graded lessons: steep turns, pattern work, precision approach,
-climb & level). Difficulties: EASY, NORMAL, HARD, BRUTAL.
-
-Bindable commands:
-
-```
-MissionGen/generate      MissionGen/accept       MissionGen/skip
-MissionGen/lesson        MissionGen/abort        MissionGen/toggle_panel
-MissionGen/warp          MissionGen/warp_auto    MissionGen/load_fms
-MissionGen/report
-CitationXSuite/*         CitationXQRH/*          CabinOps/*
-```
-
 ## Configuration
 
 - `CitationX_MasterSuite.lua` — `CONFIG` table: HUD, flight recorder, axis optimizer,
   emergency generator, input mapper and the right-stick heading knob
   (`stick_hdg_*`, including `stick_hdg_exclude_axes` and a fixed `stick_hdg_axis` pin).
-- `CitationX_MissionGenerator.lua` — `MG_CONFIG` table: the `enabled` kill switch, cruise
-  speed used for clock math, reserve fuel, fix/home radii, airport snapping
-  (`home_airport_max_nm`, `leg_airport_snap_nm`) and the time-warp limits
-  (`warp_cruise`, `warp_max`, `warp_engage_nm`, `warp_drop_nm`, `warp_min_agl_ft`,
-  `warp_max_bank_deg`, `warp_max_vs_fpm`), plus the `MG_DIFF_*` difficulty tables.
-- `CitationX_CabinOps.lua` — `CAB_CONFIG`; `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG`.
+  Panel layout lives in `HUD_STYLE` (`row_h`, `status_row_h`, `sys_row_h`, and the
+  C750 panel's `sys_*` values).
+- `CitationX_CabinOps.lua` — `CAB_CONFIG` (`row_h` controls row spacing).
+- `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG` (`row_h` controls row spacing).
+
+## Bindable commands
+
+```
+CitationXSuite/toggle_hud      CitationXSuite/toggle_status   CitationXSuite/toggle_systems
+CitationXSuite/toggle_axis     CitationXSuite/toggle_log      CitationXSuite/toggle_emerg
+CitationXSuite/toggle_input    CitationXSuite/toggle_learn    CitationXSuite/toggle_stick
+CitationXSuite/toggle_axmon    CitationXSuite/toggle_cabin    CitationXSuite/toggle_qrh
+CitationXSuite/toggle_landperf
+
+CitationXQRH/*                 CabinOps/*
+```
 
 ## Development and validation
 
 ```sh
-# syntax check every tracked script
-luac -p Scripts/CitationX_*.lua
+# syntax check every script in Scripts/
+luac -p Scripts/*.lua
 
-# mock-FlyWithLua smoke tests (Lua 5.4 available locally)
+# every dataref() binding is legal: the ref exists and array refs carry an index
+for f in Scripts/CitationX_*.lua; do
+  lua tests/check_datarefs.lua ../../Resources/plugins/DataRefs.txt "$f"
+done
+
+# every require() reachable for the C750 resolves on disk (--all sweeps every aircraft)
+lua tests/check_kpcrew_modules.lua C750
+
+# mock-FlyWithLua smoke tests
 export TMPDIR="$(mktemp -d)/"
-lua tests/smoke_mission.lua Scripts/CitationX_MissionGenerator.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
 ```
 
 Every DataRef used by the scripts must exist in
