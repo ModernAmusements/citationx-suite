@@ -352,8 +352,43 @@ FlyWithLua helper script that declares `sim_time` will collide again — keep th
   Those two FMC zoom knobs simply have no VR manipulator any more.
 - `acf/_name` = `Cessna Citation X AviTab`, `acf/_ICAO` stays `C750` so the suite and KPCrew
   treat it like the stock aircraft. Stock `Cessna Citation X` untouched.
-- AviTab.json's panel rect (1358,235,688,775) is sized for the mod's 2048² `Panel.png`; keep
-  that texture if the panel is ever re-exported.
+- **AviTab panel rect was wrong and is now fixed.** AviTab's panel coordinates live in a
+  **1024×1024 space** (proved from AviTab's own sample: JSON 800×600 ↔ UV 0.781×0.586), but the
+  mod shipped `left 1358, bottom 235, width 688, height 775` — 2048-texture pixels. At 1024 scale
+  that rect starts at x=1358, i.e. outside the panel, so AviTab drew nothing on the iPad quad and
+  the screen stayed blank. The iPad screen quad in `cockpit_panel_interactive.obj`
+  (TRIS 57651/57657) maps to `679,208 → 344×206`, and `AviTab.json` now carries exactly that.
+  `"enabled": true` makes AviTab call `enableAndPowerPanel()` itself, so `avitab/panel_enabled`
+  is 1 and both the guard and `Ipad.obj`'s `ANIM_hide 0 0 avitab/panel_enabled` keep it visible.
+- **The GTN monitor art was removed from the cockpit.** The mod's `Panel.png` was a 2048²
+  replacement with the GTN screen painted in. It was swapped back to the stock 1024²
+  `Panel.png` (normal map, LIT and DDS were already byte-identical to stock), so the centre
+  console shows the normal Laminar FMCs again. UVs are normalised, so the AviTab quad and the
+  1024-space rect still line up.
+
+## 17. Session 2026-10-21 (evening): quarantine popup, Little Navmap, maps
+
+- **The quarantine popup was two separate things.** FlyWithLua shows
+  "found bad lua scripts that have been quarantined look in Log dot text file for more
+  information" whenever `Scripts (Quarantine)/` is **non-empty at the end of a load** — it is not
+  only a per-failure message. The folder had held FlyWithLua's own `please read the manual.lua`
+  since Aug 13. It was moved to the Trash; the folder now has no `.lua` files and the popup is
+  gone. The `sim_time` fix in §15 is what prevents it from being re-quarantined if it returns
+  (e.g. after a FlyWithLua reinstall or "Return all quarantined Lua scripts").
+- **Little Navmap 3.0.18** installed at `/Applications/Little Navmap.app` (x86_64 Qt build; runs
+  under Rosetta 2, which is present). **Little Xpconnect 1.2.2** (universal arm64+x86_64) installed
+  to `Resources/plugins/Little Xpconnect/`, quarantine flag cleared. Not yet connected in-sim.
+- **AviTab maps:** `OpenStreetMap` re-enabled in `Resources/plugins/AviTab/online-maps/mapconfig.json`
+  (it was explicitly disabled; OpenTopoMap was the only active one). The 333 MB Germany tile set
+  was removed — it was the **512 px** variant nested under `512/latest/`, and AviTab's own
+  `MapTiles/EPSG-3857/readme.txt` says 512 is unsupported. Correct source for Germany is
+  openflightmaps.org → Downloads → ED → **merged / 256@2x / latest**, unpacked so the numbered
+  zoom folders sit directly in `MapTiles/EPSG-3857/Germany/`. ChartFox is installed but not
+  logged in (free account; gives real AIP plates). Navigraph folders exist but need a paid sub.
+- **TDS GTNXi cannot be ported to macOS** (asked explicitly): closed-source commercial plugin
+  wrapping Garmin's Windows-only trainer, no macOS build, and X-Plane 12 on Apple Silicon is a
+  native arm64 process that cannot load Windows DLLs. The only routes are a Windows PC or the
+  Windows X-Plane under CrossOver/Parallels.
 
 ## Not yet verified in-sim (as of 2026-10-21)
 
@@ -372,7 +407,14 @@ record these as confirmed working:
 - The `metargen.lua` METAR fix (array weather refs → `dataref_table`, visibility in statute
   miles). Statically clean, but the METAR string it builds has not been read in flight.
 
-The last confirmed in-sim run predates every edit in this session.
+- The **AviTab tablet** after the §16 `AviTab.json` rect fix and the stock `Panel.png` swap. The
+  aircraft loaded cleanly before those edits; the tablet itself has not been looked at since.
+- Little Navmap ↔ Little Xpconnect live connection (both installed, never run together).
+
+In-sim status: the suite loaded cleanly on 2026-10-21 at 18:22 (`LUA_RUN` 1–3,
+`All script files loaded successfully`, 0 `FlyWithLua Error`). The only in-sim complaints were the
+quarantine popup (caused by a stock FlyWithLua file, §17) and the blank AviTab screen (§16). The
+visual result of the panel spacing and the HUD readouts still have not been reviewed by eye.
 
 ## Validation performed
 - `luac -p` on every script in `Scripts/`, including the three KPCrew ones.
@@ -396,6 +438,11 @@ The last confirmed in-sim run predates every edit in this session.
 ## Gotchas / facts
 - A bad DataRef anywhere in a script makes FlyWithLua quarantine the whole file and reload Lua.
   Check `Log.txt` for `FlyWithLua Error:` and `Moved Bad Script`.
+- FlyWithLua shows the "found bad lua scripts that have been quarantined" popup whenever
+  `Scripts (Quarantine)/` is non-empty at the end of a load — even if nothing failed in that run.
+  Keep the folder free of `.lua` files unless you actually want the popup.
+- AviTab's `AviTab.json` panel rect is in a **1024×1024 panel space**, independent of the
+  aircraft's `Panel.png` resolution. A 2048-pixel rect silently draws off-panel (blank tablet).
 - "The DataRef ... is already handled in variable ..." log lines are informational, not errors.
 - `laminar/CitX/...` commands/datarefs exist only at runtime via the aircraft's xlua plugin, so
   they do not appear in `Commands.txt` / `DataRefs.txt`.
