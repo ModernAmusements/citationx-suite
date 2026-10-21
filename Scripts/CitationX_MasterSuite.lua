@@ -1017,6 +1017,18 @@ function citationx_frame()
             end
         end
 
+        -- A locked axis that turns out to be a flight control must be dropped.
+        -- At aircraft load X-Plane can still report an empty assignment table,
+        -- which made detection latch onto the roll axis before it was filled;
+        -- the sticky lock then kept the heading bug on the left stick.
+        if stick_hdg_live_axis >= 0 then
+            local a = joy_raw_assign[stick_hdg_live_axis] or 0
+            if a == 1 or a == 2 or a == 3 or a == 4 then
+                stick_hdg_live_axis = -1
+                stick_hdg_hold_s    = 0.0
+            end
+        end
+
         local axis = CONFIG.stick_hdg_axis
         if axis < 0 then
             -- Drop a pinned axis whose slot went silent (the pad switched from
@@ -1028,7 +1040,17 @@ function citationx_frame()
             if stick_hdg_live_axis >= 0 then
                 axis = stick_hdg_live_axis
             else
-                axis = detect_stick_hdg_axis()
+                -- Never autodetect before X-Plane has published the axis
+                -- assignments: an empty table makes every axis look free.
+                local assignments_ready = false
+                for i = 0, 63 do
+                    local a = joy_raw_assign[i] or 0
+                    if a == 1 or a == 2 or a == 3 or a == 4 then
+                        assignments_ready = true
+                        break
+                    end
+                end
+                axis = assignments_ready and detect_stick_hdg_axis() or nil
                 if axis then
                     stick_hdg_live_axis = axis
                     if CONFIG.stick_hdg_sticky then
