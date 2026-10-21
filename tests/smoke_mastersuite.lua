@@ -10,7 +10,7 @@ SCREEN_WIDTH, SCREEN_HIGHT = 2560, 1440
 
 local defaults = {
     mach_no = 0, g_nrml = 1, elevation_m = 0, ias_kts = 0,
-    pitch_deg = 0, roll_deg = 0, sim_time = 0,
+    pitch_deg = 0, roll_deg = 0, citationx_sim_time = 0,
     joy_pitch = 0, joy_roll = 0, joy_avail_pitch = 1, joy_avail_roll = 1,
     yoke_pitch_ratio = 0, yoke_roll_ratio = 0,
     ovr_joystick_pitch = 0, ovr_joystick_roll = 0,
@@ -56,7 +56,7 @@ local SCRIPT = arg[1] or "CitationX_MasterSuite.lua"
 dofile(SCRIPT)
 
 local function frame(t)
-    sim_time = t
+    citationx_sim_time = t
     citationx_frame()
 end
 

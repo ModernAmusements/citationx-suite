@@ -312,6 +312,46 @@ with.
   keys are unique, that `state()` returns a string plus a colour, that the sibling rows are safe
   with the other scripts absent, and that the draw callback runs.
 
+### 15. Global `sim_time` collided with FlyWithLua's welcome script (2026-10-21)
+
+The quarantine popup ("found bad lua scripts that have been quarantined look in Log dot text
+file for more information") was real, and it was our fault:
+
+```
+FlyWithLua Error: The variable "sim_time" is still defined as DataRef "sim/time/total_running_time_sec".
+FlyWithLua Info: 2nd Moved Bad Script to .../Scripts (Quarantine)/please read the manual.lua
+```
+
+`Scripts (Quarantine)/please read the manual.lua` is FlyWithLua's own bundled welcome script.
+It declares `DataRef("sim_time", "sim/network/misc/network_time_sec")` — the same **global**
+name the MasterSuite bound to `sim/time/total_running_time_sec` at line 230. The moment that
+file is returned from quarantine (or on a fresh FlyWithLua install, where it ships in
+`Scripts/`), FlyWithLua errors and quarantines it.
+
+Fix: MasterSuite's global renamed to `citationx_sim_time` (dataref + 4 uses). No other script
+bound a bare `sim_time`; `cab_sim_time` / `ft_sim_time` were already prefixed.
+`tests/smoke_mastersuite.lua` drives time through `citationx_sim_time` now.
+
+This is exactly AGENTS.md rule 5: an unprefixed global in a shared Lua state. Any new
+FlyWithLua helper script that declares `sim_time` will collide again — keep the prefix.
+
+### 16. Citation X mods: GTNXi replaced by AviTab-only (2026-10-21)
+
+- The "Cessna Citation X GTNXi Retrofit Mod" (borisd) was installed per its README as
+  `Aircraft/Cessna Citation X GTNXi`. It is **Windows-only** (TDS GTNXi plugin; the README
+  says so) and its GTN screen stays dead on macOS, while both FMCs are inoperable. Removed
+  (Trash) after the user chose the AviTab-only variant.
+- `Aircraft/Cessna Citation X AviTab` was built from a copy of the stock aircraft plus the
+  mod's AviTab layer only: `AviTab.json`, `objects/ipad/*`, `plugins/xlua/scripts/avitab_guard`
+  and acf objects 25/26 (`xPad_arm.obj`, `Ipad.obj`, both hidden by `citationx/gtnxi/hide_avitab`).
+  The GTN object (obja 27), `TDSGTN.ini`, the GTN bezel meshes and the 14 TDS manipulator blocks
+  in `cockpit_panel_interactive.obj` were stripped; the two `vrconfig` knobs were restored to
+  the stock `sim/instruments/map_zoom_*` commands.
+- `acf/_name` = `Cessna Citation X AviTab`, `acf/_ICAO` stays `C750` so the suite and KPCrew
+  treat it like the stock aircraft. Stock `Cessna Citation X` untouched.
+- AviTab.json's panel rect (1358,235,688,775) is sized for the mod's 2048² `Panel.png`; keep
+  that texture if the panel is ever re-exported.
+
 ## Not yet verified in-sim (as of 2026-10-21)
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not

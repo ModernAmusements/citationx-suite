@@ -227,7 +227,7 @@ dataref("elevation_m", "sim/flightmodel/position/elevation", "readonly")
 dataref("ias_kts",     "sim/flightmodel/position/indicated_airspeed", "readonly")
 dataref("pitch_deg",   "sim/flightmodel/position/theta", "readonly")
 dataref("roll_deg",    "sim/flightmodel/position/phi", "readonly")
-dataref("sim_time",    "sim/time/total_running_time_sec", "readonly")
+dataref("citationx_sim_time",    "sim/time/total_running_time_sec", "readonly")
 
 dataref("joy_pitch",       "sim/joystick/joy_mapped_axis_value", "readonly", 1)
 dataref("joy_roll",        "sim/joystick/joy_mapped_axis_value", "readonly", 2)
@@ -690,7 +690,7 @@ end
 
 local function toast(text)
     toast_text  = text
-    toast_until = (sim_time or 0.0) + 2.0
+    toast_until = (citationx_sim_time or 0.0) + 2.0
 end
 
 local function toast_state(name, on)
@@ -961,7 +961,7 @@ end
 
 -- ------------------------------------------------------------- FRAME LOOP ---
 function citationx_frame()
-    local now = sim_time or 0.0
+    local now = citationx_sim_time or 0.0
     local dt  = now - last_frame_time
     if dt < 0.0 then dt = 0.0 end
     last_frame_time = now
@@ -1312,7 +1312,7 @@ function citationx_hud()
             if gload > CONFIG.g_warn_high or gload < CONFIG.g_warn_low then
                 pill(string.format("STRUCTURAL G-LOAD  %+.2f G", gload), st.warn)
             end
-            if emergency_left > 0.0 and math.floor((sim_time or 0.0) * 2) % 2 == 0 then
+            if emergency_left > 0.0 and math.floor((citationx_sim_time or 0.0) * 2) % 2 == 0 then
                 pill("BLEED AIR / PRESSURIZATION WARNING", st.alert)
             end
         end
@@ -1364,7 +1364,7 @@ function citationx_hud()
         draw_string(box_x + 10, ry - 18, "Green = locked heading-knob axis.", 0.60, 0.80, 0.90)
     end
 
-    if toast_text and (sim_time or 0.0) < toast_until then
+    if toast_text and (citationx_sim_time or 0.0) < toast_until then
         XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
         local text_w = measure_string(toast_text)
         local box_w  = text_w + 32
