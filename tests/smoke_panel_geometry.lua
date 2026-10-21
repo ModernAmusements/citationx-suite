@@ -285,6 +285,40 @@ do
   check(hit > 0, "QRH panel consumes clicks on its rows", hit .. " hit(s)")
 end
 
+--------------------------------------------------------------------- EFB ----
+print("== CitationX_EFB.lua ==")
+do
+  EFB_CONFIG = nil
+  local chunk = assert(loadfile("Scripts/CitationX_EFB.lua"))
+  chunk()
+
+  reset()
+  efb_draw()
+  check(#drawn > 20, "EFB panel draws content", #drawn)
+  assert_on_screen("efb", nil)
+  assert_row_spacing("efb")
+  assert_text_inside_panel("efb")
+
+  -- every page must render without leaving the screen
+  for _, page in ipairs({ 2, 3, 1 }) do
+    efb_set_page(page)
+    reset()
+    efb_draw()
+    check(#drawn > 10, "EFB page " .. page .. " draws content", #drawn)
+    assert_on_screen("efb-page-" .. page, nil)
+    assert_text_inside_panel("efb-page-" .. page)
+  end
+
+  -- bottom-centre panel must not collide with the bottom-left QRH or the
+  -- bottom-right cabin panel
+  local x1 = (screen_w - EFB_CONFIG.panel_w) / 2
+  local x2 = x1 + EFB_CONFIG.panel_w
+  local qrh_right = TRAINER_CONFIG.panel_x + TRAINER_CONFIG.panel_w
+  local cab_left = screen_w - CAB_CONFIG.panel_w - 20
+  check(x1 > qrh_right, "EFB clears the QRH panel", string.format("%.0f > %d", x1, qrh_right))
+  check(x2 < cab_left, "EFB clears the cabin panel", string.format("%.0f < %d", x2, cab_left))
+end
+
 ------------------------------------------------------------------- result ----
 print("")
 if fails == 0 then

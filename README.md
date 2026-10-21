@@ -10,6 +10,7 @@ standalone landing-performance scorer.
 | `Scripts/CitationX_MasterSuite.lua` | Telemetry HUD, C750 systems readback, 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored), and the master status panel that toggles every suite subsystem by clicking a row. |
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
+| `Scripts/CitationX_EFB.lua` | Electronic flight bag panel: PERF (density altitude, wind components, V1/VR/V2/Vref, takeoff and landing distance by runway condition), CHECK (interactive 8-phase checklists) and FUEL (trip/contingency/alternate/reserve/endurance). Advisory data only. |
 | `Scripts/LandingPerformance.lua` | Standalone landing scoring and debrief card (third-party, untracked in git). |
 
 ## HUD status panel
@@ -33,8 +34,9 @@ FlyWithLua macro menu entries.
 | CABIN OPS | `cabin` | `CitationX_CabinOps` panel |
 | QRH TRAINER | `qrh` | `CitationX_FailureTrainer` panel |
 | LANDING PERF | `landperf` | `LandingPerformance` result card |
+| EFB | `efb` | `CitationX_EFB` panel (PERF / CHECK / FUEL) |
 
-The three sibling rows are nil-guarded: if that script is not installed the row shows
+The sibling rows are nil-guarded: if that script is not installed the row shows
 `ABSENT` and clicking it does nothing.
 
 ## Requirements

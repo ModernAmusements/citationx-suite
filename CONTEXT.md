@@ -390,6 +390,33 @@ FlyWithLua helper script that declares `sim_time` will collide again — keep th
   native arm64 process that cannot load Windows DLLs. The only routes are a Windows PC or the
   Windows X-Plane under CrossOver/Parallels.
 
+### 18. Citation X EFB added (2026-10-21)
+
+Requested as "the Zibo tablet for the Cessna". The Zibo EFB could not be reused (§17): it is
+25,668 lines of aircraft-specific XLua bound to 776 `laminar/B738/...` datarefs plus the
+`zibomod` plugin, and its licence forbids reuse. A native FlyWithLua EFB was written instead:
+
+- **`Scripts/CitationX_EFB.lua`** (fourth suite script, prefix `EFB_CONFIG` / `EFB_STYLE` /
+  `efb_*`), bottom-centre panel, 470 px wide, three pages:
+  - **PERF** — gross weight, fuel, field alt/QNH, OAT/ISA, pressure + density altitude, wind
+    (head/cross), V1/VR/V2/Vref, takeoff and landing distance, runway condition
+    DRY/WET/CONTAM. Model: V1 = 104 + 16·f, VR = V1+5, V2 = V1+14, Vref = 112 + 10·f with
+    f = (W−MLW)/(MTOW−MLW); distances scale with (W/ref)², +10 %/+7 % per 1000 ft density
+    altitude, wind factor 1 − 0.015·headwind, condition multipliers. **Advisory only, not AFM.**
+  - **CHECK** — 8 phases (before start → shutdown), 8 items each, click to check, per-phase
+    progress and reset, next/previous phase.
+  - **FUEL** — distance, cruise level, wind, taxi fuel; TAS/burn model vs level (420–470 KT,
+    820–1320 kg/h), trip, 5 % contingency, 10 min alternate, 45 min reserve, block fuel and
+    endurance from the current fuel load.
+- 15 commands (`CitationXSuite/efb_*`) and 6 macros. HUD row 14 (`efb`) toggles the panel and
+  shows `ABSENT` when the script is missing.
+- Tests: new `tests/smoke_efb.lua` (panel, three pages, tab clicks, checklist counting, all
+  clamps, condition cycling, hidden panel). `smoke_hud_toggles.lua` now covers 14 rows;
+  `smoke_panel_geometry.lua` renders the EFB and checks it clears the QRH and cabin panels
+  (40 checks total).
+- Validation after the change: `62 dataref binding(s), 0 load failure(s), 0 binding problem(s)`,
+  all smoke tests green.
+
 ## Not yet verified in-sim (as of 2026-10-21)
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
@@ -410,6 +437,9 @@ record these as confirmed working:
 - The **AviTab tablet** after the §16 `AviTab.json` rect fix and the stock `Panel.png` swap. The
   aircraft loaded cleanly before those edits; the tablet itself has not been looked at since.
 - Little Navmap ↔ Little Xpconnect live connection (both installed, never run together).
+- The **EFB** (§18): all pages pass the mock harness and the geometry sweep, but nothing has been
+  clicked or read in X-Plane yet. In particular the advisory numbers have not been compared to
+  the aircraft's real performance, and the checklist pages have not been used in a flight.
 
 In-sim status: the suite loaded cleanly on 2026-10-21 at 18:22 (`LUA_RUN` 1–3,
 `All script files loaded successfully`, 0 `FlyWithLua Error`). The only in-sim complaints were the

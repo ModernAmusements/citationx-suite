@@ -510,6 +510,20 @@ SUITE_MODULES = {
             return "HIDDEN", HUD_STYLE.dim
         end,
     },
+    {
+        key = "efb", label = "EFB", macro = "EFB panel",
+        get = function()
+            return (type(EFB_CONFIG) == "table") and EFB_CONFIG.panel_enabled or false
+        end,
+        set = function(on)
+            if type(efb_toggle_panel) == "function" then efb_toggle_panel(on) end
+        end,
+        state = function()
+            if type(EFB_CONFIG) ~= "table" then return "ABSENT", HUD_STYLE.dim end
+            if EFB_CONFIG.panel_enabled then return "ON", HUD_STYLE.ok end
+            return "OFF", HUD_STYLE.dim
+        end,
+    },
 }
 
 -- ------------------------------------------------ C750 SYSTEMS READBACK ----

@@ -12,11 +12,13 @@ Tracked (see `.gitignore`):
 
 ```
 Scripts/CitationX_CabinOps.lua
+Scripts/CitationX_EFB.lua
 Scripts/CitationX_FailureTrainer.lua
 Scripts/CitationX_MasterSuite.lua
 tests/check_datarefs.lua
 tests/check_kpcrew_modules.lua
 tests/probe_kpcrew.lua
+tests/smoke_efb.lua
 tests/smoke_hud_toggles.lua
 tests/smoke_mastersuite.lua
 tests/smoke_panel_geometry.lua
@@ -82,7 +84,7 @@ luac -p Scripts/*.lua
 
 # every dataref() binding is legal (exists, and array refs carry an index)
 for f in Scripts/CitationX_*.lua; do
-  lua tests/check_datarefs.lua ../../Resources/plugins/DataRefs.txt "$f"
+  lua tests/check_datarefs.lua ../../plugins/DataRefs.txt "$f"
 done
 
 # every require() reachable for the C750 resolves on disk (--all sweeps every aircraft)
@@ -90,12 +92,13 @@ lua tests/check_kpcrew_modules.lua C750
 
 # THE authoritative test: load all of Scripts/ in one shared LuaJIT state,
 # in the same alphabetical order FlyWithLua uses.
-luajit tests/probe_load_order.lua ../../Resources/plugins/DataRefs.txt Scripts
+luajit tests/probe_load_order.lua ../../plugins/DataRefs.txt Scripts
 
 # mock-FlyWithLua smoke tests
 export TMPDIR="$(mktemp -d)/"
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_efb.lua Scripts/CitationX_EFB.lua
 
 # panel layout: fits the screen, no overlapping/colliding text, rows clickable
 luajit tests/smoke_panel_geometry.lua
