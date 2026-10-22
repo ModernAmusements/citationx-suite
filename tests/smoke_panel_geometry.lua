@@ -189,39 +189,39 @@ do
   chunk()
 
   reset()
-  citationx_hud()
+  citationx_overlay()
   local n = #drawn
-  check(n > 20, "HUD draws a meaningful number of primitives", n)
-  assert_on_screen("HUD", nil)
-  assert_row_spacing("HUD")
-  assert_text_inside_panel("HUD")
+  check(n > 20, "control panel draws a meaningful number of primitives", n)
+  assert_on_screen("control panel", nil)
+  assert_row_spacing("control panel")
+  assert_text_inside_panel("control panel")
 
-  -- The C750 systems panel is on the right side; verify it does not collide
-  -- with the left HUD panel horizontally.
-  local hh = HUD_STYLE
-  local gap = (screen_w - hh.sys_w - 20) - (hh.x + hh.width)
-  check(gap >= 0, "HUD and C750 panels do not overlap horizontally", gap .. " px gap")
+  -- The control panel is the suite's only surface. With it switched off the
+  -- overlay must draw nothing at all (no telemetry HUD, no systems readback).
+  CONFIG.status_enabled = false
+  reset()
+  citationx_overlay()
+  check(#drawn == 0, "nothing is drawn when the control panel is off", #drawn .. " primitive(s)")
+  CONFIG.status_enabled = true
 
-  -- Behaviour-level click test: sweep the left panel vertically and confirm
-  -- each click hits at most one row and actually toggles something.
-  local hh2 = HUD_STYLE
-  local hit_keys, hit_count = {}, 0
+  -- Behaviour-level click test: sweep the panel vertically and confirm each
+  -- click hits at most one row and actually toggles something.
+  local hs = SUITE_STYLE
+  local hit_count = 0
   local errors = 0
   for y = 40, screen_h - 40, 4 do
     MOUSE_STATUS = "down"
-    MOUSE_X = hh2.x + hh2.width / 2
+    MOUSE_X = hs.x + hs.width / 2
     MOUSE_Y = y
     RESUME_MOUSE_CLICK = false
     local ok = pcall(citationx_mouse_click)
     if not ok then errors = errors + 1 end
     if RESUME_MOUSE_CLICK then
       hit_count = hit_count + 1
-      -- identify which module changed by comparing states before/after is not
-      -- possible here, so just record that a row was consumed
     end
     MOUSE_STATUS = "up"
   end
-  check(errors == 0, "click sweep over the HUD never errors", errors .. " error(s)")
+  check(errors == 0, "click sweep over the control panel never errors", errors .. " error(s)")
   check(hit_count >= #SUITE_MODULES, "click sweep hits at least one row per module",
     hit_count .. " hits for " .. #SUITE_MODULES .. " modules")
 

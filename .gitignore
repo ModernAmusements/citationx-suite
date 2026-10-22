@@ -18,6 +18,9 @@
 !/Scripts/
 /Scripts/*
 !/Scripts/CitationX_*.lua
+!/Scripts/CitationX_Callouts/
+/Scripts/CitationX_Callouts/*
+!/Scripts/CitationX_Callouts/*.wav
 
 # Mock-FlyWithLua test harnesses
 !/tests/

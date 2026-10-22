@@ -8,9 +8,10 @@ Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 
 | Script | State | Evidence / purpose |
 | --- | --- | --- |
-| `CitationX_MasterSuite.lua` | ✅ works* | `status report`, `flight recorder armed`, `heading knob locked to raw axis 28`; smoke tests pass |
+| `CitationX_MasterSuite.lua` | ✅ works* | `status report`, `flight recorder armed`, `heading knob locked to raw axis 28`; smoke tests pass. On-screen output is now the control panel only — the telemetry HUD and C750 systems readback were removed on 2026-10-23. |
 | `CitationX_FailureTrainer.lua` | ✅ works* | `Citation X Failure Trainer + QRH loaded` |
 | `CitationX_CabinOps.lua` | ✅ works* | `Cabin & Ground Ops loaded` |
+| `CitationX_Realism.lua` | ✅ tests | audio callouts, load-shed manager, brake fan, overspeed and icing advisories; no draw callback. `tests/smoke_realism.lua` drives all of them |
 | `LandingPerformance.lua` | ✅ works* | `Landing Performance: C750 \| GOOD \| Score 76 \| -220 FPM \| 1.42 G` — scored a real landing |
 | `Sim_Rate.lua` | ✅ works | `Sim Rate Monitor Loaded`, `Setting Sim Rate to 4x/1x` |
 | `kpredline.lua` | ✅ works | FSX-style Shift-Z line (see below); draws only after `kp/redline/toggle` |
@@ -20,8 +21,8 @@ Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 | `kpxbrief.lua` | ✅ loads | was a cascade of `kpcrew23`; needs `kpcrew23.lua` present |
 
 > **`works`** = confirmed in a real `Log.txt` run. **`works*`** = confirmed in that run but the
-> file has been edited since (panel spacing / HUD rows), so the current code is only proven to
-> load, not yet observed on screen.
+> file has been edited since (control-panel relayout / HUD removal), so the current code is only
+> proven to load, not yet observed on screen.
 > **`loads`** = chunk executes with no error in the LuaJIT shared-state harness; no functional
 > test. The KPCrew copilot UI, SOP checklists and SimBrief import have **not** been exercised.
 
@@ -100,10 +101,13 @@ upstream's design — do not test it in isolation and treat the failure as a bug
 
 ## Panel geometry (measured, not eyeballed)
 
-`tests/smoke_panel_geometry.lua` renders all three panels into a recording canvas and asserts
-21 properties: everything fits 2560×1440, no vertical text collisions, no text overflows its
-panel, the HUD and C750 panels do not overlap horizontally, and a vertical click sweep reaches
-every row. All pass with the new spacing (`row_h` 22 / `status_row_h` 20 / `sys_row_h` 19).
+`tests/smoke_panel_geometry.lua` renders all four panels into a recording canvas and asserts
+40 properties: everything fits 2560×1440, no vertical text collisions, no text overflows its
+panel, the EFB clears the QRH and cabin panels, and a vertical click sweep reaches every
+control-panel row.
+
+It also proves the suite draws **nothing at all** when the control panel is switched off —
+there is no telemetry HUD and no C750 systems readback any more.
 
 This does not prove the panels *look* good — only that they are mathematically well formed.
 

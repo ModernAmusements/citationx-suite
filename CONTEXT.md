@@ -1,6 +1,6 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-10-21
+Last updated: 2026-10-23
 
 ## Session handoff — read this first
 
@@ -417,7 +417,104 @@ Requested as "the Zibo tablet for the Cessna". The Zibo EFB could not be reused 
 - Validation after the change: `62 dataref binding(s), 0 load failure(s), 0 binding problem(s)`,
   all smoke tests green.
 
-## Not yet verified in-sim (as of 2026-10-21)
+## 19. Telemetry HUD and C750 systems readback removed (2026-10-23)
+
+Requested: *"there is no reason for HUDs because the plane has already all information… I only
+want the HUD where I can control the other HUDs."*
+
+Removed from `CitationX_MasterSuite.lua`:
+
+- the 8-row telemetry body (MACH LIM / AIRSPEED / ALTITUDE / ALT SEL / HDG SEL / G-LOAD /
+  FUEL FLOW / ATTITUDE) — all of it is on the Pro Line 21 PFD;
+- the alert pills (mach limit, structural G, emergency warning) — same reason;
+- the whole right-hand `C750 SYSTEMS` readback (58 `laminar/CitX/...` datarefs via
+  `XPLMFindDataRef`) — the synoptics and EICAS already show AP, electrics, fuel, ice and APU;
+- `CONFIG.hud_enabled`, `systems_panel_enabled`, `show_when_hud_off`, `mach_warn`,
+  `g_warn_high`, `g_warn_low`;
+- `SYSTEMS_PANEL` / `SYSTEMS_ITEMS` / `SYSTEMS_GROUPS` / `SYS_REF` / `SYS_VAL` / `poll_systems`;
+- `citationx_set_hud()`, `citationx_set_systems()`, `draw_systems_panel()`,
+  `draw_status_section()`, `systems_panel_height()`.
+
+What remains on screen is exactly one panel: `CONTROL PANEL`, 12 clickable rows, top-left.
+`HUD_STYLE` became `SUITE_STYLE` (only the panel, axis monitor, learn box and toast use it).
+`citationx_hud()` became `citationx_overlay()`; `do_every_draw` still draws every frame but
+emits nothing unless the panel, axis monitor, learn mode or a toast is active.
+
+Contract change: `SUITE_MODULES[i].state()` now returns **one** string (`"ON"`, `"OFF"`,
+`"REC"`, `"TRIGGERED"`, `"ABSENT"`, …). Colour is derived in `state_color()`. The command and
+macro names for the removed rows are gone: `CitationXSuite/toggle_hud`,
+`CitationXSuite/toggle_systems`, `HUD display`, `C750 systems panel`, `status panel` (renamed
+`control panel`).
+
+The emergency generator now announces itself with a toast on trigger and on clear, plus the
+`EMERGENCY GEN` row showing `TRIGGERED`; it no longer needs a HUD pill.
+
+Tests updated: `tests/smoke_hud_toggles.lua` now asserts the 12 expected keys, that `hud` /
+`systems` do not exist, that `state()` returns a single value, and that the overlay draws
+**zero** primitives with every display off. `tests/smoke_panel_geometry.lua` renders the control
+panel, keeps the 40-check layout sweep, and adds the "draws nothing when off" assertion.
+
+Validation: `62 dataref binding(s), 0 load failure(s), 0 binding problem(s)`; control-panel
+smoke, MasterSuite stick smoke, EFB smoke, panel geometry (40 checks) and
+`check_kpcrew_modules C750` all pass.
+
+## 20. Realism pack + texture pass (2026-10-23)
+
+Requested: *"a script that makes the flying more realistic, not add as many HUDs as possible"*,
+covering all four areas (systems, handling, ops flow, weather), plus sharper aircraft textures.
+
+### `Scripts/CitationX_Realism.lua`
+
+New fifth suite script. It registers **no draw callback at all** — the pack cannot add a HUD.
+Everything is audio or Log.txt.
+
+- **Callouts** (`CitationX_Callouts/*.wav`, 12 files, generated with macOS `say`): V ONE,
+  ROTATE, POSITIVE RATE, GEAR UP, ONE THOUSAND, FIVE HUNDRED, ONE HUNDRED, MINIMUMS, BRAKES HOT,
+  FLAP OVERSPEED, GEAR SPEED, ICING CONDITIONS. Missing WAVs or a missing sound API degrade to
+  Log.txt lines, never an error.
+- **Speeds** come from the aircraft's own POM (`Citation_X_Pilot_Operating_Manual.pdf`,
+  Operating-Speeds page): Vr 145, Vref 132, Vfe 180, Vle/Vlo 210, Vmo 270 below 8000 ft / 350
+  above, Mmo 0.935, Vso 115, Vs1 136. V1 is **not** published by the POM; `REAL_CONFIG.v1_kt`
+  defaults to 135 and is explicitly advisory.
+- **Electrical load manager**: watches `generator_on[0..1]` and `bus_volts[0]`. When a generator
+  is lost and the bus collapses below 24 V it fires the aircraft's real
+  `laminar/CitX/electrical/cmd_load_shed_dwn` every 2.5 s, up to 4 steps. It never restores
+  automatically. The LOAD SHED position is read lazily via `XPLMFindDataRef` (a `dataref()`
+  binding would quarantine the script before the C750 loads).
+- **Brake energy**: `sim/flightmodel2/gear/brake_absorbed_J` per wheel. Above 5 MJ it switches
+  `sim/cockpit2/controls/brake_fan_on` on and calls BRAKES HOT; below 1 MJ it switches the fan
+  off again.
+- **Overspeed advisories**: flap Vfe (180 full, 250 at the 15° detent) and gear Vle 210, each
+  latched once per event.
+- **Icing**: OAT −20…+5 °C with `sim/weather/region/rain_percent` > 0, repeated at most every
+  120 s.
+- Commands/macros: `CitationXRealism/toggle`, `/test_callout`, `/status`.
+- Added as row 13 of the MasterSuite control panel (`REALISM PACK`, `realism`), nil-guarded so
+  the panel still works without the script.
+- `tests/smoke_realism.lua` drives a full takeoff, approach, generator loss, hot brakes, flap
+  overspeed and icing, and asserts `do_every_draw` is never called.
+
+Note: `sim/weather/region/rain_percent` is a **scalar**, not an array. `probe_load_order`
+caught the first version binding it with `dataref_table` (`PROBLEM dataref_table on scalar`).
+
+### Textures
+
+There was no resolution headroom: the aircraft ships 4096² albedos (Cascade 3 livery: 8192²
+fuselage/cabin/cockpit_overall), `_tex_res` is 5 and `renopt_tex_res_04` is 4 (max), with 16×
+anisotropic filtering on an M1 Max. So the pass was **sharpening**, not upscaling:
+
+- `objects/cockpit_panel/cockpit_panel.dds` (DXT1, 4096) — unsharp mask `0x1.0+1.4+0.02`.
+- `liveries/*/objects/cockpit_panel/cockpit_panel.dds` — all six livery panel copies were
+  byte-identical, so they all received the same sharpened texture.
+- `liveries/plain white/objects/fuselage_wing/fuselage.dds` (DXT5, 4096) — unsharp mask
+  `0x1.2+1.0+0.02`. `plain white` is the active livery (`_livery_req 5`).
+- Re-encoded as DXT1/DXT5 with 13 mip levels. Originals preserved in
+  `Aircraft/Cessna Citation X AviTab/_original_textures/` (mirrors the folder structure).
+
+**Textures load when the aircraft loads, not when Lua reloads.** A FlyWithLua *Reload all Lua
+script files* will not show them; use Developer → Reload Aircraft or restart X-Plane.
+
+## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
 record these as confirmed working:

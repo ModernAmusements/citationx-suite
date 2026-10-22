@@ -13,16 +13,21 @@ every DataRef and command must exist; a single bad DataRef quarantines the whole
 
 ## Project map
 
-- `Scripts/CitationX_MasterSuite.lua` — HUD telemetry, C750 systems readback, flight recorder,
-  axis optimizer, input mapper, PS4 right-stick heading-bug knob (L2/R2 triggers must never
-  drive it; sticky lock + dead-slot watchdog), and the master status panel that toggles every
-  subsystem (including the sibling scripts' panels) by clicking a row.
+- `Scripts/CitationX_MasterSuite.lua` — flight recorder, axis optimizer, input mapper,
+  PS4 right-stick heading-bug knob (L2/R2 triggers must never drive it; sticky lock + dead-slot
+  watchdog), simulated bleed-air/pressurization emergency, and the control panel that toggles
+  every subsystem (including the sibling scripts' panels) by clicking a row. **No telemetry HUD
+  and no C750 systems readback** — the aircraft's own PFD/EICAS/synoptics already show that data;
+  do not add it back as an on-screen overlay.
 - `Scripts/CitationX_FailureTrainer.lua` — QRH scenarios, self-checking checklists, failure
   datarefs and CitX switch commands.
 - `Scripts/CitationX_CabinOps.lua` — boarding/GPU/lights flow panel.
+- `Scripts/CitationX_Realism.lua` — invisible realism pack: audio callouts, electrical
+  load-shed manager (drives the aircraft's own LOAD SHED switch), brake-energy/brake-fan
+  logic, flap/gear overspeed and icing advisories. Registers no draw callback.
 - `tests/` — offline harnesses, all runnable without X-Plane:
   `check_datarefs.lua`, `check_kpcrew_modules.lua`, `probe_kpcrew.lua`,
-  `smoke_mastersuite.lua`, `smoke_hud_toggles.lua`.
+  `smoke_mastersuite.lua`, `smoke_hud_toggles.lua`, `smoke_realism.lua`.
 - `README.md`, `AGENTS.md`, `CONTEXT.md`, `SCRIPT_STATUS.md` — documentation and history.
 
 **The mission generator no longer exists.** It was deleted on 2026-10-21 along with

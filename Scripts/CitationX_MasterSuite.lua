@@ -1,21 +1,26 @@
 -- ============================================================================
---  CESSNA CITATION X MASTER PERFORMANCE & TELEMETRY SUITE
+--  CESSNA CITATION X MASTER SUITE
 --  X-Plane 12  |  FlyWithLua NG+ (2.8+)
---  Version 2.0
+--  Version 2.1
 -- ----------------------------------------------------------------------------
 --  Systems:
---    1. Telemetry HUD + structural G / Mach monitor (glass-panel styling)
---    2. Axis optimizer (deadzone, curve, smoothing) via joystick overrides
---    3. 1 Hz telemetry flight data recorder -> CSV
---    4. Trigger-based bleed-air / pressurization emergency generator
---    5. Input mapper: Logitech MX keys / mouse events / joystick buttons
---    6. Suite status panel: live ON/OFF indicator for every system above
---    7. C750 systems readback panel: live AP / electrical / fuel / ice / APU
+--    1. Axis optimizer (deadzone, curve, smoothing) via joystick overrides
+--    2. 1 Hz telemetry flight data recorder -> CSV
+--    3. Trigger-based bleed-air / pressurization emergency generator
+--    4. Input mapper: Logitech MX keys / mouse events / joystick buttons
+--    5. Control panel: live ON/OFF state of every subsystem; click a row to
+--       toggle it
+--
+--  There is deliberately NO telemetry overlay and NO C750 systems readback:
+--  the aircraft's own PFD, EICAS and synoptics already show airspeed, altitude,
+--  heading, Mach, G, fuel flow, electrics, fuel and anti-ice. The only thing
+--  drawn on screen is the control panel (plus the axis monitor / learn-mode
+--  diagnostics while they are switched on).
 --
 --  Everything below is toggleable at runtime from the FlyWithLua macro menu,
 --  from X-Plane's joystick/key assignment UI (CitationXSuite/* commands), or by
---  clicking a row on the on-screen status panel. The status panel always shows
---  which subsystem is currently active, so you are never guessing.
+--  clicking a row on the control panel. The panel always shows which subsystem
+--  is currently active, so you are never guessing.
 --
 --  Verified against: DataRefs.txt, Commands.txt, the aircraft's own xLua
 --  scripts (plugins/xlua/scripts/*.lua) and FlyWithLua_Manual_en.pdf.
@@ -23,15 +28,13 @@
 
 -- ------------------------------------------------------------------ CONFIG --
 CONFIG = {
-    hud_enabled            = true,
     log_enabled            = true,
     log_to_desktop         = true,
 
-    -- Suite status panel: the live "which script is active" readout.
+    -- Control panel: the live "which subsystem is active" readout and the
+    -- suite's only on-screen surface. Click a row to toggle that subsystem.
     status_enabled         = true,
-    status_clickable       = true,   -- click a status row to toggle that system
-    systems_panel_enabled  = true,   -- right-hand C750 systems readback panel
-    show_when_hud_off      = true,   -- keep the status panel up if the HUD is hidden
+    status_clickable       = true,   -- click a row to toggle that system
 
     -- Takes over pitch/roll input via the per-axis joystick overrides.
     -- Off by default: enable only if you want the custom stick response.
@@ -39,10 +42,6 @@ CONFIG = {
     deadzone               = 0.03,
     curve_exponent         = 1.6,
     smoothing_factor       = 0.35,
-
-    mach_warn              = 0.91,
-    g_warn_high            = 2.8,
-    g_warn_low             = -0.5,
 
     emergency_enabled      = true,
     emergency_chance_1hz   = 1 / 900,
@@ -92,12 +91,11 @@ CONFIG = {
     thumbwheel_altitude     = false,
 }
 
--- ------------------------------------------------------------- HUD STYLE ----
+-- ----------------------------------------------------------- PANEL STYLE ----
 -- Glass-panel palette, {r, g, b} in 0..1. Background entries carry alpha.
-HUD_STYLE = {
+SUITE_STYLE = {
     x            = 28,
     width        = 396,
-    row_h        = 22,
     status_row_h = 20,
     pad          = 12,
     bg           = {0.02, 0.05, 0.08, 0.62},
@@ -112,11 +110,6 @@ HUD_STYLE = {
     dim          = {0.30, 0.37, 0.42},
     learn_bg     = {0.10, 0.07, 0.02, 0.85},
     learn        = {1.00, 0.75, 0.20},
-    -- right-hand C750 systems panel
-    sys_w        = 336,
-    sys_pad      = 12,
-    sys_row_h    = 19,
-    sys_cols     = 3,
 }
 
 -- ----------------------------------------------------------- INPUT MAP ------
@@ -367,36 +360,17 @@ local emergency_armed  = true
 local is_c750          = true
 
 -- ------------------------------------------------- SUITE MODULE REGISTRY ----
--- One entry per subsystem the suite owns. `state()` returns a short status
--- word plus an RGB triple used by the on-screen status panel. `set()` is the
--- single point of control for commands, macros and click-to-toggle.
+-- One entry per subsystem the suite owns. `state()` returns the short status
+-- word shown on the control panel. `set()` is the single point of control for
+-- commands, macros and click-to-toggle.
 SUITE_MODULES = {
     {
-        key = "hud", label = "HUD DISPLAY", macro = "HUD display",
-        get = function() return CONFIG.hud_enabled end,
-        set = function(on) citationx_set_hud(on) end,
-        state = function()
-            if CONFIG.hud_enabled then return "ON",  HUD_STYLE.ok end
-            return "OFF", HUD_STYLE.dim
-        end,
-    },
-    {
-        key = "status", label = "STATUS PANEL", macro = "status panel",
+        key = "status", label = "CONTROL PANEL", macro = "control panel",
         get = function() return CONFIG.status_enabled end,
         set = function(on) citationx_set_status(on) end,
         state = function()
-            if CONFIG.status_enabled then return "ON",  HUD_STYLE.ok end
-            return "OFF", HUD_STYLE.dim
-        end,
-    },
-    {
-        key = "systems", label = "C750 PANEL", macro = "C750 systems panel",
-        get = function() return CONFIG.systems_panel_enabled end,
-        set = function(on) citationx_set_systems(on) end,
-        state = function()
-            if not CONFIG.systems_panel_enabled then return "OFF", HUD_STYLE.dim end
-            if is_c750 then return "LIVE", HUD_STYLE.ok end
-            return "NO DATA", HUD_STYLE.warn
+            if CONFIG.status_enabled then return "ON" end
+            return "OFF"
         end,
     },
     {
@@ -404,9 +378,9 @@ SUITE_MODULES = {
         get = function() return CONFIG.axis_optimizer_enabled end,
         set = function(on) citationx_set_axis(on) end,
         state = function()
-            if not CONFIG.axis_optimizer_enabled then return "OFF", HUD_STYLE.dim end
-            if optimizer_active then return "ACTIVE", HUD_STYLE.ok end
-            return "ARMED", HUD_STYLE.warn
+            if not CONFIG.axis_optimizer_enabled then return "OFF" end
+            if optimizer_active then return "ACTIVE" end
+            return "ARMED"
         end,
     },
     {
@@ -414,9 +388,9 @@ SUITE_MODULES = {
         get = function() return CONFIG.log_enabled end,
         set = function(on) citationx_set_logging(on) end,
         state = function()
-            if not CONFIG.log_enabled then return "OFF", HUD_STYLE.dim end
-            if log_fd then return "REC", HUD_STYLE.alert end
-            return "NO FILE", HUD_STYLE.warn
+            if not CONFIG.log_enabled then return "OFF" end
+            if log_fd then return "REC" end
+            return "NO FILE"
         end,
     },
     {
@@ -424,9 +398,9 @@ SUITE_MODULES = {
         get = function() return CONFIG.emergency_enabled end,
         set = function(on) citationx_set_emergency(on) end,
         state = function()
-            if not CONFIG.emergency_enabled then return "OFF", HUD_STYLE.dim end
-            if emergency_left > 0.0 then return "TRIGGERED", HUD_STYLE.alert end
-            return "ARMED", HUD_STYLE.ok
+            if not CONFIG.emergency_enabled then return "OFF" end
+            if emergency_left > 0.0 then return "TRIGGERED" end
+            return "ARMED"
         end,
     },
     {
@@ -434,8 +408,8 @@ SUITE_MODULES = {
         get = function() return CONFIG.input_map_enabled end,
         set = function(on) citationx_set_input_map(on) end,
         state = function()
-            if CONFIG.input_map_enabled then return "ON",  HUD_STYLE.ok end
-            return "OFF", HUD_STYLE.dim
+            if CONFIG.input_map_enabled then return "ON" end
+            return "OFF"
         end,
     },
     {
@@ -443,8 +417,8 @@ SUITE_MODULES = {
         get = function() return CONFIG.input_learn_mode end,
         set = function(on) citationx_set_input_learn(on) end,
         state = function()
-            if CONFIG.input_learn_mode then return "ON",  HUD_STYLE.learn end
-            return "OFF", HUD_STYLE.dim
+            if CONFIG.input_learn_mode then return "ON" end
+            return "OFF"
         end,
     },
     {
@@ -452,8 +426,8 @@ SUITE_MODULES = {
         get = function() return CONFIG.stick_hdg_enabled end,
         set = function(on) citationx_set_stick_hdg(on) end,
         state = function()
-            if CONFIG.stick_hdg_enabled then return "ON",  HUD_STYLE.ok end
-            return "OFF", HUD_STYLE.dim
+            if CONFIG.stick_hdg_enabled then return "ON" end
+            return "OFF"
         end,
     },
     {
@@ -461,13 +435,13 @@ SUITE_MODULES = {
         get = function() return CONFIG.axis_monitor end,
         set = function(on) citationx_set_axis_monitor(on) end,
         state = function()
-            if CONFIG.axis_monitor then return "ON",  HUD_STYLE.learn end
-            return "OFF", HUD_STYLE.dim
+            if CONFIG.axis_monitor then return "ON" end
+            return "OFF"
         end,
     },
     -- --- sibling panels from the other suite scripts -------------------------
     -- These scripts share one Lua state, so their globals are reachable here.
-    -- Every accessor is nil-guarded so the HUD keeps working if a script is
+    -- Every accessor is nil-guarded so the panel keeps working if a script is
     -- missing, disabled or simply loaded in a different order.
     {
         key = "cabin", label = "CABIN OPS", macro = "cabin ops panel",
@@ -478,9 +452,9 @@ SUITE_MODULES = {
             if type(cab_toggle_panel) == "function" then cab_toggle_panel(on) end
         end,
         state = function()
-            if type(CAB_CONFIG) ~= "table" then return "ABSENT", HUD_STYLE.dim end
-            if CAB_CONFIG.panel_enabled then return "ON", HUD_STYLE.ok end
-            return "OFF", HUD_STYLE.dim
+            if type(CAB_CONFIG) ~= "table" then return "ABSENT" end
+            if CAB_CONFIG.panel_enabled then return "ON" end
+            return "OFF"
         end,
     },
     {
@@ -492,9 +466,9 @@ SUITE_MODULES = {
             if type(qrh_toggle_panel) == "function" then qrh_toggle_panel(on) end
         end,
         state = function()
-            if type(TRAINER_CONFIG) ~= "table" then return "ABSENT", HUD_STYLE.dim end
-            if TRAINER_CONFIG.panel_enabled then return "ON", HUD_STYLE.ok end
-            return "OFF", HUD_STYLE.dim
+            if type(TRAINER_CONFIG) ~= "table" then return "ABSENT" end
+            if TRAINER_CONFIG.panel_enabled then return "ON" end
+            return "OFF"
         end,
     },
     {
@@ -506,9 +480,9 @@ SUITE_MODULES = {
             if (la_displayOn == true) ~= (on == true) then la_toggle_last_result() end
         end,
         state = function()
-            if la_show_last_result == nil then return "ABSENT", HUD_STYLE.dim end
-            if la_displayOn == true then return "SHOWN", HUD_STYLE.ok end
-            return "HIDDEN", HUD_STYLE.dim
+            if la_show_last_result == nil then return "ABSENT" end
+            if la_displayOn == true then return "SHOWN" end
+            return "HIDDEN"
         end,
     },
     {
@@ -520,85 +494,38 @@ SUITE_MODULES = {
             if type(efb_toggle_panel) == "function" then efb_toggle_panel(on) end
         end,
         state = function()
-            if type(EFB_CONFIG) ~= "table" then return "ABSENT", HUD_STYLE.dim end
-            if EFB_CONFIG.panel_enabled then return "ON", HUD_STYLE.ok end
-            return "OFF", HUD_STYLE.dim
+            if type(EFB_CONFIG) ~= "table" then return "ABSENT" end
+            if EFB_CONFIG.panel_enabled then return "ON" end
+            return "OFF"
+        end,
+    },
+    {
+        key = "realism", label = "REALISM PACK", macro = "realism pack",
+        get = function()
+            return (type(REAL_CONFIG) == "table") and REAL_CONFIG.enabled or false
+        end,
+        set = function(on)
+            if type(real_set_enabled) == "function" then real_set_enabled(on) end
+        end,
+        state = function()
+            if type(REAL_CONFIG) ~= "table" then return "ABSENT" end
+            if REAL_CONFIG.enabled then return "ON" end
+            return "OFF"
         end,
     },
 }
 
--- ------------------------------------------------ C750 SYSTEMS READBACK ----
--- These are the aircraft's own runtime datarefs (registered by its xLua
--- scripts via create_dataref). They do not exist until the Citation X loads,
--- so they are resolved lazily with XPLMFindDataRef() and read with
--- XPLMGetDataf() in the frame loop (reading in a draw callback is not allowed).
-SYSTEMS_PANEL = {
-    { title = "AUTOPILOT", items = {
-        {"L AP",   "laminar/CitX/autopilot/left_ap"},
-        {"R AP",   "laminar/CitX/autopilot/right_ap"},
-        {"Y/D",    "laminar/CitX/autopilot/left_yd"},
-        {"HDG",    "laminar/CitX/autopilot/hdg_mode_on"},
-        {"NAV",    "laminar/CitX/autopilot/nav_mode_on"},
-        {"ALT",    "laminar/CitX/autopilot/alt_mode_on"},
-        {"VS",     "laminar/CitX/autopilot/vs_mode_on"},
-        {"FLC",    "laminar/CitX/autopilot/flc_mode_on"},
-        {"APPR",   "laminar/CitX/autopilot/app_mode_on"},
-        {"VNAV",   "laminar/CitX/autopilot/vnav_mode_on"},
-        {"BANK",   "laminar/CitX/autopilot/bank_mode_on"},
-        {"CWS",    "laminar/CitX/autopilot/cngovr_mode_on"},
-    }},
-    { title = "ELECTRICAL", items = {
-        {"BAT L",  "laminar/CitX/electrical/battery_left"},
-        {"BAT R",  "laminar/CitX/electrical/battery_right"},
-        {"GEN L",  "laminar/CitX/electrical/generator_left"},
-        {"GEN R",  "laminar/CitX/electrical/generator_right"},
-        {"EXT PWR","laminar/CitX/electrical/ext_pwr"},
-        {"AVION",  "laminar/CitX/electrical/avionics"},
-        {"EICAS",  "laminar/CitX/electrical/avionics_eicas"},
-        {"STBY",   "laminar/CitX/electrical/battery_stby_pwr"},
-    }},
-    { title = "FUEL", items = {
-        {"BST L",  "laminar/CitX/fuel/boost_left"},
-        {"BST R",  "laminar/CitX/fuel/boost_right"},
-        {"XFEED",  "laminar/CitX/fuel/crossfeed"},
-        {"XFER L", "laminar/CitX/fuel/transfer_left"},
-        {"XFER R", "laminar/CitX/fuel/transfer_right"},
-        {"GRAV",   "laminar/CitX/fuel/gravity_flow"},
-    }},
-    { title = "ICE / ANTI-ICE", items = {
-        {"ENG L",  "laminar/CitX/ice/engine_left"},
-        {"ENG R",  "laminar/CitX/ice/engine_right"},
-        {"PITOT L","laminar/CitX/ice/pitot_static_left"},
-        {"PITOT R","laminar/CitX/ice/pitot_static_right"},
-        {"SLAT",   "laminar/CitX/ice/slat"},
-        {"STAB L", "laminar/CitX/ice/stabilizer_left"},
-        {"STAB R", "laminar/CitX/ice/stabilizer_right"},
-        {"W/S AIR","laminar/CitX/ice/windshield_air"},
-    }},
-    { title = "APU", items = {
-        {"MASTER", "laminar/CitX/APU/master_switch"},
-        {"STARTER","laminar/CitX/APU/starter_switch"},
-        {"GEN",    "laminar/CitX/APU/gen_switch"},
-        {"READY",  "laminar/CitX/APU/annunc_ready_load"},
-    }},
-}
-
-SYSTEMS_ITEMS  = {}
-SYSTEMS_GROUPS = {}
-local function build_systems_index()
-    for _, group in ipairs(SYSTEMS_PANEL) do
-        local first = #SYSTEMS_ITEMS + 1
-        for _, item in ipairs(group.items) do
-            SYSTEMS_ITEMS[#SYSTEMS_ITEMS + 1] = { label = item[1], dr = item[2] }
-        end
-        SYSTEMS_GROUPS[#SYSTEMS_GROUPS + 1] = { title = group.title, first = first, last = #SYSTEMS_ITEMS }
+-- Status word -> colour on the control panel.
+local function state_color(text)
+    local st = SUITE_STYLE
+    if text == "ON" or text == "LIVE" or text == "REC"
+        or text == "ACTIVE" or text == "ARMED" or text == "SHOWN" then
+        return st.ok
     end
+    if text == "TRIGGERED" then return st.alert end
+    if text == "OFF" or text == "HIDDEN" then return st.dim end
+    return st.warn   -- ABSENT / NO FILE / anything unexpected
 end
-build_systems_index()
-
-local SYS_REF = {}
-local SYS_VAL = {}
-local sys_retry_at = 0
 
 -- ------------------------------------------------------------------ STATE ---
 local recorder_path    = "(none)"
@@ -691,18 +618,6 @@ local function write_log_line(now)
     log_fd:flush()
 end
 
-local function maybe_start_emergency()
-    if not CONFIG.emergency_enabled then return end
-    if not emergency_armed or emergency_left > 0.0 then return end
-    if (elevation_m or 0.0) * 3.28084 > CONFIG.emergency_alt_ft
-        and (mach_no or 0.0) > CONFIG.emergency_mach
-        and math.random() < CONFIG.emergency_chance_1hz then
-        emergency_left  = CONFIG.emergency_duration_sec
-        emergency_armed = false
-        print("Citation X Suite: simulated bleed air and pressurization warning")
-    end
-end
-
 local function toast(text)
     toast_text  = text
     toast_until = (citationx_sim_time or 0.0) + 2.0
@@ -712,20 +627,23 @@ local function toast_state(name, on)
     toast(name .. (on and ": ON" or ": OFF"))
 end
 
--- -------------------------------------------------------- SUITE CONTROL -----
-function citationx_set_hud(on)
-    CONFIG.hud_enabled = (on == true)
-    toast_state("HUD", CONFIG.hud_enabled)
+local function maybe_start_emergency()
+    if not CONFIG.emergency_enabled then return end
+    if not emergency_armed or emergency_left > 0.0 then return end
+    if (elevation_m or 0.0) * 3.28084 > CONFIG.emergency_alt_ft
+        and (mach_no or 0.0) > CONFIG.emergency_mach
+        and math.random() < CONFIG.emergency_chance_1hz then
+        emergency_left  = CONFIG.emergency_duration_sec
+        emergency_armed = false
+        print("Citation X Suite: simulated bleed air and pressurization warning")
+        toast("BLEED AIR / PRESSURIZATION WARNING")
+    end
 end
 
+-- -------------------------------------------------------- SUITE CONTROL -----
 function citationx_set_status(on)
     CONFIG.status_enabled = (on == true)
-    toast_state("STATUS PANEL", CONFIG.status_enabled)
-end
-
-function citationx_set_systems(on)
-    CONFIG.systems_panel_enabled = (on == true)
-    toast_state("C750 SYSTEMS", CONFIG.systems_panel_enabled)
+    toast_state("CONTROL PANEL", CONFIG.status_enabled)
 end
 
 function citationx_set_axis(on)
@@ -958,22 +876,6 @@ function citationx_set_input_learn(on)
     end
 end
 
--- ------------------------------------------------- C750 SYSTEMS POLLING ----
-local function poll_systems(now)
-    local retry = (now >= sys_retry_at)
-    if retry then sys_retry_at = now + 5.0 end
-    for i = 1, #SYSTEMS_ITEMS do
-        if not SYS_REF[i] and retry then
-            SYS_REF[i] = XPLMFindDataRef(SYSTEMS_ITEMS[i].dr)
-        end
-        if SYS_REF[i] then
-            SYS_VAL[i] = XPLMGetDataf(SYS_REF[i])
-        else
-            SYS_VAL[i] = nil
-        end
-    end
-end
-
 -- ------------------------------------------------------------- FRAME LOOP ---
 function citationx_frame()
     local now = citationx_sim_time or 0.0
@@ -1131,11 +1033,16 @@ function citationx_frame()
             emergency_left  = 0.0
             emergency_armed = true
             logMsg("Citation X Suite: emergency condition cleared")
+            toast("BLEED AIR WARNING CLEARED")
         end
     end
 
-    -- 5. joystick buttons: learn logging + mapped actions
-    for i = 0, 63 do
+    -- 5. joystick buttons: learn logging + mapped actions.
+    -- Buttons are 64 per device (sim/joystick/joystick_button_values is
+    -- int[3200] = 50 devices x 64). The DS4 enumerates twice, USB and
+    -- Bluetooth, so scan both slots or the pad goes dead when it reconnects
+    -- on the other interface.
+    for i = 0, 127 do
         local value = joy_buttons[i] or 0
         if value ~= (prev_joy_buttons[i] or 0) then
             prev_joy_buttons[i] = value
@@ -1159,14 +1066,13 @@ function citationx_frame()
             end
         end
     end
-
-    -- 7. aircraft systems readback (only meaningful on the Citation X)
-    if CONFIG.systems_panel_enabled and is_c750 then
-        poll_systems(now)
-    end
 end
 
--- ------------------------------------------------------------------- HUD ----
+-- --------------------------------------------------------- ON-SCREEN PANEL ----
+-- The only thing the suite draws is the control panel (plus the axis monitor,
+-- the learn-mode box and a 2 s toast while those are switched on). There is no
+-- telemetry readout and no aircraft-systems mirror: the cockpit already has
+-- airspeed, altitude, heading, Mach, G, fuel flow, electrics, fuel and ice.
 local function draw_text_right(right_x, y, text, r, g, b)
     draw_string(right_x - measure_string(text), y, text, r, g, b)
 end
@@ -1185,81 +1091,35 @@ local function fit_text(text, max_px)
     return trimmed .. "..."
 end
 
-
-local function systems_panel_height()
-    local st = HUD_STYLE
-    local h  = st.sys_pad + 26 + 20
-    for _, grp in ipairs(SYSTEMS_GROUPS) do
-        h = h + 20
-        local n = grp.last - grp.first + 1
-        h = h + math.ceil(n / st.sys_cols) * st.sys_row_h
-        h = h + 12
-    end
-    return h + st.sys_pad
+-- header (24) + sub-header gap (20) + rows + bottom padding
+local function control_panel_height()
+    local st = SUITE_STYLE
+    return 44 + 20 + (#SUITE_MODULES - 1) * st.status_row_h + st.pad
 end
 
-local function draw_systems_panel(screen_w, screen_h)
-    local st = HUD_STYLE
-    local w  = st.sys_w
-    local x  = screen_w - w - 20
+local function draw_control_panel(screen_h)
+    local st = SUITE_STYLE
+    local x, w, pad = st.x, st.width, st.pad
     local top = screen_h - 20
-    local h  = systems_panel_height()
-    local bottom = top - h
+    local bottom = top - control_panel_height()
+
+    status_rects = {}
 
     draw_bar(x, bottom, top, w, st.bg)
     draw_bar(x, top - 24, top, w, st.header_bg, 0.90)
     draw_bar(x, top - 26, top - 24, w, st.accent)
-    draw_string(x + st.sys_pad, top - 18, "C750 SYSTEMS", st.accent[1], st.accent[2], st.accent[3])
-    if not is_c750 then
-        draw_text_right(x + w - st.sys_pad, top - 18, "NO DATA", st.warn[1], st.warn[2], st.warn[3])
-    end
+    draw_string(x + pad, top - 18, "CITATION X   MASTER SUITE",
+        st.accent[1], st.accent[2], st.accent[3])
 
-    local col_w = (w - st.sys_pad * 2) / st.sys_cols
-    local y = top - 24 - 20
-    for _, grp in ipairs(SYSTEMS_GROUPS) do
-        draw_string(x + st.sys_pad, y, grp.title, st.subhdr[1], st.subhdr[2], st.subhdr[3])
-        y = y - 20
-        local i = grp.first
-        while i <= grp.last do
-            for c = 0, st.sys_cols - 1 do
-                local idx = i + c
-                if idx <= grp.last then
-                    local it = SYSTEMS_ITEMS[idx]
-                    local v  = SYS_VAL[idx]
-                    local r, g, b
-                    if v == nil then
-                        r, g, b = st.dim[1], st.dim[2], st.dim[3]
-                    elseif v >= 0.5 then
-                        r, g, b = st.ok[1], st.ok[2], st.ok[3]
-                    elseif v <= -0.5 then
-                        r, g, b = st.warn[1], st.warn[2], st.warn[3]
-                    else
-                        r, g, b = st.dim[1], st.dim[2], st.dim[3]
-                    end
-                    local cx = x + st.sys_pad + c * col_w
-                    glColor4f(r, g, b, 1.0)
-                    glRectf(cx, y - 1, cx + 4, y + 7)
-                    draw_string(cx + 8, y, it.label, r, g, b)
-                end
-            end
-            y = y - st.sys_row_h
-            i = i + st.sys_cols
-        end
-        y = y - 12
-    end
-end
+    local header_y = top - 24 - 20
+    draw_string(x + pad, header_y, "CONTROL PANEL", st.subhdr[1], st.subhdr[2], st.subhdr[3])
 
-local function draw_status_section(x, w, pad, top_y)
-    local st = HUD_STYLE
-    status_rects = {}
-
-    draw_string(x + pad, top_y, "SUITE STATUS", st.subhdr[1], st.subhdr[2], st.subhdr[3])
-    local first_y = top_y - 20
-
+    local first_y = header_y - 20
     for i = 1, #SUITE_MODULES do
         local m = SUITE_MODULES[i]
         local y = first_y - (i - 1) * st.status_row_h
-        local text, col = m.state()
+        local text = m.state()
+        local col  = state_color(text)
 
         glColor4f(col[1], col[2], col[3], 1.0)
         glRectf(x + pad, y - 1, x + pad + 5, y + 8)
@@ -1272,110 +1132,17 @@ local function draw_status_section(x, w, pad, top_y)
             y0 = y - 3, y1 = y + st.status_row_h - 3,
         }
     end
-
-    return first_y - (#SUITE_MODULES - 1) * st.status_row_h
 end
 
-function citationx_hud()
+function citationx_overlay()
     local screen_w = SCREEN_WIDTH  or 1920
     local screen_h = SCREEN_HIGHT or 1080
 
-    local st = HUD_STYLE
-    local x, w, pad = st.x, st.width, st.pad
+    local st = SUITE_STYLE
 
-    local mach   = mach_no or 0.0
-    local gload  = g_nrml or 1.0
-    local alt_ft = (elevation_m or 0.0) * 3.28084
-
-    local show_body    = CONFIG.hud_enabled
-    local show_status  = CONFIG.status_enabled and (CONFIG.hud_enabled or CONFIG.show_when_hud_off)
-
-    if show_body or show_status then
+    if CONFIG.status_enabled then
         XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
-    end
-
-    if show_body or show_status then
-        local panel_top = screen_h - 20
-        local title_y   = panel_top - 20
-
-        local entries = {}
-        if show_body then
-            local mach_color = (mach > CONFIG.mach_warn) and st.alert or st.value
-            local g_color    = (gload > CONFIG.g_warn_high or gload < CONFIG.g_warn_low) and st.warn or st.value
-            entries = {
-                { string.format("MACH   LIM %.2f", CONFIG.mach_warn), string.format("%.3f", mach), mach_color },
-                { "AIRSPEED", string.format("%.0f kt", ias_kts or 0.0), st.value },
-                { "ALTITUDE", string.format("%.0f ft", alt_ft), st.value },
-                { "ALT SEL",  string.format("%.0f ft", alt_sel_ft or 0.0), st.accent },
-                { "HDG SEL",  string.format("%03.0f deg", hdg_sel_deg or 0.0), st.accent },
-                { "G-LOAD",   string.format("%+.2f G", gload), g_color },
-                { "FUEL FLOW", string.format("%.0f kg/h", total_fuel_flow_kg_h()), st.value },
-                { "ATTITUDE", string.format("%+.1f / %+.1f deg", pitch_deg or 0.0, roll_deg or 0.0), st.value },
-            }
-        end
-
-        local row1_y = title_y - 28
-        local last_body_y = row1_y - (#entries == 0 and 0 or (#entries - 1) * st.row_h)
-        if #entries == 0 then last_body_y = title_y - 8 end
-
-        local status_header_y = last_body_y - 26
-        local status_first_y  = status_header_y - 20
-        local status_last_y   = status_first_y - (#SUITE_MODULES - 1) * st.status_row_h
-        local panel_bottom    = status_last_y - 16
-
-        draw_bar(x, panel_bottom, panel_top, w, st.bg)
-        draw_bar(x, title_y - 10, panel_top, w, st.header_bg, 0.90)
-        draw_bar(x, title_y - 12, title_y - 10, w, st.accent)
-
-        draw_string(x + pad, title_y, "CITATION X   MASTER SUITE", st.accent[1], st.accent[2], st.accent[3])
-
-        if not is_c750 then
-            draw_text_right(x + w - pad, title_y, "NOT C750", st.warn[1], st.warn[2], st.warn[3])
-        else
-            draw_text_right(x + w - pad, title_y, "v2.0", st.label[1], st.label[2], st.label[3])
-        end
-
-        if show_body then
-            for i = 1, #entries do
-                local y = row1_y - (i - 1) * st.row_h
-                draw_string(x + pad, y, entries[i][1], st.label[1], st.label[2], st.label[3])
-                local c = entries[i][3]
-                draw_text_right(x + w - pad, y, entries[i][2], c[1], c[2], c[3])
-            end
-        end
-
-        if show_status then
-            draw_status_section(x, w, pad, status_header_y)
-        end
-
-        -- alert pills
-        local pill_y = panel_bottom - 14
-        local function pill(text, color)
-            local text_w = measure_string(text)
-            draw_bar(x, pill_y - 18, pill_y + 6, text_w + 22, color, 0.80)
-            draw_string(x + 11, pill_y - 12, text, 0.04, 0.04, 0.04)
-            pill_y = pill_y - 30
-        end
-
-        if show_body then
-            if mach > CONFIG.mach_warn then
-                pill(string.format("MACH LIMIT EXCEEDED  %.3f", mach), st.alert)
-            end
-            if gload > CONFIG.g_warn_high or gload < CONFIG.g_warn_low then
-                pill(string.format("STRUCTURAL G-LOAD  %+.2f G", gload), st.warn)
-            end
-            if emergency_left > 0.0 and math.floor((citationx_sim_time or 0.0) * 2) % 2 == 0 then
-                pill("BLEED AIR / PRESSURIZATION WARNING", st.alert)
-            end
-        end
-        if not is_c750 then
-            pill("NOT CITATION X - C750 SYSTEMS UNAVAILABLE", st.warn)
-        end
-    end
-
-    if CONFIG.systems_panel_enabled then
-        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
-        draw_systems_panel(screen_w, screen_h)
+        draw_control_panel(screen_h)
     end
 
     if CONFIG.axis_monitor then
@@ -1424,10 +1191,10 @@ function citationx_hud()
         local box_y  = screen_h - 96
         glColor4f(0.02, 0.06, 0.09, 0.85)
         glRectf(box_x, box_y - 8, box_x + box_w, box_y + 22)
-        glColor4f(HUD_STYLE.accent[1], HUD_STYLE.accent[2], HUD_STYLE.accent[3], 1.0)
+        glColor4f(SUITE_STYLE.accent[1], SUITE_STYLE.accent[2], SUITE_STYLE.accent[3], 1.0)
         glRectf(box_x, box_y - 8, box_x + 4, box_y + 22)
         draw_string(box_x + 16, box_y + 3, toast_text,
-            HUD_STYLE.value[1], HUD_STYLE.value[2], HUD_STYLE.value[3])
+            SUITE_STYLE.value[1], SUITE_STYLE.value[2], SUITE_STYLE.value[3])
     end
 
     if CONFIG.input_learn_mode then
@@ -1472,7 +1239,7 @@ end
 
 citationx_init()
 do_every_frame("citationx_frame()")
-do_every_draw("citationx_hud()")
+do_every_draw("citationx_overlay()")
 do_on_exit("citationx_shutdown()")
 do_on_keystroke("citationx_keystroke()")
 do_on_mouse_click("citationx_mouse_click()")

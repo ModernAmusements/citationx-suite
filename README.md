@@ -7,23 +7,26 @@ standalone landing-performance scorer.
 
 | File | Purpose |
 | --- | --- |
-| `Scripts/CitationX_MasterSuite.lua` | Telemetry HUD, C750 systems readback, 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored), and the master status panel that toggles every suite subsystem by clicking a row. |
+| `Scripts/CitationX_MasterSuite.lua` | 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored), simulated bleed-air/pressurization emergency, and the control panel that toggles every suite subsystem. No telemetry HUD. |
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
 | `Scripts/CitationX_EFB.lua` | Electronic flight bag panel: PERF (density altitude, wind components, V1/VR/V2/Vref, takeoff and landing distance by runway condition), CHECK (interactive 8-phase checklists) and FUEL (trip/contingency/alternate/reserve/endurance). Advisory data only. |
+| `Scripts/CitationX_Realism.lua` | Invisible realism pack: audio takeoff/approach callouts (V1, rotate, positive rate, gear up, 1000/500/100, minimums), electrical load manager that drives the aircraft's own LOAD SHED switch after a generator loss, brake-energy monitor that runs the brake fan, flap/gear overspeed and icing callouts. No on-screen drawing. |
 | `Scripts/LandingPerformance.lua` | Standalone landing scoring and debrief card (third-party, untracked in git). |
 
-## HUD status panel
+## Control panel
 
-The left-hand panel lists every subsystem with a live ON/OFF state. Click a row to toggle it.
+The left-hand panel lists every subsystem with a live state. Click a row to toggle it.
 The same toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as
 FlyWithLua macro menu entries.
 
+This is the **only** thing the suite draws. There is no telemetry HUD and no C750 systems
+readback: the aircraft's PFD, EICAS and synoptics already show airspeed, altitude, heading,
+Mach, G, fuel flow, electrics, fuel and anti-ice, so duplicating them on screen adds nothing.
+
 | Row | Key | What it toggles |
 | --- | --- | --- |
-| HUD DISPLAY | `hud` | The telemetry body (MACH / IAS / ALT / G-LOAD …) |
-| STATUS PANEL | `status` | This panel itself |
-| C750 PANEL | `systems` | The right-hand C750 systems readback |
+| CONTROL PANEL | `status` | This panel itself |
 | AXIS OPTIMIZER | `axis` | Custom pitch/roll response curve |
 | FLIGHT RECORDER | `log` | 1 Hz CSV recorder |
 | EMERGENCY GEN | `emerg` | Bleed-air / pressurization emergency triggers |
@@ -35,6 +38,7 @@ FlyWithLua macro menu entries.
 | QRH TRAINER | `qrh` | `CitationX_FailureTrainer` panel |
 | LANDING PERF | `landperf` | `LandingPerformance` result card |
 | EFB | `efb` | `CitationX_EFB` panel (PERF / CHECK / FUEL) |
+| REALISM PACK | `realism` | `CitationX_Realism` callouts and load manager |
 
 The sibling rows are nil-guarded: if that script is not installed the row shows
 `ABSENT` and clicking it does nothing.
@@ -60,24 +64,25 @@ stays untracked via `.gitignore`.
 
 ## Configuration
 
-- `CitationX_MasterSuite.lua` — `CONFIG` table: HUD, flight recorder, axis optimizer,
+- `CitationX_MasterSuite.lua` — `CONFIG` table: flight recorder, axis optimizer,
   emergency generator, input mapper and the right-stick heading knob
   (`stick_hdg_*`, including `stick_hdg_exclude_axes` and a fixed `stick_hdg_axis` pin).
-  Panel layout lives in `HUD_STYLE` (`row_h`, `status_row_h`, `sys_row_h`, and the
-  C750 panel's `sys_*` values).
+  Panel layout lives in `SUITE_STYLE` (`status_row_h` and the panel geometry).
 - `CitationX_CabinOps.lua` — `CAB_CONFIG` (`row_h` controls row spacing).
 - `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG` (`row_h` controls row spacing).
+- `CitationX_Realism.lua` — `REAL_CONFIG`: callout speeds (V1/Vr/Vref/Vfe/Vle),
+  minima, load-shed threshold, brake-energy limits, icing window.
 
 ## Bindable commands
 
 ```
-CitationXSuite/toggle_hud      CitationXSuite/toggle_status   CitationXSuite/toggle_systems
+CitationXSuite/toggle_status
 CitationXSuite/toggle_axis     CitationXSuite/toggle_log      CitationXSuite/toggle_emerg
 CitationXSuite/toggle_input    CitationXSuite/toggle_learn    CitationXSuite/toggle_stick
 CitationXSuite/toggle_axmon    CitationXSuite/toggle_cabin    CitationXSuite/toggle_qrh
-CitationXSuite/toggle_landperf
+CitationXSuite/toggle_landperf CitationXSuite/toggle_efb    CitationXSuite/toggle_realism
 
-CitationXQRH/*                 CabinOps/*
+CitationXQRH/*                 CabinOps/*                    CitationXRealism/*
 ```
 
 ## Development and validation
@@ -98,6 +103,7 @@ lua tests/check_kpcrew_modules.lua C750
 export TMPDIR="$(mktemp -d)/"
 HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_realism.lua Scripts/CitationX_Realism.lua
 ```
 
 Every DataRef used by the scripts must exist in

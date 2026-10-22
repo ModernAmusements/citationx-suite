@@ -1,10 +1,14 @@
 --[[
-  smoke_hud_toggles.lua — verify every SUITE_MODULES entry in MasterSuite is
-  well formed, including the sibling-panel toggles that reach into CabinOps,
-  FailureTrainer and LandingPerformance.
+  smoke_hud_toggles.lua — verify the MasterSuite control panel.
+
+  The suite no longer draws a telemetry HUD or a C750 systems readback (the
+  aircraft's own PFD/EICAS/synoptics already show that data). What must keep
+  working is the control panel: one clickable row per subsystem, plus the
+  sibling-panel toggles that reach into CabinOps, FailureTrainer, the EFB and
+  LandingPerformance.
 
   Usage:
-    HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
+    HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
 --]]
 
 local script = arg[1] or "Scripts/CitationX_MasterSuite.lua"
@@ -27,13 +31,14 @@ Control = {} ; Menu = {}
 
 local datarefs, commands, macros = {}, {}, {}
 local draw_cb
+local primitives = 0
 
 function dataref(name, path, mode, index)
   datarefs[#datarefs + 1] = { name = name, path = path, mode = mode, index = index }
   _G[name] = 0
   return _G[name]
 end
-function dataref_table(path) return {} end
+function dataref_table(path) return setmetatable({}, { __index = function() return 0 end }) end
 function get() return 0 end
 function set() end
 function logMsg(s) if os.getenv("VERBOSE") then print("      [log] " .. tostring(s)) end end
@@ -50,10 +55,10 @@ function do_every_frame(f) end
 function do_often(f) end
 function do_sometimes(f) end
 function do_every_second(f) end
-function draw_string() end
-function draw_string_Helvetica_10() end
-function draw_string_Helvetica_12() end
-function draw_string_Helvetica_18() end
+function draw_string() primitives = primitives + 1 end
+function draw_string_Helvetica_10() primitives = primitives + 1 end
+function draw_string_Helvetica_12() primitives = primitives + 1 end
+function draw_string_Helvetica_18() primitives = primitives + 1 end
 function measure_string(t) return #tostring(t) * 7 end
 function command_once() end
 function toast() end
@@ -64,7 +69,7 @@ function XPLMSetDataf() end
 function XPLMSetDatai() end
 function XPLMSetGraphicsState() end
 function glColor4f() end
-function glRectf() end
+function glRectf() primitives = primitives + 1 end
 function load_preferences() end
 function save_preferences() end
 function read_preferences() end
@@ -87,9 +92,18 @@ local chunk = assert(loadfile(script))
 chunk()
 
 check(type(SUITE_MODULES) == "table", "SUITE_MODULES exists")
-check(type(HUD_STYLE) == "table", "HUD_STYLE exists")
+check(type(SUITE_STYLE) == "table", "SUITE_STYLE exists")
+
+-- ---------- the duplicate cockpit readouts must not come back ----------
+check(rawget(_G, "SYSTEMS_PANEL") == nil, "no C750 systems readback table")
+check(rawget(_G, "SYSTEMS_ITEMS") == nil, "no C750 systems item list")
+check(rawget(_G, "HUD_STYLE") == nil, "no HUD palette left behind")
 
 -- ---------- every module row is complete ----------
+local expected = {
+  "status", "axis", "log", "emerg", "input", "learn", "stick", "axmon",
+  "cabin", "qrh", "landperf", "efb", "realism",
+}
 local seen = {}
 for i, m in ipairs(SUITE_MODULES) do
   local tag = "module[" .. i .. "] " .. tostring(m.key)
@@ -103,14 +117,23 @@ for i, m in ipairs(SUITE_MODULES) do
 
   local ok_get, val = pcall(m.get)
   check(ok_get, tag .. " get() runs", val)
-  local ok_state, text, col = pcall(m.state)
+  local ok_state, text, extra = pcall(m.state)
   check(ok_state, tag .. " state() runs", text)
-  check(ok_state and type(text) == "string", tag .. " state() returns text")
-  check(ok_state and type(col) == "table" and #col >= 3, tag .. " state() returns colour")
+  check(ok_state and type(text) == "string" and text ~= "", tag .. " state() returns text")
+  check(ok_state and extra == nil, tag .. " state() returns a single value")
+end
+
+check(#SUITE_MODULES == #expected, "module count matches the control panel",
+  #SUITE_MODULES .. " vs " .. #expected)
+for _, key in ipairs(expected) do
+  check(seen[key] == true, "expected module present: " .. key)
+end
+for _, key in ipairs({ "hud", "systems" }) do
+  check(seen[key] == nil, "display-only module removed: " .. key)
 end
 
 -- ---------- sibling-panel toggles present ----------
-for _, key in ipairs({ "cabin", "qrh", "landperf" }) do
+for _, key in ipairs({ "cabin", "qrh", "landperf", "efb" }) do
   local found
   for _, m in ipairs(SUITE_MODULES) do if m.key == key then found = m end end
   check(found ~= nil, "sibling toggle present: " .. key)
@@ -126,12 +149,26 @@ for _, key in ipairs({ "cabin", "qrh", "landperf" }) do
 end
 
 -- ---------- toggling through the public entry point ----------
-for _, key in ipairs({ "hud", "status", "systems", "cabin", "qrh", "landperf" }) do
+for _, key in ipairs(expected) do
   local ok, err = pcall(citationx_toggle_module, key)
   check(ok, "citationx_toggle_module('" .. key .. "') runs", err)
 end
--- restore defaults
-for _, key in ipairs({ "hud", "status", "systems" }) do pcall(citationx_toggle_module, key) end
+-- restore defaults for everything that was flipped
+for _, key in ipairs(expected) do pcall(citationx_toggle_module, key) end
+
+-- ---------- the control panel is the only thing drawn ----------
+CONFIG.status_enabled     = false
+CONFIG.axis_monitor       = false
+CONFIG.input_learn_mode   = false
+citationx_sim_time        = 100.0   -- expire the toggle toasts
+primitives = 0
+citationx_overlay()
+check(primitives == 0, "overlay draws nothing when every display is off", primitives .. " primitive(s)")
+
+CONFIG.status_enabled = true
+primitives = 0
+citationx_overlay()
+check(primitives > 20, "control panel draws content", primitives .. " primitive(s)")
 
 -- ---------- draw callback survives ----------
 check(type(draw_cb) == "function", "draw callback registered")
@@ -140,10 +177,14 @@ if draw_cb then
   check(ok, "draw callback runs without error", err)
 end
 
+-- ---------- status report still works without a HUD ----------
+local ok_report, err_report = pcall(citationx_status_report)
+check(ok_report, "citationx_status_report() runs", err_report)
+
 -- ---------- report ----------
 print("")
 if fails == 0 then
-  print("ALL HUD TOGGLE TESTS PASSED")
+  print("ALL CONTROL PANEL TESTS PASSED")
   os.exit(0)
 else
   print(fails .. " FAILURE(S)")

@@ -15,6 +15,8 @@ Scripts/CitationX_CabinOps.lua
 Scripts/CitationX_EFB.lua
 Scripts/CitationX_FailureTrainer.lua
 Scripts/CitationX_MasterSuite.lua
+Scripts/CitationX_Realism.lua
+Scripts/CitationX_Callouts/*.wav
 tests/check_datarefs.lua
 tests/check_kpcrew_modules.lua
 tests/probe_kpcrew.lua
@@ -22,6 +24,7 @@ tests/smoke_efb.lua
 tests/smoke_hud_toggles.lua
 tests/smoke_mastersuite.lua
 tests/smoke_panel_geometry.lua
+tests/smoke_realism.lua
 README.md  AGENTS.md  CONTEXT.md  SCRIPT_STATUS.md
 .opencode/agents/citationx.md
 ```
@@ -59,8 +62,9 @@ untracked: plugin binaries (`mac_x64/`, `win_x64/`, `lin_x64/`), `Modules/`, `In
 4. **FlyWithLua's screen origin is bottom-left.** `draw_string`/`glRectf` y grows upward.
    Bottom-anchored panels must extend upward (`top = bottom + height`), never downward.
 5. **One shared Lua state.** All scripts run in the same globals namespace. Keep per-script
-   prefixes (`CONFIG`, `HUD_STYLE`, `ST`, `CS`, `CAB_CONFIG`, `TRAINER_CONFIG`, `cab_*`,
-   `ft_*`, `citationx_*`, `la_*`). Do not redefine another script's globals.
+   prefixes (`CONFIG`, `SUITE_STYLE`, `SUITE_MODULES`, `REAL_CONFIG`, `real_*`, `ST`, `CS`,
+   `CAB_CONFIG`, `TRAINER_CONFIG`, `cab_*`, `ft_*`, `citationx_*`, `la_*`). Do not redefine
+   another script's globals.
 6. **Use only the FlyWithLua NG+ 2.8 API already present** in these scripts (`dataref`,
    `dataref_table`, `create_command`, `add_macro`, `do_every_*`, `draw_string`,
    `measure_string`, `command_once`, `logMsg`, ...). Do not add third-party Lua modules.
@@ -99,6 +103,7 @@ export TMPDIR="$(mktemp -d)/"
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_efb.lua Scripts/CitationX_EFB.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_realism.lua Scripts/CitationX_Realism.lua
 
 # panel layout: fits the screen, no overlapping/colliding text, rows clickable
 luajit tests/smoke_panel_geometry.lua
