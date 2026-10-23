@@ -31,7 +31,11 @@ REAL_CONFIG = {
     -- Callouts ---------------------------------------------------------------
     callouts_enabled   = true,
     audio_enabled      = true,
+    -- "auto" prefers FlyWithLua NG+'s FMOD buses (the X-Plane 12 path) and
+    -- falls back to the legacy OpenAL load_WAV_file/play_sound pair.
+    audio_backend      = "auto",   -- "auto" | "fmod" | "wav"
     callout_dir        = "CitationX_Callouts/",
+    toasts_enabled     = true,     -- 2 s notice in the MasterSuite toast slot
     v1_kt              = 135,   -- advisory; POM does not publish V1
     vr_kt              = 145,
     vref_kt            = 132,
@@ -98,32 +102,107 @@ local CALLOUT_FILES = {
     gear_over = "gear_speed.wav",
     icing     = "icing.wav",
 }
-local callout_id = {}
+local callout_id  = {}
+local sound_bus   = "none"   -- "fmod" | "wav" | "none"
+
+-- FlyWithLua NG+ 2.8 exposes two sound paths. The legacy one
+-- (load_WAV_file + play_sound) goes through OpenAL; on X-Plane 12, where the
+-- sim owns the audio device through FMOD, it loads fine (12/12) and plays
+-- nothing. The FMOD bus path is the one the sim actually mixes.
+local function fmod_sound_ok()
+    return type(load_fmod_sound) == "function"
+        and type(play_sound_on_master_bus) == "function"
+end
+
+local function wav_sound_ok()
+    return type(load_WAV_file) == "function" and type(play_sound) == "function"
+end
+
+local function pick_backend()
+    local want = tostring(REAL_CONFIG.audio_backend or "auto")
+    if want == "fmod" then return fmod_sound_ok() and "fmod" or "none" end
+    if want == "wav"  then return wav_sound_ok()  and "wav"  or "none" end
+    if fmod_sound_ok() then return "fmod" end
+    if wav_sound_ok()  then return "wav"  end
+    return "none"
+end
+
+-- Current level of the bus the callouts ride on, for the Log.txt diagnosis.
+-- If the FlyWithLua master group is muted or at zero the callouts would be
+-- silent even though they "play", so lift it back to unity once at load.
+local function log_bus_state()
+    if sound_bus ~= "fmod" then return end
+    local vol  = XPLMFindDataRef("FlyWithLua_MasterChannelGroup/Volume")
+    local mute = XPLMFindDataRef("FlyWithLua_MasterChannelGroup/Mute")
+    local v = vol  and XPLMGetDataf(vol)  or nil
+    local m = mute and XPLMGetDatai(mute) or nil
+    if vol and v and v < 0.05 then
+        XPLMSetDataf(vol, 1.0)
+        logMsg(string.format(
+            "Citation X Realism: master bus was at %.2f, set to 1.00", v))
+        v = 1.0
+    end
+    logMsg(string.format(
+        "Citation X Realism: master bus volume=%s mute=%s",
+        v and string.format("%.2f", v) or "?", m and tostring(m) or "?"))
+end
 
 local function load_callouts()
     if not REAL_CONFIG.audio_enabled then return end
-    if type(load_WAV_file) ~= "function" or type(play_sound) ~= "function" then
+    sound_bus = pick_backend()
+    if sound_bus == "none" then
         logMsg("Citation X Realism: sound API unavailable, callouts go to Log.txt only")
         return
     end
+
+    local total = 0
+    for _ in pairs(CALLOUT_FILES) do total = total + 1 end
+
     local loaded = 0
     for key, file in pairs(CALLOUT_FILES) do
-        local ok, idx = pcall(load_WAV_file, SCRIPT_DIRECTORY .. REAL_CONFIG.callout_dir .. file)
+        local path = SCRIPT_DIRECTORY .. REAL_CONFIG.callout_dir .. file
+        local ok, idx = pcall(
+            sound_bus == "fmod" and load_fmod_sound or load_WAV_file, path)
         if ok and type(idx) == "number" and idx >= 0 then
             callout_id[key] = idx
             loaded = loaded + 1
         else
-            logMsg("Citation X Realism: could not load " .. file)
+            logMsg(string.format("Citation X Realism: could not load %s (%s)",
+                file, tostring(idx)))
         end
     end
-    logMsg(string.format("Citation X Realism: %d/%d callout sounds loaded",
-        loaded, (function() local n = 0 for _ in pairs(CALLOUT_FILES) do n = n + 1 end return n end)()))
+    logMsg(string.format("Citation X Realism: %d/%d callout sounds loaded (%s bus)",
+        loaded, total, sound_bus))
+    log_bus_state()
+end
+
+local function play_callout_sound(idx)
+    local ok, err
+    if sound_bus == "fmod" then
+        ok, err = pcall(play_sound_on_master_bus, idx)
+    else
+        ok, err = pcall(play_sound, idx)
+    end
+    if not ok then
+        logMsg("Citation X Realism: sound " .. tostring(idx) .. " failed: " .. tostring(err))
+    end
+    return ok
+end
+
+-- Log-only + 2 s toast. The toast is borrowed from the MasterSuite; without
+-- that script loaded the notice stays in Log.txt, and this file still registers
+-- no draw callback of its own.
+local function notify(text, toast_text)
+    logMsg("Citation X Realism: " .. text)
+    if not REAL_CONFIG.toasts_enabled then return end
+    local fn = _G.citationx_toast
+    if type(fn) == "function" then pcall(fn, toast_text or text) end
 end
 
 local function callout(key, text)
     logMsg("Citation X Realism: CALLOUT " .. text)
     local idx = callout_id[key]
-    if idx then pcall(play_sound, idx) end
+    if idx then play_callout_sound(idx) end
 end
 
 -- ------------------------------------------------------------------ STATE ---
@@ -150,6 +229,7 @@ local S = {
     gear_warned     = false,
     ice_next        = 0.0,
     last_tick       = -1.0,
+    prev_gear       = 1.0,
 }
 
 -- Last runtime dataref the C750 registers (read lazily: it does not exist
@@ -214,7 +294,10 @@ local function callouts_tick(now, agl_ft)
     end
 
     if S.airborne and S.pos_done and not S.gear_done
-        and now - S.lift_off_time >= 2.0 and gear > 0.05 then
+        and now - S.lift_off_time >= 2.0
+        and S.prev_gear >= 0.95 and gear < 0.95 then
+        -- Only when the gear is actually coming up: the old test fired as soon
+        -- as two seconds had passed, even with the gear still down.
         S.gear_done = true
         callout("gear_up", "GEAR UP")
     end
@@ -246,6 +329,8 @@ local function callouts_tick(now, agl_ft)
         S.airborne = false
         reset_takeoff_state()
     end
+
+    S.prev_gear = gear
 end
 
 -- --------------------------------------------------------------- ELECTRICAL --
@@ -265,9 +350,8 @@ local function electrical_tick(now)
     S.prev_gen_count = gen_count
 
     if lost_generator then
-        logMsg(string.format(
-            "Citation X Realism: generator lost (%d online), bus %.1f V",
-            gen_count, bus_v))
+        notify(string.format("generator lost (%d online), bus %.1f V",
+            gen_count, bus_v), "GENERATOR LOST")
     end
 
     if gen_count == 2 and bus_v >= REAL_CONFIG.elec_min_bus_v then
@@ -283,9 +367,9 @@ local function electrical_tick(now)
         command_once("laminar/CitX/electrical/cmd_load_shed_dwn")
         S.shed_steps = S.shed_steps + 1
         local pos = load_shed_position(now)
-        logMsg(string.format(
-            "Citation X Realism: LOAD SHED step %d (bus %.1f V, switch=%s)",
-            S.shed_steps, bus_v, tostring(pos)))
+        notify(string.format("LOAD SHED step %d (bus %.1f V, switch=%s)",
+            S.shed_steps, bus_v, tostring(pos)),
+            string.format("LOAD SHED %d/4", S.shed_steps))
     end
 end
 
@@ -302,11 +386,12 @@ local function brakes_tick(now)
         S.brake_hot = true
         real_brake_fan = 1
         callout("brakes", "BRAKES HOT")
-        logMsg(string.format("Citation X Realism: brake fan ON (%.1f MJ)", hottest / 1e6))
+        notify(string.format("brake fan ON (%.1f MJ)", hottest / 1e6),
+            string.format("BRAKES HOT %.1f MJ", hottest / 1e6))
     elseif S.brake_hot and hottest <= REAL_CONFIG.brake_cool_j and real_brake_fan == 1 then
         S.brake_hot = false
         real_brake_fan = 0
-        logMsg(string.format("Citation X Realism: brake fan OFF (%.1f MJ)", hottest / 1e6))
+        notify(string.format("brake fan OFF (%.1f MJ)", hottest / 1e6), "BRAKE FAN OFF")
     end
 end
 
@@ -326,8 +411,8 @@ local function overspeed_tick(now)
         if not S.flap_warned then
             S.flap_warned = true
             callout("flap_over", "FLAP OVERSPEED")
-            logMsg(string.format("Citation X Realism: flap overspeed %.0f kt (limit %.0f)",
-                ias, vfe))
+            notify(string.format("flap overspeed %.0f kt (limit %.0f)", ias, vfe),
+                string.format("FLAP OVERSPEED %.0f KT (MAX %.0f)", ias, vfe))
         end
     elseif ias < vfe - 3.0 then
         S.flap_warned = false
@@ -338,8 +423,10 @@ local function overspeed_tick(now)
         if not S.gear_warned then
             S.gear_warned = true
             callout("gear_over", "GEAR SPEED")
-            logMsg(string.format("Citation X Realism: gear overspeed %.0f kt (limit %.0f)",
-                ias, REAL_CONFIG.vle_kt))
+            notify(string.format("gear overspeed %.0f kt (limit %.0f)",
+                ias, REAL_CONFIG.vle_kt),
+                string.format("GEAR OVERSPEED %.0f KT (MAX %.0f)",
+                    ias, REAL_CONFIG.vle_kt))
         end
     elseif ias < REAL_CONFIG.vle_kt - 3.0 then
         S.gear_warned = false
@@ -357,8 +444,8 @@ local function icing_tick(now)
         and now >= S.ice_next then
         S.ice_next = now + REAL_CONFIG.ice_repeat_s
         callout("icing", "ICING CONDITIONS")
-        logMsg(string.format("Citation X Realism: icing conditions (OAT %.0f C, rain %.0f%%)",
-            oat, rain * 100))
+        notify(string.format("icing conditions (OAT %.0f C, rain %.0f%%)",
+            oat, rain * 100), "ICING CONDITIONS")
     end
 end
 
@@ -392,6 +479,8 @@ function real_status_report()
         tostring(REAL_CONFIG.enabled), tostring(REAL_CONFIG.callouts_enabled),
         tostring(REAL_CONFIG.audio_enabled), tostring(REAL_CONFIG.elec_enabled),
         tostring(REAL_CONFIG.brake_enabled)))
+    logMsg(string.format("  sound bus=%s, %d sound(s) loaded",
+        sound_bus, (function() local n = 0 for _ in pairs(callout_id) do n = n + 1 end return n end)()))
     logMsg(string.format("  speeds V1=%d Vr=%d Vref=%d Vfe=%d Vle=%d",
         REAL_CONFIG.v1_kt, REAL_CONFIG.vr_kt, REAL_CONFIG.vref_kt,
         REAL_CONFIG.vfe_kt, REAL_CONFIG.vle_kt))
@@ -400,7 +489,10 @@ function real_status_report()
 end
 
 function real_test_callout()
-    callout("rotate", "TEST CALLOUT")
+    local idx = callout_id.rotate
+    logMsg(string.format("Citation X Realism: TEST callout via %s (index %s)",
+        sound_bus, tostring(idx)))
+    if idx then play_callout_sound(idx) end
 end
 
 -- ------------------------------------------------------------- LIFECYCLE -----
@@ -408,6 +500,11 @@ function real_init()
     load_callouts()
     logMsg("Citation X Realism: loaded (" .. tostring(SCRIPT_DIRECTORY) .. ")")
     real_status_report()
+    if sound_bus ~= "none" then
+        notify(string.format("loaded, %d callouts on %s bus",
+            (function() local n = 0 for _ in pairs(callout_id) do n = n + 1 end return n end)(),
+            sound_bus), "REALISM PACK READY")
+    end
 end
 
 real_init()

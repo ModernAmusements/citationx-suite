@@ -24,7 +24,8 @@ end
 SCREEN_WIDTH, SCREEN_HIGHT = 1920, 1080
 SCRIPT_DIRECTORY = "/tmp/citx-test/"
 
-local logs, played, commands = {}, {}, {}
+local logs, played, commands, toasts = {}, {}, {}, {}
+local fmod_loaded, fmod_played = {}, {}
 local draw_registered = false
 
 function dataref(name, path, mode, index)
@@ -43,8 +44,16 @@ function do_on_exit() end
 function command_once(c) commands[#commands + 1] = c end
 function XPLMFindDataRef() return nil end
 function XPLMGetDatai() return 0 end
+function XPLMGetDataf() return 1.0 end
 function load_WAV_file(path) return #played + #logs end
 function play_sound(id) played[#played + 1] = id end
+-- FlyWithLua NG+ 2.8 FMOD bus API: the path that actually mixes in X-Plane 12.
+function load_fmod_sound(path)
+  fmod_loaded[#fmod_loaded + 1] = path
+  return #fmod_loaded
+end
+function play_sound_on_master_bus(id) fmod_played[#fmod_played + 1] = id end
+function citationx_toast(text) toasts[#toasts + 1] = text end
 
 local function has(pattern)
   for _, line in ipairs(logs) do
@@ -60,6 +69,9 @@ chunk()
 check(type(REAL_CONFIG) == "table", "REAL_CONFIG exists")
 check(draw_registered == false, "realism pack registers no draw callback")
 check(has("callout sounds loaded"), "callout WAVs were loaded", logs[1])
+check(has("(fmod bus)"), "FMOD bus is preferred when the API is present")
+check(#fmod_loaded == 12, "all 12 callouts loaded through load_fmod_sound", #fmod_loaded)
+check(toasts[#toasts] == "REALISM PACK READY", "load announces itself in the toast slot", toasts[#toasts])
 
 -- frame helper: advance sim time past the 0.1 s gate
 local t = 0
@@ -90,6 +102,7 @@ real_ias_kt = 130; frame()
 check(not has("CALLOUT V ONE"), "no V1 callout below V1")
 real_ias_kt = 136; frame()
 check(has("CALLOUT V ONE"), "V1 callout at V1")
+check(#fmod_played >= 1, "V1 callout went out on the FMOD master bus", #fmod_played)
 real_ias_kt = 138; frame()
 local v1_count = 0
 for _, l in ipairs(logs) do if l:find("CALLOUT V ONE", 1, true) then v1_count = v1_count + 1 end end
@@ -107,7 +120,10 @@ check(has("CALLOUT POSITIVE RATE"), "positive-rate callout after liftoff")
 t = t + 2.0                -- gear-up waits two seconds after liftoff
 real_gear[0] = 1           -- still down
 frame()
-check(has("CALLOUT GEAR UP"), "gear-up callout two seconds after liftoff")
+check(not has("CALLOUT GEAR UP"), "no gear-up call while the gear is still down")
+real_gear[0] = 0.8         -- retraction started
+frame()
+check(has("CALLOUT GEAR UP"), "gear-up callout when the gear starts retracting")
 
 real_agl_m = 400           -- ~1312 ft
 frame()
@@ -133,6 +149,7 @@ real_brake_j[0] = 6.0e6
 frame()
 check(real_brake_fan == 1, "brake fan switches on above 5 MJ", real_brake_fan)
 check(has("CALLOUT BRAKES HOT"), "brakes-hot callout")
+check(toasts[#toasts] == "BRAKES HOT 6.0 MJ", "brakes-hot reaches the toast slot", toasts[#toasts])
 real_brake_j[0] = 0.5e6
 frame()
 check(real_brake_fan == 0, "brake fan switches off after cooling", real_brake_fan)
@@ -175,6 +192,16 @@ check(has("CALLOUT ICING"), "icing callout in visible moisture below 5 C")
 real_set_enabled(false)
 check(REAL_CONFIG.enabled == false, "real_set_enabled(false) disables the pack")
 real_set_enabled(true)
+
+-- ---------- legacy OpenAL fallback ----------
+logs, played = {}, {}
+load_fmod_sound = nil
+play_sound_on_master_bus = nil
+chunk()
+check(has("(wav bus)"), "legacy load_WAV_file path is the fallback", logs[1])
+check(#played == 0, "nothing is played at load time")
+real_test_callout()
+check(#played == 1, "legacy play_sound used for the test callout", #played)
 
 -- ---------- report ----------
 print("")

@@ -623,6 +623,12 @@ local function toast(text)
     toast_until = (citationx_sim_time or 0.0) + 2.0
 end
 
+-- Sibling scripts (the realism pack) borrow the 2 s toast. Nil-guarded on their
+-- side, so the suite still works when this file is absent.
+function citationx_toast(text)
+    toast(text)
+end
+
 local function toast_state(name, on)
     toast(name .. (on and ": ON" or ": OFF"))
 end

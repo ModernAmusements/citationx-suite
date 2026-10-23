@@ -1,4 +1,4 @@
-# Script status — verified 2026-10-23
+# Script status — verified 2026-10-24
 
 Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 `tests/check_kpcrew_modules.lua`, `tests/smoke_mastersuite.lua`,
@@ -12,7 +12,7 @@ Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 | `CitationX_MasterSuite.lua` | ✅ works* | `status report`, `flight recorder armed`, `heading knob locked to raw axis 28`; smoke tests pass. On-screen output is now the control panel only — the telemetry HUD and C750 systems readback were removed on 2026-10-23. |
 | `CitationX_FailureTrainer.lua` | ✅ works* | `Citation X Failure Trainer + QRH loaded` |
 | `CitationX_CabinOps.lua` | ✅ works* | `Cabin & Ground Ops loaded` |
-| `CitationX_Realism.lua` | ✅ tests | audio callouts, load-shed manager, brake fan, overspeed and icing advisories; no draw callback. `tests/smoke_realism.lua` drives all of them |
+| `CitationX_Realism.lua` | ✅ tests | audio callouts (FMOD master bus), load-shed manager, brake fan, overspeed and icing advisories with 2 s toasts; no draw callback. `tests/smoke_realism.lua` drives all of it |
 | `CitationX_EFB.lua` | ✅ tests | PERF / CHECK / FUEL pages; `tests/smoke_efb.lua` and the geometry sweep pass, not yet used in a flight |
 | `LandingPerformance.lua` | ✅ works* | `Landing Performance: C750 \| GOOD \| Score 76 \| -220 FPM \| 1.42 G` — scored a real landing |
 | `Sim_Rate.lua` | ✅ works | `Sim Rate Monitor Loaded`, `Setting Sim Rate to 4x/1x` |

@@ -1,14 +1,22 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-10-23
+Last updated: 2026-10-24
 
 ## Session handoff — read this first
 
-Last completed session (2026-10-23) removed the telemetry HUD, added the realism pack, and
-sharpened the cockpit/livery textures. Everything below passed offline harnesses; **the open
-item is a single in-sim confirmation run of the callouts and the new textures.**
+Last completed session (2026-10-24) fixed the realism pack's silent callouts and added the
+toast surface for its advisories; see §21. Everything below passed offline harnesses. **The
+open item is still a single in-sim confirmation run**: callouts audible, textures seen.
 
-### What changed this session
+### What changed 2026-10-24
+
+| Area | Change |
+| --- | --- |
+| Realism audio | `play_sound` (OpenAL, silent in XP12) → `load_fmod_sound` + `play_sound_on_master_bus`; legacy kept as fallback |
+| Realism UX | generator loss / load shed / hot brakes / overspeed / icing raise a 2 s toast via the new `citationx_toast()` |
+| Realism logic | GEAR UP no longer fires while the gear is still fully down |
+
+### What changed 2026-10-23
 
 | Area | Change |
 | --- | --- |
@@ -28,17 +36,21 @@ kpcrew require graph (C750) ... 0 missing
 mastersuite smoke ............. PASSED
 control panel smoke ........... PASSED (13 rows)
 realism smoke ................. PASSED (takeoff, approach, electrics, brakes, ice)
+realism audio ................. PASSED (FMOD preferred, legacy fallback, toasts wired)
 efb smoke ..................... PASSED
 panel geometry ................ PASSED (40 checks)
 ```
 
 ### The one open item
 
-**No in-sim run has happened since the HUD removal, the realism pack and the texture pass.**
-Reload Lua in X-Plane (*FlyWithLua → Reload all Lua script files*), then check `Log.txt` for
-`FlyWithLua Error:` and `Moved Bad Script`. Expected: neither appears,
-`All script files loaded successfully.` is the last loading line, and
-`Citation X Realism: 12/12 callout sounds loaded` is present.
+**No in-sim run has happened since the HUD removal, the realism pack, the texture pass and the
+2026-10-24 audio fix.** Reload Lua in X-Plane (*FlyWithLua → Reload all Lua script files*), then
+check `Log.txt` for `FlyWithLua Error:` and `Moved Bad Script`. Expected: neither appears,
+`All script files loaded successfully.` is the last loading line,
+`Citation X Realism: 12/12 callout sounds loaded (fmod bus)` and
+`Citation X Realism: master bus volume=1.00 mute=0` are present, and a
+`REALISM PACK READY` toast appears. Then use the macro
+**Citation X Realism: test callout** — you must hear "ROTATE".
 
 Textures need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
 
@@ -517,6 +529,57 @@ anisotropic filtering on an M1 Max. So the pass was **sharpening**, not upscalin
 
 **Textures load when the aircraft loads, not when Lua reloads.** A FlyWithLua *Reload all Lua
 script files* will not show them; use Developer → Reload Aircraft or restart X-Plane.
+
+## 21. Realism callouts were silent — wrong sound API (2026-10-24)
+
+Reported: *"you told me you developed realism lua scripts i noticed no difference at all."*
+
+The pack **was** running. `Log.txt` from the 2026-10-23 flight proves it:
+
+```
+Citation X Realism: CALLOUT V ONE
+Citation X Realism: CALLOUT ROTATE
+Citation X Realism: CALLOUT POSITIVE RATE
+Citation X Realism: CALLOUT GEAR UP
+Citation X Realism: CALLOUT FLAP OVERSPEED
+Citation X Realism: CALLOUT ONE THOUSAND
+Citation X Realism: CALLOUT FIVE HUNDRED / MINIMUMS / ONE HUNDRED
+Citation X Realism: LOAD SHED step 1..4
+Citation X Realism: brake fan ON (5.1 MJ)
+```
+
+Two reasons nothing could be noticed:
+
+1. **The audio never came out.** The script used the legacy FlyWithLua path
+   `load_WAV_file()` + `play_sound()`, which is the OpenAL path. It loads happily
+   (`12/12 callout sounds loaded`) and returns valid indices, but on X-Plane 12 the sim owns
+   the audio device through FMOD, so the legacy player is inaudible. In the whole log there is
+   not one `In LuaPlayFmodSoundOn…Bus()` line, because nothing ever touched FMOD.
+   Fix: **`load_fmod_sound()` + `play_sound_on_master_bus()`** — the documented NG+ path
+   (`Scripts (disabled)/Fmod_Demo.lua`). The legacy pair stays as a fallback, selected by
+   `REAL_CONFIG.audio_backend = "auto" | "fmod" | "wav"`.
+   Load now logs `N/12 callout sounds loaded (fmod bus)` and the master-group volume/mute, and
+   lifts the master group back to 1.00 if it was at zero. `pcall` no longer swallows errors:
+   a failed `play_sound_on_master_bus` writes the error to Log.txt.
+2. **Everything else only fires in abnormal situations** (generator loss, hot brakes,
+   overspeed, icing) and only wrote to Log.txt — invisible in the cockpit. Those events now
+   raise a **2 s toast** through `citationx_toast()`, a new nil-guarded global in
+   `CitationX_MasterSuite.lua`. `CitationX_Realism.lua` still registers **no draw callback**;
+   without the MasterSuite the notices stay in Log.txt.
+
+Also fixed while in there:
+
+- **GEAR UP called with the gear still down.** The condition was `gear > 0.05`, i.e. true
+  while the gear was fully extended, so two seconds after liftoff it announced "gear up"
+  whether or not the pilot had retracted. It now requires `prev_gear >= 0.95 and gear < 0.95`
+  (retraction actually started). `tests/smoke_realism.lua` asserts both the silent and the
+  calling case.
+- `real_test_callout()` logs the backend and index before playing, so the macro
+  **Citation X Realism: test callout** is a one-click audibility check.
+
+Tests: `smoke_realism.lua` now mocks both sound APIs, asserts FMOD is preferred when present,
+that every callout goes out on the master bus, that the load toast is raised, and re-loads the
+script without the FMOD API to prove the legacy fallback still works.
 
 ## Not yet verified in-sim
 
