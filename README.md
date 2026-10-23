@@ -1,6 +1,6 @@
 # Citation X Suite for FlyWithLua (X-Plane 12)
 
-Three FlyWithLua NG+ scripts for the Laminar Research Cessna Citation X (C750), plus a
+Five FlyWithLua NG+ scripts for the Laminar Research Cessna Citation X (C750), plus a
 standalone landing-performance scorer.
 
 ## Scripts

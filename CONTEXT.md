@@ -4,53 +4,56 @@ Last updated: 2026-10-23
 
 ## Session handoff — read this first
 
-This session repaired the panel layout and un-quarantined KPCrew. Everything below passed
-offline harnesses; **the one thing still outstanding is a single in-sim confirmation run.**
+Last completed session (2026-10-23) removed the telemetry HUD, added the realism pack, and
+sharpened the cockpit/livery textures. Everything below passed offline harnesses; **the open
+item is a single in-sim confirmation run of the callouts and the new textures.**
 
 ### What changed this session
 
 | Area | Change |
 | --- | --- |
-| Mission generator | **Deleted** (script, test, progress file, quarantine copy) |
-| Panel spacing | `row_h` 17→22, `status_row_h` 15→20, `sys_row_h` 15→19; panels widened |
-| HUD | 3 new clickable rows: `CABIN OPS`, `QRH TRAINER`, `LANDING PERF` (13 total) |
-| KPCrew | 8 missing `C750/*Definitions.lua` added; `metargen.lua` dataref bugs fixed |
-| Tooling | 6 offline harnesses; `luajit` installed for correct Lua semantics |
+| HUD | Telemetry body, alert pills and the C750 systems readback **deleted**; one 13-row control panel left |
+| Realism | New `CitationX_Realism.lua`: audio callouts, load-shed manager, brake fan, overspeed/icing advisories. Draws nothing |
+| Input | DS4 button scan widened to both device slots (`0–127`), so Bluetooth works |
+| Textures | Cockpit panel (all liveries) and `plain white` fuselage sharpened, not upscaled |
+| Tests | `smoke_realism.lua` added; control-panel and geometry harnesses updated |
 
 ### Verification status
 
 ```
 syntax ........................ ok
-runtime load (LuaJIT, shared) .. 52 bindings, 0 failures, 0 problems
-dataref bindings .............. ok
+runtime load (LuaJIT, shared) .. 78 bindings, 0 failures, 0 problems
+dataref bindings .............. ok (5 suite scripts)
 kpcrew require graph (C750) ... 0 missing
 mastersuite smoke ............. PASSED
-hud toggles smoke ............. PASSED
-panel geometry ................ PASSED (21 checks)
+control panel smoke ........... PASSED (13 rows)
+realism smoke ................. PASSED (takeoff, approach, electrics, brakes, ice)
+efb smoke ..................... PASSED
+panel geometry ................ PASSED (40 checks)
 ```
 
 ### The one open item
 
-**No in-sim run has happened since these edits.** Reload Lua in X-Plane
-(*FlyWithLua → Reload all Lua script files*), then check `Log.txt` for
-`FlyWithLua Error:` and `Moved Bad Script`. Expected: neither appears, and
-`All script files loaded successfully.` is the last loading line.
+**No in-sim run has happened since the HUD removal, the realism pack and the texture pass.**
+Reload Lua in X-Plane (*FlyWithLua → Reload all Lua script files*), then check `Log.txt` for
+`FlyWithLua Error:` and `Moved Bad Script`. Expected: neither appears,
+`All script files loaded successfully.` is the last loading line, and
+`Citation X Realism: 12/12 callout sounds loaded` is present.
 
-If something does appear, the harnesses below reproduce the load path offline —
-add the failing script to `Scripts/` and run `luajit tests/probe_load_order.lua`.
+Textures need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
 
-## Current runtime state (2026-10-21, after the KPCrew repair)
+## Current runtime state (2026-10-23)
 - **Suite scripts (tracked):** `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
-  `CitationX_CabinOps.lua`. All three load clean; no `FlyWithLua Error:` lines.
+  `CitationX_CabinOps.lua`, `CitationX_EFB.lua`, `CitationX_Realism.lua` plus
+  `CitationX_Callouts/*.wav`. All load clean; no `FlyWithLua Error:` lines.
 - **Mission Generator: deleted 2026-10-21** at the user's request, together with
   `tests/smoke_mission.lua`. The `MissionGen/*` commands, the briefing panel and the cruise
   time warp no longer exist. Do not resurrect it without being asked.
 - **Third-party add-ons (untracked, now loading):** KPCrew 2.3 (`kpcrew23.lua`, `kppanels.lua`,
   `kpxbrief.lua`, `kpsoundmute.lua`, `kpredline.lua`; modules in `Modules/kpcrew*`),
   `LandingPerformance.lua` (landing scoring), `Sim_Rate.lua` (ground-speed compression).
-  All five KPCrew scripts were in quarantine at the start of the session and now load.
-- **Panel spacing** was widened on request (`row_h` 17 → 22, `status_row_h` 15 → 20,
-  `sys_row_h` 15 → 19) because the text was too cramped.
+- **Panel spacing** was widened on 2026-10-21 (`row_h` 17 → 22, `status_row_h` 15 → 20,
+  `sys_row_h` 15 → 19) because the text was too cramped. `sys_row_h` is gone with the C750 panel.
 - **Not installed:** karlvr Citation X patches, Saitek panel config (Xsaitekpanels absent),
   Long Flights Compression and Smart Time Accelerator (both login-gated).
 
@@ -58,7 +61,8 @@ add the failing script to `Scripts/` and run `luajit tests/probe_load_order.lua`
 - X-Plane 12: `/Users/modernamusmenet/X-Plane 12` (macOS, arm64)
 - FlyWithLua NG+ 2.8.16 (mac_x64)
 - Active scripts in `Scripts/`: `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
-  `CitationX_CabinOps.lua`, `LandingPerformance.lua`, `Sim_Rate.lua`, `kpcrew23.lua`,
+  `CitationX_CabinOps.lua`, `CitationX_EFB.lua`, `CitationX_Realism.lua`,
+  `LandingPerformance.lua`, `Sim_Rate.lua`, `kpcrew23.lua`,
   `kppanels.lua`, `kpxbrief.lua`, `kpredline.lua`, `kpsoundmute.lua`.
 - Controller: Sony DUALSHOCK 4 (VID 054c:09cc), enumerated twice — USB and Bluetooth
 
@@ -435,7 +439,7 @@ Removed from `CitationX_MasterSuite.lua`:
 - `citationx_set_hud()`, `citationx_set_systems()`, `draw_systems_panel()`,
   `draw_status_section()`, `systems_panel_height()`.
 
-What remains on screen is exactly one panel: `CONTROL PANEL`, 12 clickable rows, top-left.
+What remains on screen is exactly one panel: `CONTROL PANEL`, 13 clickable rows, top-left.
 `HUD_STYLE` became `SUITE_STYLE` (only the panel, axis monitor, learn box and toast use it).
 `citationx_hud()` became `citationx_overlay()`; `do_every_draw` still draws every frame but
 emits nothing unless the panel, axis monitor, learn mode or a toast is active.
@@ -449,13 +453,13 @@ macro names for the removed rows are gone: `CitationXSuite/toggle_hud`,
 The emergency generator now announces itself with a toast on trigger and on clear, plus the
 `EMERGENCY GEN` row showing `TRIGGERED`; it no longer needs a HUD pill.
 
-Tests updated: `tests/smoke_hud_toggles.lua` now asserts the 12 expected keys, that `hud` /
+Tests updated: `tests/smoke_hud_toggles.lua` now asserts the 13 expected keys, that `hud` /
 `systems` do not exist, that `state()` returns a single value, and that the overlay draws
 **zero** primitives with every display off. `tests/smoke_panel_geometry.lua` renders the control
 panel, keeps the 40-check layout sweep, and adds the "draws nothing when off" assertion.
 
-Validation: `62 dataref binding(s), 0 load failure(s), 0 binding problem(s)`; control-panel
-smoke, MasterSuite stick smoke, EFB smoke, panel geometry (40 checks) and
+Validation: `78 dataref binding(s), 0 load failure(s), 0 binding problem(s)`; control-panel
+smoke, MasterSuite stick smoke, EFB smoke, realism smoke, panel geometry (40 checks) and
 `check_kpcrew_modules C750` all pass.
 
 ## 20. Realism pack + texture pass (2026-10-23)
@@ -519,18 +523,20 @@ script files* will not show them; use Developer → Reload Aircraft or restart X
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
 record these as confirmed working:
 
-- The **visual result** of the spacing change. Geometry is now *measured*, not assumed
-  (`tests/smoke_panel_geometry.lua`: 21 checks — panels fit the screen, no vertical text
-  collisions, no text overflowing its panel, click sweep reaches every row). What remains
-  unproven is purely aesthetic: whether 22 px rows look right to the eye and whether the three
-  panels still avoid each other on other resolutions.
-- The HUD rows' live readouts (`ABSENT` / `ON` / `SHOWN`) as rendered text. Clickability and
-  toggle wiring are proven by the click sweep.
+- The **visual result** of the 13-row control panel (telemetry body and C750 systems panel
+  removed). Geometry is measured, not assumed (`tests/smoke_panel_geometry.lua`: 40 checks —
+  panels fit the screen, no vertical text collisions, no text overflowing its panel, click sweep
+  reaches every row). What remains unproven is purely aesthetic: whether `status_row_h = 20`
+  reads well and whether the panel still clears the other panels at other resolutions.
+- The **realism pack in flight**: callout timing (V1/rotate/positive rate/gear up/1000/500/100/
+  minimums), whether the synthesized WAVs are audible over engine noise, and whether the
+  load-shed/brake-fan thresholds match what the aircraft actually does.
+- The **sharpened textures**: DDS headers verified (4096², DXT1/DXT5, 13 mips) and a 1:1 crop
+  compared before/after, but they have not been seen in the 3D cockpit.
 - The KPCrew copilot, panels and briefings. Only the *loading* path was fixed; the KPCrew UI,
   the SOP checklists and the SimBrief import have had no functional test.
 - The `metargen.lua` METAR fix (array weather refs → `dataref_table`, visibility in statute
   miles). Statically clean, but the METAR string it builds has not been read in flight.
-
 - The **AviTab tablet** after the §16 `AviTab.json` rect fix and the stock `Panel.png` swap. The
   aircraft loaded cleanly before those edits; the tablet itself has not been looked at since.
 - Little Navmap ↔ Little Xpconnect live connection (both installed, never run together).
@@ -538,15 +544,16 @@ record these as confirmed working:
   clicked or read in X-Plane yet. In particular the advisory numbers have not been compared to
   the aircraft's real performance, and the checklist pages have not been used in a flight.
 
-In-sim status: the suite loaded cleanly on 2026-10-21 at 18:22 (`LUA_RUN` 1–3,
-`All script files loaded successfully`, 0 `FlyWithLua Error`). The only in-sim complaints were the
-quarantine popup (caused by a stock FlyWithLua file, §17) and the blank AviTab screen (§16). The
-visual result of the panel spacing and the HUD readouts still have not been reviewed by eye.
+In-sim status: the suite loaded cleanly on 2026-10-21 at 18:22 and again on 2026-10-23 01:00
+(`All script files loaded successfully`, 0 `FlyWithLua Error`). The 2026-10-23 load also logged
+`Citation X Realism: loaded` with `12/12 callout sounds loaded`. What has **not** been reviewed
+by eye/ear: the 13-row control panel without the telemetry body, the callouts during a real
+takeoff/approach, the load-shed/brake-fan behaviour, and the sharpened textures.
 
 ## Validation performed
-- `luac -p` on every script in `Scripts/`, including the three KPCrew ones.
+- `luac -p` on every script in `Scripts/`, including the KPCrew ones.
 - Every `dataref(...)` declaration in `Scripts/CitationX_*.lua` checked with
-  `tests/check_datarefs.lua`: 0 problems.
+  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (78 bindings).
 - Every `require()` reachable for the C750 checked with
   `tests/check_kpcrew_modules.lua C750`: 0 missing (`--all` sweeps every aircraft).
 - Every `laminar/CitX/...` command and runtime dataref checked against the Citation X's own
@@ -555,10 +562,13 @@ visual result of the panel spacing and the HUD readouts still have not been revi
   - `tests/smoke_mastersuite.lua` — DS4 heading: triggers ignored, sticky lock, dead-slot
     recovery.
   - `tests/smoke_hud_toggles.lua` — 13 rows well formed, unique keys, sibling toggles safe
-    with the other scripts absent, draw callback clean.
-  - `tests/smoke_panel_geometry.lua` — renders all three panels into a recording canvas and
+    with the other scripts absent, overlay draws zero primitives when everything is off.
+  - `tests/smoke_realism.lua` — takeoff/approach callouts fire once, gear-up delay, load-shed
+    command after generator loss, brake fan on/off, flap overspeed and icing, and asserts the
+    pack registers no draw callback.
+  - `tests/smoke_panel_geometry.lua` — renders all four panels into a recording canvas and
     asserts: everything fits 2560×1440, no vertical text collisions, no text overflows its
-    panel, the HUD and C750 panels do not overlap, and a click sweep reaches every row.
+    panel, the EFB clears the QRH and cabin panels, and a click sweep reaches every row.
   - `tests/probe_load_order.lua` — loads all of `Scripts/` in one shared LuaJIT state in
     FlyWithLua's alphabetical order. The authoritative load test.
 
@@ -577,19 +587,28 @@ visual result of the panel spacing and the HUD readouts still have not been revi
 - In zsh, `path` is a special array tied to `$PATH`; never use it as a loop variable.
 
 ## Repo, agent & deployment
-- Git initialized in place in the FlyWithLua folder; `.gitignore` tracks only the four
-  Citation X scripts, `tests/`, docs (`README.md`, `AGENTS.md`, `CONTEXT.md`) and the project
-  agent. Plugin binaries, Modules, Internals, Documentation and runtime files stay untracked.
+- Git initialized in place in the FlyWithLua folder; `.gitignore` tracks only the five
+  Citation X scripts, `CitationX_Callouts/*.wav`, `tests/`, docs (`README.md`, `AGENTS.md`,
+  `CONTEXT.md`) and the project agent. Plugin binaries, Modules, Internals, Documentation and
+  runtime files stay untracked.
 - Private remote: <https://github.com/ModernAmusements/citationx-suite>
 - Project agent: `.opencode/agents/citationx.md` (mode `all`), rules in `AGENTS.md`.
 - Test harnesses (all under `tests/`): `check_datarefs.lua`, `check_kpcrew_modules.lua`,
   `probe_kpcrew.lua`, `probe_kpcrew_run.lua`, `probe_load_order.lua`,
-  `smoke_mastersuite.lua`, `smoke_hud_toggles.lua`, `smoke_panel_geometry.lua`.
+  `smoke_mastersuite.lua`, `smoke_hud_toggles.lua`, `smoke_realism.lua`,
+  `smoke_efb.lua`, `smoke_panel_geometry.lua`.
 - Deploy = edit live scripts in place, validate, commit and push; reload FlyWithLua in-sim.
+  Textures are outside the repo and need an aircraft reload, not a Lua reload.
 
 ## Tuning knobs
-- Panel spacing: `HUD_STYLE` (`row_h`, `status_row_h`, `sys_row_h`) in
+- Control panel: `SUITE_STYLE` (`status_row_h`, `width`, `pad`) in
   `CitationX_MasterSuite.lua`; `CAB_CONFIG.row_h` in `CitationX_CabinOps.lua`;
   `TRAINER_CONFIG.row_h` in `CitationX_FailureTrainer.lua`.
 - Heading knob: `CONFIG` in `CitationX_MasterSuite.lua`; `stick_hdg_axis` can be pinned to a
   RAW index shown by AXIS MONITOR, or slots vetoed via `stick_hdg_exclude_axes`.
+- Realism pack: `REAL_CONFIG` in `CitationX_Realism.lua` — `v1_kt`/`vr_kt`/`vref_kt`/`vfe_kt`/
+  `vle_kt`, `minima_ft`, `elec_min_bus_v`/`elec_shed_interval`/`elec_max_sheds`,
+  `brake_hot_j`/`brake_cool_j`, `flap15_vfe_kt`, `ice_oat_min_c`/`ice_oat_max_c`.
+- Textures: sharpened DDS originals are in
+  `Aircraft/Cessna Citation X AviTab/_original_textures/`; restore them and reload the aircraft
+  to undo.

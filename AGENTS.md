@@ -70,6 +70,10 @@ untracked: plugin binaries (`mac_x64/`, `win_x64/`, `lin_x64/`), `Modules/`, `In
    `measure_string`, `command_once`, `logMsg`, ...). Do not add third-party Lua modules.
 7. **Match the house style:** banner comments, glass-panel palette, `mx_`/`mg_` helpers,
    clickable panels with `RESUME_MOUSE_CLICK`, commands + macros for every subsystem.
+   **Never add a telemetry HUD or an aircraft-systems readback** — the Citation X's PFD, EICAS
+   and synoptics already show airspeed, altitude, heading, Mach, G, fuel flow, electrics, fuel
+   and anti-ice. The only allowed on-screen surface is the control panel, plus explicitly
+   switched-on diagnostics (AXIS MONITOR, LEARN MODE) and transient 2 s toasts.
 8. **Never modify** third-party plugin files, `Modules/`, `Internals/`, `Documentation/`, or
    the aircraft's xlua scripts. Treat `Scripts (disabled)/`, `Scripts (Quarantine)/` as
    read-only reference.
