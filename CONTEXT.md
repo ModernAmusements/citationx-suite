@@ -15,6 +15,7 @@ open item is still a single in-sim confirmation run**: callouts audible, texture
 | Realism audio | `play_sound` (OpenAL, silent in XP12) → `load_fmod_sound` + `play_sound_on_master_bus`; legacy kept as fallback |
 | Realism UX | generator loss / load shed / hot brakes / overspeed / icing raise a 2 s toast via the new `citationx_toast()` |
 | Realism logic | GEAR UP no longer fires while the gear is still fully down |
+| Panels | all four suite panels default to hidden — nothing paints at load except the realism pack's 2 s toast |
 
 ### What changed 2026-10-23
 
@@ -580,6 +581,33 @@ Also fixed while in there:
 Tests: `smoke_realism.lua` now mocks both sound APIs, asserts FMOD is preferred when present,
 that every callout goes out on the master bus, that the load toast is raised, and re-loads the
 script without the FMOD API to prove the legacy fallback still works.
+
+### Panels now start hidden (2026-10-24, second request)
+
+*"but still all huds windows open i only want the realism"* — every suite panel defaulted to
+`true`, so the control panel, QRH, cabin and EFB were all painted at once. Flipped to `false`:
+
+| Script | Flag | Line |
+| --- | --- | --- |
+| `CitationX_MasterSuite.lua` | `CONFIG.status_enabled` | ~36 |
+| `CitationX_CabinOps.lua` | `CAB_CONFIG.panel_enabled` | ~24 |
+| `CitationX_FailureTrainer.lua` | `TRAINER_CONFIG.panel_enabled` | ~31 |
+| `CitationX_EFB.lua` | `EFB_CONFIG.panel_enabled` | ~34 |
+
+Nothing else changed: the scripts still load and their logic (boarding flow, QRH scenarios,
+EFB pages, heading knob, recorder) still works, they just do not paint until switched on.
+Re-open any panel from the FlyWithLua macro menu — `CitationX Suite: control panel`,
+`Citation X QRH: toggle panel`, `Cabin Ops: toggle panel`, `CitationX Suite: EFB panel` — or
+from the matching command.
+
+What remains on screen at load is exactly one thing: the realism pack's transient
+`REALISM PACK READY` toast (2 s), then nothing. `LandedPerformance.lua` defaults to
+`la_displayMode = LA_DISPLAY_NONE`, so it is silent too.
+
+Tests updated: `smoke_hud_toggles.lua` asserts `status_enabled`, `axis_monitor` and
+`input_learn_mode` are all false at load; `smoke_efb.lua` asserts the panel starts hidden and
+then opens via `efb_toggle_panel(true)`; `smoke_panel_geometry.lua` switches each panel on
+explicitly before measuring it (layout checks unchanged, 40 checks).
 
 ## Not yet verified in-sim
 

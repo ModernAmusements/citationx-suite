@@ -31,7 +31,7 @@
 
 -- ------------------------------------------------------------------ CONFIG --
 EFB_CONFIG = {
-    panel_enabled   = true,
+    panel_enabled   = false,   -- hidden at load; macro "CitationX Suite: EFB panel" shows it
     panel_w         = 470,
     panel_bottom    = 60,      -- bottom-centre panel
     row_h           = 22,

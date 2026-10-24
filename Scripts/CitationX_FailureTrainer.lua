@@ -28,7 +28,7 @@
 -- ============================================================================
 
 TRAINER_CONFIG = {
-    panel_enabled    = true,
+    panel_enabled    = false,   -- hidden at load; macro "Citation X QRH: toggle panel" shows it
     panel_x          = 28,     -- panel anchor, bottom-left corner
     panel_y          = 60,
     panel_w          = 460,

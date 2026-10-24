@@ -21,7 +21,7 @@
 -- ============================================================================
 
 CAB_CONFIG = {
-    panel_enabled    = true,
+    panel_enabled    = false,   -- hidden at load; macro "Cabin Ops: toggle panel" shows it
     panel_w          = 360,
     panel_bottom     = 60,     -- panel sits bottom-right
     row_h            = 22,

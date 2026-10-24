@@ -187,6 +187,7 @@ print("== CitationX_MasterSuite.lua ==")
 do
   local chunk = assert(loadfile("Scripts/CitationX_MasterSuite.lua"))
   chunk()
+  CONFIG.status_enabled = true -- hidden by default now; layout test only
 
   reset()
   citationx_overlay()
@@ -240,6 +241,7 @@ do
   CAB_CONFIG = nil
   local chunk = assert(loadfile("Scripts/CitationX_CabinOps.lua"))
   chunk()
+  cab_toggle_panel(true)       -- hidden by default now
 
   reset()
   cab_draw()
@@ -266,6 +268,7 @@ do
   TRAINER_CONFIG = nil
   local chunk = assert(loadfile("Scripts/CitationX_FailureTrainer.lua"))
   chunk()
+  qrh_toggle_panel(true)       -- hidden by default now
 
   reset()
   qrh_draw()
@@ -293,6 +296,7 @@ do
   chunk()
 
   reset()
+  efb_toggle_panel(true)   -- the script now loads with the panel hidden
   efb_draw()
   check(#drawn > 20, "EFB panel draws content", #drawn)
   assert_on_screen("efb", nil)

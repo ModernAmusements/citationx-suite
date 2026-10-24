@@ -33,7 +33,7 @@ CONFIG = {
 
     -- Control panel: the live "which subsystem is active" readout and the
     -- suite's only on-screen surface. Click a row to toggle that subsystem.
-    status_enabled         = true,
+    status_enabled         = false,  -- panels start hidden: only the realism pack is visible
     status_clickable       = true,   -- click a row to toggle that system
 
     -- Takes over pitch/roll input via the per-axis joystick overrides.

@@ -16,11 +16,16 @@ standalone landing-performance scorer.
 
 ## Control panel
 
+**Nothing is drawn at load.** Every suite panel starts hidden so the only thing you see in
+flight is the aircraft itself, plus the realism pack's transient 2 s toasts. Open any panel
+from the FlyWithLua macro menu or the commands below; the control panel is
+`CitationX Suite: control panel` (`CitationXSuite/toggle_status`).
+
 The left-hand panel lists every subsystem with a live state. Click a row to toggle it.
 The same toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as
 FlyWithLua macro menu entries.
 
-This is the **only** thing the suite draws. There is no telemetry HUD and no C750 systems
+This is the **only** surface the suite can draw. There is no telemetry HUD and no C750 systems
 readback: the aircraft's PFD, EICAS and synoptics already show airspeed, altitude, heading,
 Mach, G, fuel flow, electrics, fuel and anti-ice, so duplicating them on screen adds nothing.
 

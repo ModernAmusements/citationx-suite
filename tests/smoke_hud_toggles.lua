@@ -94,6 +94,11 @@ chunk()
 check(type(SUITE_MODULES) == "table", "SUITE_MODULES exists")
 check(type(SUITE_STYLE) == "table", "SUITE_STYLE exists")
 
+-- ---------- nothing is on screen at load ----------
+check(CONFIG.status_enabled == false, "control panel starts hidden")
+check(CONFIG.axis_monitor == false, "axis monitor starts hidden")
+check(CONFIG.input_learn_mode == false, "learn mode starts hidden")
+
 -- ---------- the duplicate cockpit readouts must not come back ----------
 check(rawget(_G, "SYSTEMS_PANEL") == nil, "no C750 systems readback table")
 check(rawget(_G, "SYSTEMS_ITEMS") == nil, "no C750 systems item list")
