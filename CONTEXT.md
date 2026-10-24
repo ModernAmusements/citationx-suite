@@ -16,6 +16,7 @@ open item is still a single in-sim confirmation run**: callouts audible, texture
 | Realism UX | generator loss / load shed / hot brakes / overspeed / icing raise a 2 s toast via the new `citationx_toast()` |
 | Realism logic | GEAR UP no longer fires while the gear is still fully down |
 | Panels | all four suite panels default to hidden — nothing paints at load except the realism pack's 2 s toast |
+| Modules | every MasterSuite module defaults OFF (recorder, emergency gen, input mapper, heading knob); REALISM PACK is the only one on at init |
 
 ### What changed 2026-10-23
 
@@ -605,9 +606,38 @@ What remains on screen at load is exactly one thing: the realism pack's transien
 `la_displayMode = LA_DISPLAY_NONE`, so it is silent too.
 
 Tests updated: `smoke_hud_toggles.lua` asserts `status_enabled`, `axis_monitor` and
-`input_learn_mode` are all false at load; `smoke_efb.lua` asserts the panel starts hidden and
-then opens via `efb_toggle_panel(true)`; `smoke_panel_geometry.lua` switches each panel on
-explicitly before measuring it (layout checks unchanged, 40 checks).
+`input_learn_mode` are all false at load, and that **no** `SUITE_MODULES` row reports `ON`;
+`smoke_efb.lua` asserts the panel starts hidden and then opens via `efb_toggle_panel(true)`;
+`smoke_panel_geometry.lua` switches each panel on explicitly before measuring it (layout checks
+unchanged, 40 checks); `smoke_mastersuite.lua` enables the heading knob before driving it.
+
+### Only the realism pack is enabled on init (2026-10-24, third request)
+
+*"i want them disabled on int and enable them i want only realism should be enabled on init"*.
+Hiding the panels was not enough — the MasterSuite's background modules were still armed. The
+`CONFIG` defaults are now all off:
+
+| Flag | Was | Now |
+| --- | --- | --- |
+| `status_enabled` | true | **false** |
+| `log_enabled` (flight recorder CSV) | true | **false** |
+| `emergency_enabled` (random bleed/press warning) | true | **false** |
+| `input_map_enabled` (custom key/button bindings) | true | **false** |
+| `stick_hdg_enabled` (DS4 right-stick heading bug) | true | **false** |
+| `axis_optimizer_enabled`, `axis_monitor`, `input_learn_mode` | false | false |
+
+`REAL_CONFIG.enabled` stays `true` — it is the one module that is on at load. CabinOps, QRH and
+EFB are inert because their panels are hidden and they only start on a click or macro.
+
+Nothing is lost: every row keeps its `set()` path, so the macros
+`CitationX Suite: <row>` and `CitationXSuite/toggle_<key>` still switch each module on, and two
+new macros flip the lot — `CitationX Suite: enable all modules` /
+`CitationX Suite: disable all modules` (`citationx_set_all()`, which skips the panel row so
+enabling everything does not paint the panel on top).
+
+Consequence to be aware of: the DS4 heading knob and the suite's custom button bindings are now
+off until switched on. That is the literal request ("only realism"), and both are one macro
+away.
 
 ## Not yet verified in-sim
 

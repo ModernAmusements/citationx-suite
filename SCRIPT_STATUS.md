@@ -9,7 +9,7 @@ Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 
 | Script | State | Evidence / purpose |
 | --- | --- | --- |
-| `CitationX_MasterSuite.lua` | ✅ works* | `status report`, `flight recorder armed`, `heading knob locked to raw axis 28`; smoke tests pass. On-screen output is the control panel only, and it now starts **hidden** (2026-10-24); open it with the macro `CitationX Suite: control panel`. |
+| `CitationX_MasterSuite.lua` | ✅ works* | `status report`, `flight recorder armed`, `heading knob locked to raw axis 28`; smoke tests pass. Every module now starts **OFF** and the panel starts **hidden** (2026-10-24); only the realism pack is enabled at init. Turn things on from the macros (`CitationX Suite: <row>`, or `enable all modules`). |
 | `CitationX_FailureTrainer.lua` | ✅ works* | `Citation X Failure Trainer + QRH loaded` |
 | `CitationX_CabinOps.lua` | ✅ works* | `Cabin & Ground Ops loaded` |
 | `CitationX_Realism.lua` | ✅ tests | audio callouts (FMOD master bus), load-shed manager, brake fan, overspeed and icing advisories with 2 s toasts; no draw callback. `tests/smoke_realism.lua` drives all of it |

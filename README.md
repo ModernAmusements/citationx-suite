@@ -16,10 +16,10 @@ standalone landing-performance scorer.
 
 ## Control panel
 
-**Nothing is drawn at load.** Every suite panel starts hidden so the only thing you see in
-flight is the aircraft itself, plus the realism pack's transient 2 s toasts. Open any panel
-from the FlyWithLua macro menu or the commands below; the control panel is
-`CitationX Suite: control panel` (`CitationXSuite/toggle_status`).
+**Nothing is drawn at load and every module starts OFF.** The only thing enabled on init is the
+REALISM PACK. Open any panel from the FlyWithLua macro menu or the commands below; the control
+panel is `CitationX Suite: control panel` (`CitationXSuite/toggle_status`). Two macros flip the
+whole suite: `CitationX Suite: enable all modules` / `disable all modules`.
 
 The left-hand panel lists every subsystem with a live state. Click a row to toggle it.
 The same toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as

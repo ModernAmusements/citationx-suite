@@ -55,6 +55,10 @@ function XPLMGetDataf() return 0 end
 local SCRIPT = arg[1] or "CitationX_MasterSuite.lua"
 dofile(SCRIPT)
 
+-- The suite now loads with the heading knob (like every other module) off;
+-- this harness is about the stick logic itself, so switch it on explicitly.
+CONFIG.stick_hdg_enabled = true
+
 local function frame(t)
     citationx_sim_time = t
     citationx_frame()

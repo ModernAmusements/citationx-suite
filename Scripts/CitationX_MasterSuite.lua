@@ -28,7 +28,10 @@
 
 -- ------------------------------------------------------------------ CONFIG --
 CONFIG = {
-    log_enabled            = true,
+    -- Everything starts disabled: at load only the REALISM PACK is on. Every
+    -- module here can be switched back on from the control panel (once shown)
+    -- or the FlyWithLua macro menu / CitationXSuite/toggle_<key> commands.
+    log_enabled            = false,
     log_to_desktop         = true,
 
     -- Control panel: the live "which subsystem is active" readout and the
@@ -43,13 +46,13 @@ CONFIG = {
     curve_exponent         = 1.6,
     smoothing_factor       = 0.35,
 
-    emergency_enabled      = true,
+    emergency_enabled      = false,
     emergency_chance_1hz   = 1 / 900,
     emergency_duration_sec = 20,
     emergency_alt_ft       = 15000,
     emergency_mach         = 0.85,
 
-    input_map_enabled      = true,
+    input_map_enabled      = false,
     input_learn_mode       = false,
     input_probe_to_desktop = true,
 
@@ -68,7 +71,7 @@ CONFIG = {
     -- (stick_hdg_sticky) until the module is toggled or the scripts reload.
     -- Set stick_hdg_axis to a fixed RAW index (see the AXIS MONITOR panel) to
     -- pin it manually. Raw sim/joystick/joystick_axis_values is 0..1.
-    stick_hdg_enabled       = true,
+    stick_hdg_enabled       = false,
     stick_hdg_axis          = -1,
     stick_hdg_sticky        = true,
     stick_hdg_exclude_axes  = { },   -- extra RAW indices to veto, e.g. { 4, 5 }
@@ -728,6 +731,15 @@ function citationx_toggle_module(key)
     end
 end
 
+-- One-click "the whole suite, back on" / "off again". The control panel row is
+-- excluded so enabling everything does not paint the panel on top of the rest.
+function citationx_set_all(on)
+    for i = 1, #SUITE_MODULES do
+        local m = SUITE_MODULES[i]
+        if m.key ~= "status" then m.set(on == true) end
+    end
+end
+
 function citationx_status_report()
     logMsg("Citation X Suite: status report ----------------------------------")
     logMsg(string.format("  aircraft = %s (C750=%s)", tostring(PLANE_ICAO), tostring(is_c750)))
@@ -1274,3 +1286,5 @@ create_command("CitationXSuite/status_report",
 
 add_macro("CitationX Suite: preview emergency warning", "citationx_test_emergency()")
 add_macro("CitationX Suite: log status report", "citationx_status_report()")
+add_macro("CitationX Suite: enable all modules", "citationx_set_all(true)")
+add_macro("CitationX Suite: disable all modules", "citationx_set_all(false)")
