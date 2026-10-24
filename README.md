@@ -7,7 +7,7 @@ standalone landing-performance scorer.
 
 | File | Purpose |
 | --- | --- |
-| `Scripts/CitationX_MasterSuite.lua` | 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored), simulated bleed-air/pressurization emergency, and the control panel that toggles every suite subsystem. No telemetry HUD. |
+| `Scripts/CitationX_MasterSuite.lua` | 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored), free-controller-button autobind (only buttons X-Plane reports unassigned), simulated bleed-air/pressurization emergency, and the control panel that toggles every suite subsystem. No telemetry HUD. |
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
 | `Scripts/CitationX_EFB.lua` | Electronic flight bag panel: PERF (density altitude, wind components, V1/VR/V2/Vref, takeoff and landing distance by runway condition), CHECK (interactive 8-phase checklists) and FUEL (trip/contingency/alternate/reserve/endurance). Advisory data only. |
@@ -74,7 +74,8 @@ stays untracked via `.gitignore`.
 ## Configuration
 
 - `CitationX_MasterSuite.lua` — `CONFIG` table: flight recorder, axis optimizer,
-  emergency generator, input mapper and the right-stick heading knob
+  emergency generator, input mapper, `joy_autobind_enabled` / `joy_map_enabled` (the
+  free-controller-button map) and the right-stick heading knob
   (`stick_hdg_*`, including `stick_hdg_exclude_axes` and a fixed `stick_hdg_axis` pin).
   Panel layout lives in `SUITE_STYLE` (`status_row_h` and the panel geometry).
 - `CitationX_CabinOps.lua` — `CAB_CONFIG` (`row_h` controls row spacing).

@@ -21,6 +21,7 @@ callouts audible, panel legible, handling curve felt, textures seen.
 | Panels | all four suite panels default to hidden — the only thing drawn is the realism pack's own black panel |
 | Modules | every MasterSuite module defaults OFF **except the DS4 right-stick heading knob**; REALISM PACK is the only other active module at init |
 | Stick HDG | right stick re-enabled, and its learned rest no longer latches X-Plane's `-0.01` pre-enumeration value (it never locked before) |
+| Controller | `JOY_BINDINGS` built at runtime from `sim/joystick/joystick_button_assignments`; only buttons X-Plane reports as unassigned are used |
 | Handling | pilot-input curve (deadzone/expo/smoothing) + flight-controls check, part of the realism pack |
 | Realism panel | one black, Helvetica realism panel with every control and live state (default on) |
 
@@ -38,7 +39,7 @@ callouts audible, panel legible, handling curve felt, textures seen.
 
 ```
 syntax ........................ ok
-runtime load (LuaJIT, shared) .. 97 bindings, 0 failures, 0 problems
+runtime load (LuaJIT, shared) .. 98 bindings, 0 failures, 0 problems
 dataref bindings .............. ok (5 suite scripts)
 kpcrew require graph (C750) ... 0 missing
 mastersuite smoke ............. PASSED
@@ -799,6 +800,40 @@ locks" case fails on the old baseline (`-> 0`) and passes on the new one. That h
 publishes assignments/axes *after* reloading the script with `-0.01`, which is exactly the
 startup order X-Plane uses.
 
+### Controller bindings use only the free buttons (2026-10-24)
+
+The blueprint prompt initially described the keyboard layers without checking what the user
+already has mapped. `initial_assignments.txt` (FlyWithLua's dump for the C750) plus the HID lines
+in `Log.txt` give the real picture:
+
+- **Axes:** DS4 raw `25/26/27/28` = left stick X/Y (roll/pitch), right stick X (yaw), right stick
+  Y (free → the heading knob locks here). `L2/R2` are analog axes 29/30, unused by the suite.
+- **Buttons 0–7** are the D-pad hat; **9/11** are the L2/R2 digitals; **12–15** aileron trim,
+  **16** cockpit look, **18** spot view, **19** thrust reversers. Only **8, 10, 17** and the
+  high indices are free on that dump.
+
+`CitationX_MasterSuite.lua` now fills `JOY_BINDINGS` at runtime instead of shipping a fixed map:
+
+- reads `sim/joystick/joystick_button_assignments` (int[3200], 64 per device);
+- scans buttons **8–17** on device slots 0 and 1 (0–127), i.e. face/shoulder buttons only — the
+  D-pad hat (0–7) and non-physical 18+ are skipped;
+- binds **only** indices whose assignment is `0` (X-Plane "unassigned"), so nothing the pilot has
+  mapped is ever overwritten;
+- the same physical button on the USB and Bluetooth slots gets the same action, so a reconnect
+  does not lose it;
+- order: `CONTROL PANEL`, `REALISM PANEL`, `TEST CALLOUT`, `FLIGHT RECORDER`, `EMERGENCY GEN`,
+  `AXIS MONITOR`;
+- logs `Citation X Suite: free joy button N -> LABEL` for each, and
+  `no free controller buttons to bind` when there are none.
+
+Gates: `CONFIG.joy_autobind_enabled` (default true) and `CONFIG.joy_map_enabled` (default true).
+The latter is separate from `input_map_enabled`, which gates the keyboard layers — so the pad
+works without silently enabling Ctrl+Shift+digit.
+
+Test: `smoke_mastersuite.lua` section 8 marks a whole second slot as assigned and checks that it
+is left untouched, while the free slot gets `CONTROL PANEL` / `REALISM PANEL` in order and the
+bound action actually runs.
+
 ## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
@@ -842,7 +877,7 @@ load-shed/brake-fan behaviour, and the sharpened textures.
 ## Validation performed
 - `luac -p` on every script in `Scripts/`, including the KPCrew ones.
 - Every `dataref(...)` declaration in `Scripts/CitationX_*.lua` checked with
-  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (97 bindings).
+  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (98 bindings).
 - Every `require()` reachable for the C750 checked with
   `tests/check_kpcrew_modules.lua C750`: 0 missing (`--all` sweeps every aircraft).
 - Every `laminar/CitX/...` command and runtime dataref checked against the Citation X's own

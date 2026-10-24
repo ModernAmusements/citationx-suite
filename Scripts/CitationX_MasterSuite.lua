@@ -54,6 +54,8 @@ CONFIG = {
     emergency_mach         = 0.85,
 
     input_map_enabled      = false,
+    joy_map_enabled        = true,   -- auto-bind only UNASSIGNED controller buttons
+    joy_autobind_enabled   = true,
     input_learn_mode       = false,
     input_probe_to_desktop = true,
 
@@ -136,8 +138,20 @@ INPUT_BINDINGS = {
 }
 
 -- JOY_BINDINGS maps controller button indices (discovered in learn mode) to
--- the same { label, command/action } shape as INPUT_BINDINGS.
-JOY_BINDINGS = {
+-- the same { label, command/action } shape as INPUT_BINDINGS. It is filled at
+-- runtime by citationx_autobind_joy(): only buttons that X-Plane reports as
+-- UNASSIGNED are used, so nothing the pilot already mapped is overwritten.
+JOY_BINDINGS = {}
+
+-- What the suite puts on the free controller buttons, in order. The first free
+-- physical button gets the panel, the next the realism panel, and so on.
+JOY_AUTOBIND_ACTIONS = {
+    { label = "CONTROL PANEL",  action = function() citationx_toggle_module("status") end },
+    { label = "REALISM PANEL",  action = function() command_once("CitationXRealism/hud") end },
+    { label = "TEST CALLOUT",   action = function() command_once("CitationXRealism/test_callout") end },
+    { label = "FLIGHT RECORDER", action = function() citationx_set_logging(not CONFIG.log_enabled) end },
+    { label = "EMERGENCY GEN",  action = function() citationx_set_emergency(not CONFIG.emergency_enabled) end },
+    { label = "AXIS MONITOR",   action = function() citationx_set_axis_monitor(not CONFIG.axis_monitor) end },
 }
 
 -- ------------------------------------------------- C750 SYSTEMS COMMANDS -----
@@ -243,6 +257,7 @@ dataref("hdg_sel_deg",   "sim/cockpit2/autopilot/heading_dial_deg_mag_pilot", "w
 local fuel_flow_kg_sec = dataref_table("sim/cockpit2/engine/indicators/fuel_flow_kg_sec")
 
 local joy_buttons      = dataref_table("sim/joystick/joystick_button_values")
+local joy_btn_assign   = dataref_table("sim/joystick/joystick_button_assignments")
 local joy_raw_axes     = dataref_table("sim/joystick/joystick_axis_values")
 local joy_raw_assign   = dataref_table("sim/joystick/joystick_axis_assignments")
 
@@ -268,6 +283,7 @@ local stick_base_raw = {}
 local stick_dead_axis  = {}
 local stick_hdg_hold_s = 0.0
 local stick_hdg_diag_at = 0.0
+local joy_autobind_done = false
 
 -- Center a raw 0..1 axis value to -1..1 around CONFIG.stick_hdg_center
 -- (used by the AXIS MONITOR display only).
@@ -755,6 +771,45 @@ function citationx_set_all(on)
     end
 end
 
+-- Fill JOY_BINDINGS from the buttons X-Plane reports as UNASSIGNED. Face and
+-- shoulder buttons only (8..17 per device): 0..7 are the D-pad hat on the DS4
+-- and 18+ are not physical. Both device slots are scanned because the pad
+-- enumerates twice (USB + Bluetooth), so the same action lands on both and
+-- survives a reconnect. Nothing already mapped by the pilot is overwritten.
+function citationx_autobind_joy()
+    if not CONFIG.joy_autobind_enabled then return end
+    JOY_BINDINGS = {}
+
+    local free = {}
+    for slot = 0, 1 do
+        for b = 8, 17 do
+            local idx = slot * 64 + b
+            if (joy_btn_assign[idx] or 0) == 0 then
+                free[b] = free[b] or {}
+                free[b][#free[b] + 1] = idx
+            end
+        end
+    end
+
+    local bound = 0
+    for b = 8, 17 do
+        local slots = free[b]
+        if slots and bound < #JOY_AUTOBIND_ACTIONS then
+            bound = bound + 1
+            local a = JOY_AUTOBIND_ACTIONS[bound]
+            for i = 1, #slots do
+                JOY_BINDINGS[slots[i]] = { label = a.label, action = a.action }
+                logMsg(string.format(
+                    "Citation X Suite: free joy button %d -> %s",
+                    slots[i], a.label))
+            end
+        end
+    end
+    if bound == 0 then
+        logMsg("Citation X Suite: no free controller buttons to bind")
+    end
+end
+
 function citationx_status_report()
     logMsg("Citation X Suite: status report ----------------------------------")
     logMsg(string.format("  aircraft = %s (C750=%s)", tostring(PLANE_ICAO), tostring(is_c750)))
@@ -763,6 +818,9 @@ function citationx_status_report()
         local text = m.state()
         logMsg(string.format("  %-16s : %s", m.label, text))
     end
+    local n = 0
+    for _ in pairs(JOY_BINDINGS) do n = n + 1 end
+    logMsg(string.format("  joystick autobind: %d free button(s)", n))
 end
 
 -- ------------------------------------------------------------ INPUT MAPPER --
@@ -917,6 +975,24 @@ function citationx_frame()
     last_frame_time = now
 
     is_c750 = (PLANE_ICAO == "C750")
+
+    -- Fill the free-button map once X-Plane has published assignments (or
+    -- after 5 s on a virgin config where none exist yet).
+    if not joy_autobind_done then
+        local ready = (now >= 5.0)
+        if not ready then
+            for i = 0, 127 do
+                if (joy_btn_assign[i] or 0) ~= 0 then
+                    ready = true
+                    break
+                end
+            end
+        end
+        if ready then
+            joy_autobind_done = true
+            citationx_autobind_joy()
+        end
+    end
 
     -- 2. axis optimizer
     if CONFIG.axis_optimizer_enabled and joy_avail_pitch == 1 and joy_avail_roll == 1 then
@@ -1082,7 +1158,8 @@ function citationx_frame()
             if CONFIG.input_learn_mode then
                 probe_log(string.format("JOY btn=%d %s", i, (value == 1) and "down" or "up"))
             end
-            if value == 1 and CONFIG.input_map_enabled and JOY_BINDINGS[i] then
+            if value == 1 and (CONFIG.input_map_enabled or CONFIG.joy_map_enabled)
+                and JOY_BINDINGS[i] then
                 fire_binding(JOY_BINDINGS[i])
             end
         end

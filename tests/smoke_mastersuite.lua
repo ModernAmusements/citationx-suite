@@ -21,13 +21,15 @@ function dataref(name, path, access, index)
     _G[name] = defaults[name] or 0
 end
 
-local axis_values, axis_assign
+local axis_values, axis_assign, button_assign
 function dataref_table(path)
     local t = setmetatable({}, { __index = function() return 0 end })
     if path == "sim/joystick/joystick_axis_values" then
         axis_values = t
     elseif path == "sim/joystick/joystick_axis_assignments" then
         axis_assign = t
+    elseif path == "sim/joystick/joystick_button_assignments" then
+        button_assign = t
     end
     return t
 end
@@ -175,5 +177,20 @@ frame(32)
 d = delta(hdg_sel_deg, before)
 check("late-enumerating right stick still locks", d > 10, d)
 check("late lock logged", logged("locked to raw axis 27"))
+
+-- 8. auto-bind uses ONLY the buttons X-Plane reports as unassigned -------------
+logs = {}
+for b = 8, 17 do button_assign[64 + b] = 500 end   -- second slot fully mapped
+citationx_autobind_joy()
+check("free button 8 bound in the free slot", JOY_BINDINGS[8] ~= nil)
+check("first free button gets the panel", JOY_BINDINGS[8].label == "CONTROL PANEL",
+    JOY_BINDINGS[8] and JOY_BINDINGS[8].label)
+check("second free button gets realism", JOY_BINDINGS[9].label == "REALISM PANEL",
+    JOY_BINDINGS[9] and JOY_BINDINGS[9].label)
+check("already-mapped button is never overwritten", JOY_BINDINGS[64 + 8] == nil)
+local panel_before = CONFIG.status_enabled
+JOY_BINDINGS[8].action()
+check("bound action actually runs", CONFIG.status_enabled ~= panel_before)
+CONFIG.status_enabled = panel_before
 
 print("\nALL MASTERSUITE STICK TESTS PASSED")

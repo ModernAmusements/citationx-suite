@@ -9,7 +9,7 @@ Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 
 | Script | State | Evidence / purpose |
 | --- | --- | --- |
-| `CitationX_MasterSuite.lua` | ✅ works* | `status report`, `flight recorder armed`, `heading knob locked to raw axis 28`; smoke tests pass. Every module starts **OFF** except the **DS4 right-stick heading knob**, and the panel starts hidden (2026-10-24). The knob's learned rest no longer latches X-Plane's `-0.01` pre-enumeration value, so it actually locks. Turn other modules on from the macros (`CitationX Suite: <row>`, or `enable all modules`). |
+| `CitationX_MasterSuite.lua` | ✅ works* | `status report`, `flight recorder armed`, `heading knob locked to raw axis 28`; smoke tests pass. Every module starts **OFF** except the **DS4 right-stick heading knob**, and the panel starts hidden (2026-10-24). The knob's learned rest no longer latches X-Plane's `-0.01` pre-enumeration value, so it actually locks. Free controller buttons are auto-bound from `joystick_button_assignments` (never overwrites a mapped button). Turn other modules on from the macros (`CitationX Suite: <row>`, or `enable all modules`). |
 | `CitationX_FailureTrainer.lua` | ✅ works* | `Citation X Failure Trainer + QRH loaded` |
 | `CitationX_CabinOps.lua` | ✅ works* | `Cabin & Ground Ops loaded` |
 | `CitationX_Realism.lua` | ✅ tests | one black Helvetica realism panel (12 rows, clickable), audio callouts (FMOD master bus), handling curve, control check, load-shed manager, brake fan, Vmo/Mmo overspeed, takeoff config, stabilised approach, gear-down confirmation, flap/gear overspeed, icing/anti-ice and cabin-altitude advisories. `tests/smoke_realism.lua` drives all of it; `smoke_panel_geometry.lua` renders the panel |
