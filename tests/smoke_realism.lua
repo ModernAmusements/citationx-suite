@@ -200,6 +200,55 @@ frame()
 check(has("CALLOUT ANTI ICE"), "anti-ice-off callout while icing conditions exist")
 real_anti_ice = 1
 
+-- ---------- handling curve ----------
+real_joy_pitch_avail = 1
+real_joy_roll_avail  = 1
+real_joy_pitch = 0.50
+real_joy_roll  = -0.50
+frame()
+check(real_ovr_pitch == 1 and real_ovr_roll == 1,
+  "handling curve takes the pitch/roll overrides")
+check(real_yoke_pitch > 0.0 and real_yoke_roll < 0.0, "shaped axes keep their sign")
+check(math.abs(real_yoke_pitch) < 0.5, "curve is softer than the raw axis")
+real_set_handling(false)
+check(real_ovr_pitch == 0 and real_ovr_roll == 0,
+  "releasing the curve returns the raw axes")
+real_set_handling(true)
+frame()
+check(real_ovr_pitch == 1, "handling curve re-engages when switched back on")
+
+-- ---------- hand-off to the MasterSuite axis optimizer ----------
+CONFIG = { axis_optimizer_enabled = false }
+frame()
+CONFIG.axis_optimizer_enabled = true
+real_ovr_pitch = 1          -- as the optimizer would set it
+real_ovr_roll  = 1
+frame()
+check(real_ovr_pitch == 1 and real_ovr_roll == 1,
+  "handing over does not stomp the MasterSuite override")
+CONFIG.axis_optimizer_enabled = false
+real_joy_pitch_avail = 0
+real_joy_roll_avail  = 0
+frame()
+
+-- ---------- control check ----------
+logs = {}
+real_on_ground  = 1
+real_ctrl_pitch = 0
+real_ctrl_roll  = 0
+real_ctrl_yaw   = 0
+real_throttle   = 0.9
+frame()
+check(has("CONTROL CHECK"), "takeoff without a control check is called out")
+real_throttle = 0
+frame()
+
+real_ctrl_pitch = 0.8
+real_ctrl_roll  = -0.8
+real_ctrl_yaw   = 0.8
+frame()
+check(has("flight controls checked"), "control check completes after full travel")
+
 -- ---------- takeoff configuration ----------
 logs = {}
 real_on_ground  = 1

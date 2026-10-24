@@ -11,7 +11,7 @@ standalone landing-performance scorer.
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
 | `Scripts/CitationX_EFB.lua` | Electronic flight bag panel: PERF (density altitude, wind components, V1/VR/V2/Vref, takeoff and landing distance by runway condition), CHECK (interactive 8-phase checklists) and FUEL (trip/contingency/alternate/reserve/endurance). Advisory data only. |
-| `Scripts/CitationX_Realism.lua` | Invisible realism pack: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable) on FlyWithLua's FMOD master bus; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing and cabin-altitude advisories (each also raises a 2 s toast). The script itself draws nothing. |
+| `Scripts/CitationX_Realism.lua` | Invisible realism pack: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable) on FlyWithLua's FMOD master bus; pilot-input handling curve (deadzone/expo/smoothing); flight-controls check; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing and cabin-altitude advisories (each also raises a 2 s toast). The script itself draws nothing. |
 | `Scripts/LandingPerformance.lua` | Standalone landing scoring and debrief card (third-party, untracked in git). |
 
 ## Control panel
@@ -77,8 +77,9 @@ stays untracked via `.gitignore`.
 - `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG` (`row_h` controls row spacing).
 - `CitationX_Realism.lua` — `REAL_CONFIG`: callout speeds (V1/Vr/Vref/Vfe/Vle), Vmo/Mmo,
   minima, load-shed threshold, brake-energy limits, icing window, anti-ice/cabin-altitude
-  triggers, stabilised-approach gate, `audio_backend` (`auto`/`fmod`/`wav`) and
-  `toasts_enabled`.
+  triggers, stabilised-approach gate, handling curve (`handling_deadzone`,
+  `handling_exponent`, `handling_smoothing`), control-check travel, `audio_backend`
+  (`auto`/`fmod`/`wav`) and `toasts_enabled`.
 
 ## Bindable commands
 

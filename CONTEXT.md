@@ -17,6 +17,7 @@ open item is still a single in-sim confirmation run**: callouts audible, texture
 | Realism logic | GEAR UP no longer fires while the gear is still fully down |
 | Panels | all four suite panels default to hidden — nothing paints at load except the realism pack's 2 s toast |
 | Modules | every MasterSuite module defaults OFF (recorder, emergency gen, input mapper, heading knob); REALISM PACK is the only one on at init |
+| Handling | pilot-input curve (deadzone/expo/smoothing) + flight-controls check, part of the realism pack |
 
 ### What changed 2026-10-23
 
@@ -32,7 +33,7 @@ open item is still a single in-sim confirmation run**: callouts audible, texture
 
 ```
 syntax ........................ ok
-runtime load (LuaJIT, shared) .. 85 bindings, 0 failures, 0 problems
+runtime load (LuaJIT, shared) .. 97 bindings, 0 failures, 0 problems
 dataref bindings .............. ok (5 suite scripts)
 kpcrew require graph (C750) ... 0 missing
 mastersuite smoke ............. PASSED
@@ -679,6 +680,49 @@ Validation: `probe_load_order` 85 bindings, 0 failures; `check_datarefs` 22 decl
 0 problems; `smoke_realism` now also drives takeoff config, Vmo, stable/unstable, gear-down,
 anti-ice-off and cabin-altitude.
 
+### Handling realism (2026-10-24, fifth request)
+
+*"yes lets do that"* — accepting the control-response option. Two additions, both in
+`CitationX_Realism.lua`:
+
+**1. Pilot-input shaping (`REAL_CONFIG.handling_enabled`, default on).**
+Reads `sim/joystick/joy_mapped_axis_value` 1/2 (pitch/roll), applies deadzone 0.02, expo 1.35
+and smoothing 0.55, and writes the result to `sim/joystick/yoke_pitch_ratio` /
+`yoke_roll_ratio` with `override_joystick_pitch` / `_roll` = 1. This is the same mechanism the
+MasterSuite's axis optimizer uses; it makes a short-throw pad precise near neutral without
+touching the flight model. `CitationXRealism/handling` and the macro *Citation X Realism:
+handling curve* toggle it.
+
+- It runs **before** the 10 Hz gate, every frame — smoothing at 10 Hz would be unusable.
+- Only one script may own those two overrides. If `CONFIG.axis_optimizer_enabled` is true the
+  realism curve releases and **does not write 0** (that would leave the optimizer driving an
+  override it no longer owns). Same guard in `release_handling()`.
+- The overrides are released when the pack is disabled, when the axes disappear, and in
+  `real_shutdown()` (FlyWithLua runs the exit hook on reload, so a reload cannot leave the
+  axes hijacked).
+
+**2. Flight-controls check before takeoff (`control_check_enabled`, default on).**
+While on the ground, pitch, roll and rudder (`sim/cockpit2/controls/yoke_*_ratio`) must each
+reach 60 % of travel. On success: `CONTROLS CHECKED` toast, once. If the thrust levers go
+forward first, the takeoff-config warning adds `CONTROL CHECK` to the list. It re-arms when the
+engines spool down on the ground, so it is asked once per flight, not once per session.
+
+**What it does not do, deliberately:** it does not inject turbulence. X-Plane already applies
+the weather's turbulence/gusts, and adding random chop from a script would be fake and would
+fight the weather engine. It also does not touch the flight model, trim, or control
+effectiveness — those are X-Plane's.
+
+New datarefs (all verified): `sim/joystick/joy_mapped_axis_value` (idx 1/2),
+`sim/joystick/joy_mapped_axis_avail` (idx 1/2), `sim/joystick/yoke_pitch_ratio`,
+`sim/joystick/yoke_roll_ratio`, `sim/operation/override/override_joystick_pitch`,
+`.../override_joystick_roll`, `sim/cockpit2/controls/yoke_pitch_ratio`,
+`.../yoke_roll_ratio`, `.../yoke_heading_ratio`,
+`sim/cockpit2/engine/indicators/engine_speed_rpm`.
+
+Validation: `probe_load_order` now 97 bindings, 0 failures; `check_datarefs` 34 declarations,
+0 problems; `smoke_realism` covers engage/release/re-engage, the shape itself, the hand-off
+guard and the control check.
+
 ## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
@@ -714,7 +758,7 @@ takeoff/approach, the load-shed/brake-fan behaviour, and the sharpened textures.
 ## Validation performed
 - `luac -p` on every script in `Scripts/`, including the KPCrew ones.
 - Every `dataref(...)` declaration in `Scripts/CitationX_*.lua` checked with
-  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (85 bindings).
+  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (97 bindings).
 - Every `require()` reachable for the C750 checked with
   `tests/check_kpcrew_modules.lua C750`: 0 missing (`--all` sweeps every aircraft).
 - Every `laminar/CitX/...` command and runtime dataref checked against the Citation X's own
@@ -769,7 +813,11 @@ takeoff/approach, the load-shed/brake-fan behaviour, and the sharpened textures.
   RAW index shown by AXIS MONITOR, or slots vetoed via `stick_hdg_exclude_axes`.
 - Realism pack: `REAL_CONFIG` in `CitationX_Realism.lua` — `v1_kt`/`vr_kt`/`vref_kt`/`vfe_kt`/
   `vle_kt`, `minima_ft`, `elec_min_bus_v`/`elec_shed_interval`/`elec_max_sheds`,
-  `brake_hot_j`/`brake_cool_j`, `flap15_vfe_kt`, `ice_oat_min_c`/`ice_oat_max_c`.
+  `brake_hot_j`/`brake_cool_j`, `flap15_vfe_kt`, `ice_oat_min_c`/`ice_oat_max_c`,
+  `vmo_low_kt`/`vmo_high_kt`/`mmo`, `to_throttle_ratio`/`to_flap_max_ratio`,
+  `stable_agl_ft`/`stable_vref_plus`/`stable_max_vs_fpm`, `anti_ice_repeat_s`,
+  `cabin_alt_limit_ft`, `handling_deadzone`/`handling_exponent`/`handling_smoothing`,
+  `control_check_travel`.
 - Textures: sharpened DDS originals are in
   `Aircraft/Cessna Citation X AviTab/_original_textures/`; restore them and reload the aircraft
   to undo.

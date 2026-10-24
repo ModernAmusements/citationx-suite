@@ -22,6 +22,12 @@
 --    9. GEAR DOWN confirmation when the gear locks down in flight.
 --   10. ANTI-ICE OFF advisory while icing conditions exist.
 --   11. CABIN ALTITUDE warning above 10 000 ft cabin altitude.
+--   12. Handling curve: deadzone, expo and smoothing on the pitch/roll axes,
+--       so a short-throw stick has jet-like precision near neutral. It does
+--       not touch the flight model, only the pilot input.
+--   13. Flight-controls check before takeoff: pitch, roll and rudder must each
+--       reach 60 % of travel while on the ground, or the takeoff-config
+--       warning says CONTROL CHECK.
 --
 --  Speeds (Citation X POM, Operating-Speeds page):
 --    Vr 145 · Vref 132 · Vfe 180 · Vle/Vlo 210 · Vmo 270 (<8000 ft) / 350
@@ -104,6 +110,20 @@ REAL_CONFIG = {
     cabin_alt_enabled  = true,
     cabin_alt_limit_ft = 10000.0,
     cabin_alt_repeat_s = 60.0,
+
+    -- Handling: pilot-input shaping ------------------------------------------
+    -- Does NOT touch the flight model. It reshapes the pitch/roll axes that go
+    -- into X-Plane (deadzone, expo, smoothing), which is what makes a short-
+    -- throw gamepad flyable with a jet's precision. Turn off for raw axes.
+    handling_enabled    = true,
+    handling_deadzone   = 0.02,
+    handling_exponent   = 1.35,
+    handling_smoothing  = 0.55,
+
+    -- Flight-controls check before takeoff (pitch, roll and rudder must each
+    -- reach control_check_travel of their range while on the ground).
+    control_check_enabled = true,
+    control_check_travel  = 0.60,
 }
 
 -- --------------------------------------------------------------- DATAREFS ---
@@ -126,6 +146,22 @@ dataref("real_throttle",   "sim/cockpit2/engine/actuators/throttle_ratio_all", "
 dataref("real_anti_ice",   "sim/cockpit2/ice/ice_surface_hot_bleed_air_on", "readonly")
 dataref("real_cabin_alt_ft",
     "sim/cockpit2/pressurization/indicators/cabin_altitude_ft", "readonly")
+
+-- Pilot input, for the handling curve.
+dataref("real_joy_pitch", "sim/joystick/joy_mapped_axis_value", "readonly", 1)
+dataref("real_joy_roll",  "sim/joystick/joy_mapped_axis_value", "readonly", 2)
+dataref("real_joy_pitch_avail", "sim/joystick/joy_mapped_axis_avail", "readonly", 1)
+dataref("real_joy_roll_avail",  "sim/joystick/joy_mapped_axis_avail", "readonly", 2)
+dataref("real_yoke_pitch", "sim/joystick/yoke_pitch_ratio", "writable")
+dataref("real_yoke_roll",  "sim/joystick/yoke_roll_ratio", "writable")
+dataref("real_ovr_pitch",  "sim/operation/override/override_joystick_pitch", "writable")
+dataref("real_ovr_roll",   "sim/operation/override/override_joystick_roll", "writable")
+
+-- Resulting control positions, for the pre-takeoff control check.
+dataref("real_ctrl_pitch", "sim/cockpit2/controls/yoke_pitch_ratio", "readonly")
+dataref("real_ctrl_roll",  "sim/cockpit2/controls/yoke_roll_ratio", "readonly")
+dataref("real_ctrl_yaw",   "sim/cockpit2/controls/yoke_heading_ratio", "readonly")
+real_engine_rpm = dataref_table("sim/cockpit2/engine/indicators/engine_speed_rpm")
 
 real_brake_j = dataref_table("sim/flightmodel2/gear/brake_absorbed_J")
 real_gear    = dataref_table("sim/flightmodel2/gear/deploy_ratio")
@@ -290,7 +326,104 @@ local S = {
     gear_down_called = false,
     anti_ice_next    = 0.0,
     cabin_next       = 0.0,
+    cc_pitch         = false,
+    cc_roll          = false,
+    cc_yaw           = false,
+    cc_done          = false,
+    cc_engine_running = false,
 }
+
+-- ---------------------------------------------------------------- HANDLING ---
+-- Two writers may never own the same joystick override: if the MasterSuite's
+-- axis optimizer is on, this section stays out of the way.
+local handling_active = false
+local smooth_pitch    = 0.0
+local smooth_roll     = 0.0
+
+local function release_handling()
+    if not handling_active then return end
+    -- Hand the overrides back only if nobody else has taken them: the
+    -- MasterSuite axis optimizer writes the same two datarefs, and stomping
+    -- them to 0 would leave it driving an override it no longer owns.
+    if not (type(CONFIG) == "table" and CONFIG.axis_optimizer_enabled) then
+        real_ovr_pitch = 0
+        real_ovr_roll  = 0
+    end
+    handling_active = false
+    logMsg("Citation X Realism: handling curve released")
+end
+
+local function shaped_axis(v)
+    local dz = REAL_CONFIG.handling_deadzone
+    local a  = math.abs(v or 0.0)
+    if a <= dz then return 0.0 end
+    a = (a - dz) / (1.0 - dz)
+    local out = a ^ REAL_CONFIG.handling_exponent
+    return (v < 0.0) and -out or out
+end
+
+local function handling_tick()
+    if not REAL_CONFIG.handling_enabled then
+        release_handling()
+        return
+    end
+    if type(CONFIG) == "table" and CONFIG.axis_optimizer_enabled then
+        release_handling()
+        return
+    end
+    if real_joy_pitch_avail ~= 1 or real_joy_roll_avail ~= 1 then
+        release_handling()
+        return
+    end
+
+    local target_pitch = shaped_axis(real_joy_pitch)
+    local target_roll  = shaped_axis(real_joy_roll)
+
+    if not handling_active then
+        real_ovr_pitch  = 1
+        real_ovr_roll   = 1
+        handling_active = true
+        smooth_pitch    = target_pitch
+        smooth_roll     = target_roll
+        logMsg("Citation X Realism: handling curve engaged")
+    end
+
+    local k = REAL_CONFIG.handling_smoothing
+    smooth_pitch = smooth_pitch + k * (target_pitch - smooth_pitch)
+    smooth_roll  = smooth_roll  + k * (target_roll  - smooth_roll)
+    real_yoke_pitch = smooth_pitch
+    real_yoke_roll  = smooth_roll
+end
+
+-- ---------------------------------------------------------- CONTROL CHECK ----
+local function control_check_tick()
+    if not REAL_CONFIG.control_check_enabled then
+        S.cc_done = true
+        return
+    end
+
+    local rpm1 = real_engine_rpm[0] or 0.0
+    local rpm2 = real_engine_rpm[1] or 0.0
+    local running = (rpm1 > 50.0) or (rpm2 > 50.0)
+    if S.cc_engine_running and not running and real_on_ground == 1 then
+        S.cc_pitch, S.cc_roll, S.cc_yaw = false, false, false
+        S.cc_done = false
+        logMsg("Citation X Realism: control check reset (engines shut down)")
+    end
+    S.cc_engine_running = running
+
+    if S.cc_done or real_on_ground ~= 1 then return end
+
+    local travel = REAL_CONFIG.control_check_travel
+    if math.abs(real_ctrl_pitch or 0.0) >= travel then S.cc_pitch = true end
+    if math.abs(real_ctrl_roll or 0.0)  >= travel then S.cc_roll  = true end
+    if math.abs(real_ctrl_yaw or 0.0)   >= travel then S.cc_yaw   = true end
+
+    if S.cc_pitch and S.cc_roll and S.cc_yaw then
+        S.cc_done = true
+        notify("flight controls checked (pitch, roll, yaw)", "CONTROLS CHECKED")
+    end
+end
 
 -- Last runtime dataref the C750 registers (read lazily: it does not exist
 -- until the aircraft loads, so a dataref() binding here would quarantine us).
@@ -412,6 +545,9 @@ local function takeoff_config_tick(now)
     if (real_spoiler or 0.0) > 0.1 then issues[#issues + 1] = "SPEEDBRAKE" end
     if (real_flap_rat or 0.0) > REAL_CONFIG.to_flap_max_ratio then
         issues[#issues + 1] = "FLAPS"
+    end
+    if REAL_CONFIG.control_check_enabled and not S.cc_done then
+        issues[#issues + 1] = "CONTROL CHECK"
     end
     if #issues == 0 then return end
 
@@ -648,13 +784,19 @@ end
 
 -- ---------------------------------------------------------------- FRAME ------
 function real_frame()
-    if not REAL_CONFIG.enabled then return end
+    if not REAL_CONFIG.enabled then
+        release_handling()
+        return
+    end
+    handling_tick()
+
     local now = real_sim_time or 0.0
     if now - S.last_tick < 0.1 then return end
     S.last_tick = now
 
     local agl_ft = (real_agl_m or 0.0) * 3.28084
 
+    control_check_tick()
     callouts_tick(now, agl_ft)
     takeoff_config_tick(now)
     vmo_tick(now)
@@ -673,7 +815,15 @@ end
 -- -------------------------------------------------------------- CONTROLS -----
 function real_set_enabled(on)
     REAL_CONFIG.enabled = (on == true)
+    if not REAL_CONFIG.enabled then release_handling() end
     logMsg("Citation X Realism: " .. (REAL_CONFIG.enabled and "ON" or "OFF"))
+end
+
+function real_set_handling(on)
+    REAL_CONFIG.handling_enabled = (on == true)
+    if not REAL_CONFIG.handling_enabled then release_handling() end
+    logMsg("Citation X Realism: handling curve "
+        .. (REAL_CONFIG.handling_enabled and "ON" or "OFF"))
 end
 
 function real_status_report()
@@ -686,6 +836,10 @@ function real_status_report()
         tostring(REAL_CONFIG.vmo_enabled), tostring(REAL_CONFIG.to_config_enabled),
         tostring(REAL_CONFIG.stable_enabled), tostring(REAL_CONFIG.anti_ice_enabled),
         tostring(REAL_CONFIG.cabin_alt_enabled)))
+    logMsg(string.format("  handling=%s (dz %.2f exp %.2f), control check=%s (%s)",
+        tostring(REAL_CONFIG.handling_enabled), REAL_CONFIG.handling_deadzone,
+        REAL_CONFIG.handling_exponent, tostring(REAL_CONFIG.control_check_enabled),
+        tostring(S.cc_done)))
     logMsg(string.format("  sound bus=%s, %d sound(s) loaded",
         sound_bus, (function() local n = 0 for _ in pairs(callout_id) do n = n + 1 end return n end)()))
     logMsg(string.format("  speeds V1=%d Vr=%d Vref=%d Vfe=%d Vle=%d",
@@ -719,6 +873,7 @@ do_every_frame("real_frame()")
 do_on_exit("real_shutdown()")
 
 function real_shutdown()
+    release_handling()
     if real_brake_fan == 1 then real_brake_fan = 0 end
 end
 
@@ -731,7 +886,11 @@ create_command("CitationXRealism/test_callout",
 create_command("CitationXRealism/status",
     "Citation X Realism: write the status to Log.txt",
     "real_status_report()", "", "")
+create_command("CitationXRealism/handling",
+    "Citation X Realism: toggle the pilot-input handling curve",
+    "real_set_handling(not REAL_CONFIG.handling_enabled)", "", "")
 
 add_macro("Citation X Realism: enable/disable", "real_set_enabled(not REAL_CONFIG.enabled)")
 add_macro("Citation X Realism: test callout", "real_test_callout()")
 add_macro("Citation X Realism: status report", "real_status_report()")
+add_macro("Citation X Realism: handling curve", "real_set_handling(not REAL_CONFIG.handling_enabled)")
