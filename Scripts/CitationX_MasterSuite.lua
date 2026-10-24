@@ -28,9 +28,10 @@
 
 -- ------------------------------------------------------------------ CONFIG --
 CONFIG = {
-    -- Everything starts disabled: at load only the REALISM PACK is on. Every
-    -- module here can be switched back on from the control panel (once shown)
-    -- or the FlyWithLua macro menu / CitationXSuite/toggle_<key> commands.
+    -- Everything starts disabled except the DS4 right-stick heading knob (the
+    -- one thing the user flies with). Every module here can be switched on
+    -- from the control panel (once shown) or the FlyWithLua macro menu /
+    -- CitationXSuite/toggle_<key> commands.
     log_enabled            = false,
     log_to_desktop         = true,
 
@@ -71,7 +72,7 @@ CONFIG = {
     -- (stick_hdg_sticky) until the module is toggled or the scripts reload.
     -- Set stick_hdg_axis to a fixed RAW index (see the AXIS MONITOR panel) to
     -- pin it manually. Raw sim/joystick/joystick_axis_values is 0..1.
-    stick_hdg_enabled       = false,
+    stick_hdg_enabled       = true,   -- the one MasterSuite module on at init
     stick_hdg_axis          = -1,
     stick_hdg_sticky        = true,
     stick_hdg_exclude_axes  = { },   -- extra RAW indices to veto, e.g. { 4, 5 }
@@ -304,6 +305,20 @@ local function stick_baseline_update()
         if raw then
             local base = stick_base_raw[i]
             if base == nil then
+                -- X-Plane publishes -0.01 (or 0) for axes whose device has not
+                -- enumerated yet. Latching that as the rest makes the axis look
+                -- permanently deflected, freezes the learned centre and the
+                -- knob never detects it (the 2026-10-24 "right stick dead"
+                -- symptom: base -0.01, deflection 1.02 at rest). Only adopt a
+                -- plausible centred first value; triggers rest at 0/1 and are
+                -- excluded by stick_axis_is_centered() anyway.
+                if math.abs(raw - CONFIG.stick_hdg_center) <= 0.35 then
+                    stick_base_raw[i] = raw
+                end
+            elseif (base < 0.05 or base > 0.95)
+                and math.abs(raw - base) > 0.35
+                and math.abs(raw - CONFIG.stick_hdg_center) <= 0.15 then
+                -- Repair a rest latched before the device went live.
                 stick_base_raw[i] = raw
             elseif math.abs(stick_axis_deflection(i)) <= CONFIG.stick_hdg_deadzone then
                 stick_base_raw[i] = base + (raw - base) * CONFIG.stick_hdg_base_track

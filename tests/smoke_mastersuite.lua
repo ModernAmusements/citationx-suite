@@ -153,4 +153,27 @@ frame(21)
 d = delta(hdg_sel_deg, before)
 check("works after toggle", d < -5, d)
 
+-- 7. regression: X-Plane reports -0.01 before the pad enumerates --------------
+-- The 2026-10-24 log showed every axis with a learned rest of -0.01, so the
+-- knob never locked. Reload the script with the right stick "not live yet".
+logs = {}
+dofile(SCRIPT)
+CONFIG.stick_hdg_enabled = true
+
+-- the mocks hand out fresh tables on reload, so re-publish the device state
+axis_assign[0], axis_assign[1], axis_assign[2] = 2, 1, 3
+axis_values[0], axis_values[1], axis_values[2], axis_values[3] = 0.5, 0.5, 0.5, 0.5
+axis_values[4], axis_values[5] = 0.0, 0.0
+axis_values[27], axis_values[28] = -0.01, -0.01
+
+frame(30)                                          -- must NOT latch -0.01
+axis_values[27], axis_values[28] = 0.5, 0.5        -- pad enumerates, centred
+frame(31)
+axis_values[27] = 0.9
+before = hdg_sel_deg
+frame(32)
+d = delta(hdg_sel_deg, before)
+check("late-enumerating right stick still locks", d > 10, d)
+check("late lock logged", logged("locked to raw axis 27"))
+
 print("\nALL MASTERSUITE STICK TESTS PASSED")

@@ -19,7 +19,8 @@ callouts audible, panel legible, handling curve felt, textures seen.
 | Realism UX | generator loss / load shed / hot brakes / overspeed / icing raise a 2 s toast via the new `citationx_toast()` |
 | Realism logic | GEAR UP no longer fires while the gear is still fully down |
 | Panels | all four suite panels default to hidden — the only thing drawn is the realism pack's own black panel |
-| Modules | every MasterSuite module defaults OFF (recorder, emergency gen, input mapper, heading knob); REALISM PACK is the only one on at init |
+| Modules | every MasterSuite module defaults OFF **except the DS4 right-stick heading knob**; REALISM PACK is the only other active module at init |
+| Stick HDG | right stick re-enabled, and its learned rest no longer latches X-Plane's `-0.01` pre-enumeration value (it never locked before) |
 | Handling | pilot-input curve (deadzone/expo/smoothing) + flight-controls check, part of the realism pack |
 | Realism panel | one black, Helvetica realism panel with every control and live state (default on) |
 
@@ -67,11 +68,11 @@ Textures need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
 - **Suite scripts (tracked):** `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
   `CitationX_CabinOps.lua`, `CitationX_EFB.lua`, `CitationX_Realism.lua` plus
   `CitationX_Callouts/*.wav` (19 files). All load clean; no `FlyWithLua Error:` lines.
-- **At load only the realism pack is active.** Every MasterSuite module (`status`, `log`,
-  `emerg`, `input`, `stick`, `axis`, `learn`, `axmon`) is OFF, the four suite panels are hidden,
-  `LandingPerformance` is in `LA_DISPLAY_NONE`, and the only thing drawn is the realism panel.
-  Re-enable things with the macros (`CitationX Suite: <row>`, `enable all modules`) or by
-  clicking the realism panel rows that belong to the pack.
+- **At load only the realism pack and the DS4 right-stick heading knob are active.** Every other
+  MasterSuite module (`status`, `log`, `emerg`, `input`, `axis`, `learn`, `axmon`) is OFF, the
+  four suite panels are hidden, `LandingPerformance` is in `LA_DISPLAY_NONE`, and the only thing
+  drawn is the realism panel. Re-enable things with the macros (`CitationX Suite: <row>`,
+  `enable all modules`) or by clicking the realism panel rows that belong to the pack.
 - **Mission Generator: deleted 2026-10-21** at the user's request, together with
   `tests/smoke_mission.lua`. The `MissionGen/*` commands, the briefing panel and the cruise
   time warp no longer exist. Do not resurrect it without being asked.
@@ -640,11 +641,12 @@ Hiding the panels was not enough — the MasterSuite's background modules were s
 | `log_enabled` (flight recorder CSV) | true | **false** |
 | `emergency_enabled` (random bleed/press warning) | true | **false** |
 | `input_map_enabled` (custom key/button bindings) | true | **false** |
-| `stick_hdg_enabled` (DS4 right-stick heading bug) | true | **false** |
+| `stick_hdg_enabled` (DS4 right-stick heading bug) | true | **true** (the one exception, re-enabled 2026-10-24 on request) |
 | `axis_optimizer_enabled`, `axis_monitor`, `input_learn_mode` | false | false |
 
-`REAL_CONFIG.enabled` stays `true` — it is the one module that is on at load. CabinOps, QRH and
-EFB are inert because their panels are hidden and they only start on a click or macro.
+`REAL_CONFIG.enabled` stays `true`, and the DS4 right-stick heading bug stays on because it is
+how the user flies. Everything else is inert until switched on. CabinOps, QRH and EFB are inert
+because their panels are hidden and they only start on a click or macro.
 
 Nothing is lost: every row keeps its `set()` path, so the macros
 `CitationX Suite: <row>` and `CitationXSuite/toggle_<key>` still switch each module on, and two
@@ -652,9 +654,8 @@ new macros flip the lot — `CitationX Suite: enable all modules` /
 `CitationX Suite: disable all modules` (`citationx_set_all()`, which skips the panel row so
 enabling everything does not paint the panel on top).
 
-Consequence to be aware of: the DS4 heading knob and the suite's custom button bindings are now
-off until switched on. That is the literal request ("only realism"), and both are one macro
-away.
+Consequence to be aware of: the suite's custom button bindings (`input_map_enabled`) stay off
+until switched on. The DS4 heading knob is the deliberate exception and is on at load.
 
 ### More realism (2026-10-24, fourth request)
 
@@ -771,6 +772,33 @@ control rows, row-click toggling, and zero primitives when the panel is hidden.
 `smoke_panel_geometry.lua` now renders the realism panel too — 47 checks, including the panel
 fitting 1280×720.
 
+### Heading knob on the right stick was dead (2026-10-24)
+
+Reported: *"heading on the right stick does not work"*. Two causes:
+
+1. **It had been switched off** with the "only realism at init" pass
+   (`stick_hdg_enabled = false`). Now **true**: it is the one MasterSuite module that is on at
+   load, because it is how the aircraft is flown.
+2. **It could never detect the axis anyway.** The 2026-10-23 `Log.txt` has 323 `HDG scan`
+   lines and **no** `heading knob locked` line. Every axis reported a learned rest of `-0.01`:
+   `stick_baseline_update()` adopted the first raw value it saw, and X-Plane publishes `-0.01`
+   for axes whose device has not enumerated yet. The axis then looked deflected by `1.00`
+   (rest `-0.01`, raw `0.50`), so the baseline was frozen (`|d| > deadzone`) and
+   `stick_axis_is_centered()` — which requires a rest within `0.25` of `0.5` — never passed.
+   Detection therefore never ran, on any axis, for the whole session.
+
+**Fix** in `stick_baseline_update()`:
+
+- adopt a first value only if it is within `0.35` of `stick_hdg_center`; `-0.01`, `0` and `1`
+  are rejected, so triggers (which rest at 0/1) simply never get a rest and stay excluded;
+- repair an existing rest latched at a hard extreme (`< 0.05` or `> 0.95`) once the axis
+  reports a plausible centre and is more than `0.35` away from the bad rest.
+
+A/B proven with `tests/smoke_mastersuite.lua`: its new "late-enumerating right stick still
+locks" case fails on the old baseline (`-> 0`) and passes on the new one. That harness now
+publishes assignments/axes *after* reloading the script with `-0.01`, which is exactly the
+startup order X-Plane uses.
+
 ## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
@@ -821,7 +849,7 @@ load-shed/brake-fan behaviour, and the sharpened textures.
   `plugins/xlua/scripts/*.lua`.
 - Mock-FlyWithLua smoke tests, all run under **luajit** (the sim's Lua, see below):
   - `tests/smoke_mastersuite.lua` — DS4 heading: triggers ignored, sticky lock, dead-slot
-    recovery.
+    recovery, and the late-enumeration regression (rest `-0.01` before the pad is live).
   - `tests/smoke_hud_toggles.lua` — 13 rows well formed, unique keys, sibling toggles safe
     with the other scripts absent, overlay draws zero primitives when everything is off.
   - `tests/smoke_realism.lua` — takeoff/approach callouts fire once, gear-up delay, load-shed

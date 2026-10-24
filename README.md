@@ -16,8 +16,9 @@ standalone landing-performance scorer.
 
 ## Control panel
 
-**Only the realism panel is on screen at load; every MasterSuite module starts OFF.** The one
-exception is the REALISM PACK itself, which draws its own black Helvetica panel at the top-left
+**Only the realism panel is on screen at load; every MasterSuite module starts OFF except the
+DS4 right-stick heading knob.** The one exception is the REALISM PACK itself, which draws its
+own black Helvetica panel at the top-left
 (`CitationXRealism/hud` hides it). Open any other panel from the FlyWithLua macro menu or the
 commands below; the suite control panel is `CitationX Suite: control panel`
 (`CitationXSuite/toggle_status`). Two macros flip the whole suite:
