@@ -11,15 +11,17 @@ standalone landing-performance scorer.
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
 | `Scripts/CitationX_EFB.lua` | Electronic flight bag panel: PERF (density altitude, wind components, V1/VR/V2/Vref, takeoff and landing distance by runway condition), CHECK (interactive 8-phase checklists) and FUEL (trip/contingency/alternate/reserve/endurance). Advisory data only. |
-| `Scripts/CitationX_Realism.lua` | Invisible realism pack: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable) on FlyWithLua's FMOD master bus; pilot-input handling curve (deadzone/expo/smoothing); flight-controls check; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing and cabin-altitude advisories (each also raises a 2 s toast). The script itself draws nothing. |
+| `Scripts/CitationX_Realism.lua` | Realism pack with one black, sans-serif (Helvetica) panel: live state of every realism subsystem plus clickable toggles. Behind it: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable) on FlyWithLua's FMOD master bus; pilot-input handling curve (deadzone/expo/smoothing); flight-controls check; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing and cabin-altitude advisories (each also raises a 2 s toast). |
 | `Scripts/LandingPerformance.lua` | Standalone landing scoring and debrief card (third-party, untracked in git). |
 
 ## Control panel
 
-**Nothing is drawn at load and every module starts OFF.** The only thing enabled on init is the
-REALISM PACK. Open any panel from the FlyWithLua macro menu or the commands below; the control
-panel is `CitationX Suite: control panel` (`CitationXSuite/toggle_status`). Two macros flip the
-whole suite: `CitationX Suite: enable all modules` / `disable all modules`.
+**Only the realism panel is on screen at load; every MasterSuite module starts OFF.** The one
+exception is the REALISM PACK itself, which draws its own black Helvetica panel at the top-left
+(`CitationXRealism/hud` hides it). Open any other panel from the FlyWithLua macro menu or the
+commands below; the suite control panel is `CitationX Suite: control panel`
+(`CitationXSuite/toggle_status`). Two macros flip the whole suite:
+`CitationX Suite: enable all modules` / `disable all modules`.
 
 The left-hand panel lists every subsystem with a live state. Click a row to toggle it.
 The same toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as

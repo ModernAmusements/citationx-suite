@@ -3,8 +3,9 @@
 --  X-Plane 12  |  FlyWithLua NG+ (2.8+)
 --  Version 1.0
 -- ----------------------------------------------------------------------------
---  Adds the things the aircraft and X-Plane do not do on their own. It draws
---  NOTHING on screen: callouts are audio, everything else goes to Log.txt.
+--  Adds the things the aircraft and X-Plane do not do on their own. Everything
+--  is audio or Log.txt, plus ONE black, sans-serif panel (item 14) listing the
+--  pack's controls and live state.
 --
 --    1. Takeoff/approach callouts (V1, rotate, positive rate, gear up,
 --       1000/500/100, minimums) from the POM's operating speeds.
@@ -28,6 +29,8 @@
 --   13. Flight-controls check before takeoff: pitch, roll and rudder must each
 --       reach 60 % of travel while on the ground, or the takeoff-config
 --       warning says CONTROL CHECK.
+--   14. One black, sans-serif panel (Helvetica) with every control and its live
+--       state; click a row to toggle it. CitationXRealism/hud hides it.
 --
 --  Speeds (Citation X POM, Operating-Speeds page):
 --    Vr 145 · Vref 132 · Vfe 180 · Vle/Vlo 210 · Vmo 270 (<8000 ft) / 350
@@ -40,6 +43,7 @@
 
 REAL_CONFIG = {
     enabled            = true,
+    hud_enabled        = true,   -- the one black, sans-serif realism panel
 
     -- Callouts ---------------------------------------------------------------
     callouts_enabled   = true,
@@ -278,11 +282,13 @@ local function play_callout_sound(idx)
     return ok
 end
 
--- Log-only + 2 s toast. The toast is borrowed from the MasterSuite; without
--- that script loaded the notice stays in Log.txt, and this file still registers
--- no draw callback of its own.
+-- Log-only + 2 s toast. The toast is borrowed from the MasterSuite when it is
+-- loaded; the realism HUD is this script's only on-screen surface.
+local HUD_INFO = { last_event = "" }
+
 local function notify(text, toast_text)
     logMsg("Citation X Realism: " .. text)
+    HUD_INFO.last_event = toast_text or text
     if not REAL_CONFIG.toasts_enabled then return end
     local fn = _G.citationx_toast
     if type(fn) == "function" then pcall(fn, toast_text or text) end
@@ -290,8 +296,9 @@ end
 
 local function callout(key, text)
     logMsg("Citation X Realism: CALLOUT " .. text)
+    HUD_INFO.last_event = text
     local idx = callout_id[key]
-    if idx then play_callout_sound(idx) end
+    if idx and REAL_CONFIG.audio_enabled then play_callout_sound(idx) end
 end
 
 -- ------------------------------------------------------------------ STATE ---
@@ -331,6 +338,8 @@ local S = {
     cc_yaw           = false,
     cc_done          = false,
     cc_engine_running = false,
+    to_issue         = "",
+    approach_note    = "-",
 }
 
 -- ---------------------------------------------------------------- HANDLING ---
@@ -536,7 +545,10 @@ local function takeoff_config_tick(now)
         return
     end
     local thr = real_throttle or 0.0
-    if thr < 0.2 then S.to_config_armed = true end
+    if thr < 0.2 then
+        S.to_config_armed = true
+        S.to_issue = ""
+    end
     if not S.to_config_armed or thr < REAL_CONFIG.to_throttle_ratio then return end
     S.to_config_armed = false
 
@@ -551,6 +563,7 @@ local function takeoff_config_tick(now)
     end
     if #issues == 0 then return end
 
+    S.to_issue = table.concat(issues, ", ")
     callout("to_config", "TAKEOFF CONFIG")
     notify("takeoff config: " .. table.concat(issues, ", "),
         "TAKEOFF CONFIG: " .. table.concat(issues, " / "))
@@ -582,6 +595,7 @@ local function stable_tick(now, agl_ft)
     if not REAL_CONFIG.stable_enabled then return end
     if real_on_ground == 1 then
         S.stable_checked = false
+        S.approach_note  = "-"
         return
     end
     if agl_ft > REAL_CONFIG.stable_agl_ft + 500.0 then
@@ -611,10 +625,12 @@ local function stable_tick(now, agl_ft)
     end
 
     if #issues == 0 then
+        S.approach_note = "STABLE"
         callout("stable", "STABLE")
         notify(string.format("stabilised at %.0f ft, %.0f kt", agl_ft, ias),
             "STABLE APPROACH")
     else
+        S.approach_note = "UNSTABLE: " .. table.concat(issues, ", ")
         callout("unstable", "UNSTABLE")
         notify("not stabilised: " .. table.concat(issues, ", "),
             "UNSTABLE: " .. table.concat(issues, " / "))
@@ -856,6 +872,255 @@ function real_test_callout()
     if idx then play_callout_sound(idx) end
 end
 
+-- ------------------------------------------------------------------- HUD -----
+-- The pack's one on-screen surface: a black, sans-serif panel listing every
+-- realism control and its live state. Everything else stays audio/Log.txt.
+REAL_STYLE = {
+    x = 24, top = 24, width = 430, pad = 14,
+    header_h = 34, row_h = 21, footer_h = 34,
+    bg        = {0.00, 0.00, 0.00, 0.90},
+    header_bg = {0.04, 0.04, 0.04, 0.96},
+    border    = {0.32, 0.32, 0.32, 1.00},
+    title     = {1.00, 1.00, 1.00, 1.00},
+    sub       = {0.55, 0.55, 0.55, 1.00},
+    label     = {0.80, 0.80, 0.80, 1.00},
+    value     = {1.00, 1.00, 1.00, 1.00},
+    dim       = {0.45, 0.45, 0.45, 1.00},
+    ok        = {0.45, 0.85, 0.50, 1.00},
+    warn      = {0.95, 0.72, 0.25, 1.00},
+    bad       = {0.95, 0.36, 0.32, 1.00},
+    btn       = {0.10, 0.10, 0.10, 1.00},
+}
+
+local hud_hits = {}
+
+local function hud_bar(x0, y0, x1, y1, col, alpha)
+    glColor4f(col[1], col[2], col[3], alpha or col[4] or 1.0)
+    glRectf(x0, y0, x1, y1)
+end
+
+local function hud_font(size)
+    if size == 18 then return draw_string_Helvetica_18 end
+    if size == 10 then return draw_string_Helvetica_10 end
+    return draw_string_Helvetica_12
+end
+
+local function hud_text(x, y, text, size, col)
+    glColor4f(col[1], col[2], col[3], 1.0)
+    hud_font(size)(x, y, tostring(text or ""))
+end
+
+local function hud_text_right(x_right, y, text, size, col)
+    local w = measure_string(tostring(text or ""), "Helvetica_" .. tostring(size)) or 0
+    hud_text(x_right - w, y, text, size, col)
+end
+
+local function hud_fit(text, max_chars)
+    text = tostring(text or "")
+    if #text <= max_chars then return text end
+    return text:sub(1, max_chars - 2) .. ".."
+end
+
+local function hud_audio()
+    if not REAL_CONFIG.audio_enabled then return "OFF", REAL_STYLE.dim end
+    if sound_bus == "none" then return "NO API", REAL_STYLE.bad end
+    local n = 0
+    for _ in pairs(callout_id) do n = n + 1 end
+    return string.format("%s  %d", sound_bus == "fmod" and "FMOD" or "WAV", n),
+        REAL_STYLE.value
+end
+
+local function hud_brakes()
+    local hottest = 0.0
+    for i = 0, 9 do
+        local j = real_brake_j[i] or 0.0
+        if j > hottest then hottest = j end
+    end
+    local text = string.format("FAN %s  %.1f MJ",
+        S.brake_hot and "ON" or "OFF", hottest / 1e6)
+    return text, S.brake_hot and REAL_STYLE.warn or REAL_STYLE.value
+end
+
+local function hud_icing()
+    local oat  = real_oat_c or 15.0
+    local rain = real_rain or 0.0
+    if oat <= REAL_CONFIG.ice_oat_max_c and oat >= REAL_CONFIG.ice_oat_min_c
+        and rain > 0.01 and real_on_ground ~= 1 then
+        if (real_anti_ice or 0) == 0 then
+            return "ICE - PROT OFF", REAL_STYLE.bad
+        end
+        return "ICE - PROT ON", REAL_STYLE.warn
+    end
+    return "CLEAR", REAL_STYLE.value
+end
+
+REAL_HUD_ROWS = {
+    {
+        label = "REALISM PACK",
+        act = function() real_set_enabled(not REAL_CONFIG.enabled) end,
+        value = function()
+            if REAL_CONFIG.enabled then return "ON", REAL_STYLE.ok end
+            return "OFF", REAL_STYLE.dim
+        end,
+    },
+    {
+        label = "CALLOUTS",
+        act = function()
+            REAL_CONFIG.callouts_enabled = not REAL_CONFIG.callouts_enabled
+        end,
+        value = function()
+            if REAL_CONFIG.callouts_enabled then return "ON", REAL_STYLE.ok end
+            return "OFF", REAL_STYLE.dim
+        end,
+    },
+    { label = "AUDIO", value = hud_audio },
+    {
+        label = "HANDLING CURVE",
+        act = function() real_set_handling(not REAL_CONFIG.handling_enabled) end,
+        value = function()
+            if REAL_CONFIG.handling_enabled then return "ON", REAL_STYLE.ok end
+            return "OFF", REAL_STYLE.dim
+        end,
+    },
+    {
+        label = "CTRL CHECK",
+        act = function()
+            S.cc_pitch, S.cc_roll, S.cc_yaw = false, false, false
+            S.cc_done = false
+            logMsg("Citation X Realism: control check reset from the HUD")
+        end,
+        value = function()
+            if not REAL_CONFIG.control_check_enabled then return "OFF", REAL_STYLE.dim end
+            if S.cc_done then return "DONE", REAL_STYLE.ok end
+            return "PENDING", REAL_STYLE.warn
+        end,
+    },
+    {
+        label = "LOAD SHED",
+        value = function()
+            local text = string.format("%d/%d  %.1f V",
+                S.shed_steps, REAL_CONFIG.elec_max_sheds, real_bus_v[0] or 0.0)
+            return text, S.shed_steps > 0 and REAL_STYLE.warn or REAL_STYLE.value
+        end,
+    },
+    { label = "BRAKES", value = hud_brakes },
+    { label = "ICING", value = hud_icing },
+    {
+        label = "OVERSPEED",
+        value = function()
+            if S.overspeed_warned then return "OVER", REAL_STYLE.bad end
+            return "OK", REAL_STYLE.ok
+        end,
+    },
+    {
+        label = "TAKEOFF CFG",
+        value = function()
+            if S.to_issue ~= "" then return hud_fit(S.to_issue, 26), REAL_STYLE.warn end
+            return "OK", REAL_STYLE.ok
+        end,
+    },
+    {
+        label = "APPROACH",
+        value = function()
+            if S.approach_note == "-" then return "-", REAL_STYLE.dim end
+            if S.approach_note == "STABLE" then return "STABLE", REAL_STYLE.ok end
+            return hud_fit(S.approach_note, 26), REAL_STYLE.warn
+        end,
+    },
+    {
+        label = "LAST",
+        value = function()
+            return hud_fit(HUD_INFO.last_event, 26), REAL_STYLE.dim
+        end,
+    },
+}
+
+local function hud_height()
+    local st = REAL_STYLE
+    return st.header_h + 10 + #REAL_HUD_ROWS * st.row_h + st.footer_h + 8
+end
+
+function real_set_hud(on)
+    REAL_CONFIG.hud_enabled = (on == true)
+    logMsg("Citation X Realism: HUD " .. (REAL_CONFIG.hud_enabled and "ON" or "OFF"))
+end
+
+function real_draw()
+    if not REAL_CONFIG.hud_enabled then return end
+    local sw = SCREEN_WIDTH  or 1920
+    local sh = SCREEN_HIGHT or 1080
+    local st = REAL_STYLE
+    local x, w, pad = st.x, st.width, st.pad
+    local top = sh - st.top
+    local box_h = hud_height()
+    local bottom = top - box_h
+    if bottom < 8 then bottom = 8 end
+
+    XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
+    hud_hits = {}
+
+    hud_bar(x, bottom, x + w, top, st.bg)
+    hud_bar(x, top - 1, x + w, top, st.border)
+    hud_bar(x, bottom, x + 1, top, st.border)
+    hud_bar(x + w - 1, bottom, x + w, top, st.border)
+    hud_bar(x, bottom, x + w, bottom + 1, st.border)
+    hud_bar(x, top - st.header_h, x + w, top, st.header_bg)
+    hud_bar(x, top - st.header_h, x + w, top - st.header_h + 2, st.border)
+
+    hud_text(x + pad, top - 25, "REALISM", 18, st.title)
+    hud_text_right(x + w - pad, top - 22, "CITATION X", 10, st.sub)
+
+    local y = top - st.header_h - 20
+    for i = 1, #REAL_HUD_ROWS do
+        local row = REAL_HUD_ROWS[i]
+        local text, col = row.value()
+        col = col or st.value
+        hud_text(x + pad, y, row.label, 12, st.label)
+        hud_text_right(x + w - pad, y, text, 12, col)
+        if row.act then
+            hud_bar(x + 4, y + 5, x + 6, y + 8, st.border)
+            hud_hits[#hud_hits + 1] = {
+                x0 = x, x1 = x + w,
+                y0 = y - 4, y1 = y + 17,
+                act = row.act,
+            }
+        end
+        y = y - st.row_h
+    end
+
+    local by0 = bottom + 8
+    local by1 = by0 + st.footer_h - 12
+    local mid = x + w / 2
+    hud_bar(x + pad, by0, mid - 4, by1, st.btn)
+    hud_bar(mid + 4, by0, x + w - pad, by1, st.btn)
+    hud_text(x + pad + 9, by0 + 6, "TEST CALLOUT", 10, st.value)
+    local hide_w = measure_string("HIDE HUD", "Helvetica_10") or 44
+    hud_text(x + w - pad - 9 - hide_w, by0 + 6, "HIDE HUD", 10, st.value)
+
+    hud_hits[#hud_hits + 1] = {
+        x0 = x + pad, x1 = mid - 4, y0 = by0, y1 = by1,
+        act = function() real_test_callout() end,
+    }
+    hud_hits[#hud_hits + 1] = {
+        x0 = mid + 4, x1 = x + w - pad, y0 = by0, y1 = by1,
+        act = function() real_set_hud(false) end,
+    }
+end
+
+function real_mouse_click()
+    if not REAL_CONFIG.hud_enabled then return end
+    if MOUSE_STATUS ~= "down" then return end
+    for i = 1, #hud_hits do
+        local h = hud_hits[i]
+        if MOUSE_X >= h.x0 and MOUSE_X <= h.x1
+            and MOUSE_Y >= h.y0 and MOUSE_Y <= h.y1 then
+            h.act()
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    end
+end
+
 -- ------------------------------------------------------------- LIFECYCLE -----
 function real_init()
     load_callouts()
@@ -870,6 +1135,8 @@ end
 
 real_init()
 do_every_frame("real_frame()")
+do_every_draw("real_draw()")
+do_on_mouse_click("real_mouse_click()")
 do_on_exit("real_shutdown()")
 
 function real_shutdown()
@@ -889,8 +1156,12 @@ create_command("CitationXRealism/status",
 create_command("CitationXRealism/handling",
     "Citation X Realism: toggle the pilot-input handling curve",
     "real_set_handling(not REAL_CONFIG.handling_enabled)", "", "")
+create_command("CitationXRealism/hud",
+    "Citation X Realism: show or hide the realism panel",
+    "real_set_hud(not REAL_CONFIG.hud_enabled)", "", "")
 
 add_macro("Citation X Realism: enable/disable", "real_set_enabled(not REAL_CONFIG.enabled)")
 add_macro("Citation X Realism: test callout", "real_test_callout()")
 add_macro("Citation X Realism: status report", "real_status_report()")
 add_macro("Citation X Realism: handling curve", "real_set_handling(not REAL_CONFIG.handling_enabled)")
+add_macro("Citation X Realism: realism panel", "real_set_hud(not REAL_CONFIG.hud_enabled)")

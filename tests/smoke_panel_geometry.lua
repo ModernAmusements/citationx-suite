@@ -323,6 +323,26 @@ do
   check(x2 < cab_left, "EFB clears the cabin panel", string.format("%.0f < %d", x2, cab_left))
 end
 
+------------------------------------------------------------------- Realism ---
+print("== CitationX_Realism.lua ==")
+do
+  local chunk = assert(loadfile("Scripts/CitationX_Realism.lua"))
+  chunk()
+  reset()
+  real_draw()
+  check(#drawn > 40, "realism panel draws content", #drawn)
+  assert_on_screen("realism", nil)
+  assert_row_spacing("realism")
+  assert_text_inside_panel("realism")
+
+  -- the panel must survive a small screen too
+  SCREEN_WIDTH, SCREEN_HIGHT = 1280, 720
+  reset()
+  real_draw()
+  assert_on_screen("realism-720p", nil)
+  SCREEN_WIDTH, SCREEN_HIGHT = screen_w, screen_h
+end
+
 ------------------------------------------------------------------- result ----
 print("")
 if fails == 0 then

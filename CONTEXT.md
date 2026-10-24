@@ -18,13 +18,14 @@ open item is still a single in-sim confirmation run**: callouts audible, texture
 | Panels | all four suite panels default to hidden — nothing paints at load except the realism pack's 2 s toast |
 | Modules | every MasterSuite module defaults OFF (recorder, emergency gen, input mapper, heading knob); REALISM PACK is the only one on at init |
 | Handling | pilot-input curve (deadzone/expo/smoothing) + flight-controls check, part of the realism pack |
+| Panel | one black, Helvetica realism panel with every control and live state (default on) |
 
 ### What changed 2026-10-23
 
 | Area | Change |
 | --- | --- |
 | HUD | Telemetry body, alert pills and the C750 systems readback **deleted**; one 13-row control panel left |
-| Realism | New `CitationX_Realism.lua`: audio callouts, load-shed manager, brake fan, overspeed/icing advisories. Draws nothing |
+| Realism | New `CitationX_Realism.lua`: audio callouts, load-shed manager, brake fan, overspeed/icing advisories. Now also draws the one black realism panel |
 | Input | DS4 button scan widened to both device slots (`0–127`), so Bluetooth works |
 | Textures | Cockpit panel (all liveries) and `plain white` fuselage sharpened, not upscaled |
 | Tests | `smoke_realism.lua` added; control-panel and geometry harnesses updated |
@@ -50,10 +51,12 @@ panel geometry ................ PASSED (40 checks)
 2026-10-24 audio fix.** Reload Lua in X-Plane (*FlyWithLua → Reload all Lua script files*), then
 check `Log.txt` for `FlyWithLua Error:` and `Moved Bad Script`. Expected: neither appears,
 `All script files loaded successfully.` is the last loading line,
-`Citation X Realism: 12/12 callout sounds loaded (fmod bus)` and
+`Citation X Realism: 19/19 callout sounds loaded (fmod bus)` and
 `Citation X Realism: master bus volume=1.00 mute=0` are present, and a
 `REALISM PACK READY` toast appears. Then use the macro
-**Citation X Realism: test callout** — you must hear "ROTATE".
+**Citation X Realism: test callout** — you must hear "ROTATE". The black realism panel should
+be at the top-left with all twelve rows; click `CALLOUTS` and `HANDLING CURVE` once to see them
+turn OFF/ON, then click `HIDE HUD` and reopen it with the macro *realism panel*.
 
 Textures need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
 
@@ -484,7 +487,8 @@ covering all four areas (systems, handling, ops flow, weather), plus sharper air
 
 ### `Scripts/CitationX_Realism.lua`
 
-New fifth suite script. It registers **no draw callback at all** — the pack cannot add a HUD.
+New fifth suite script. It originally registered **no draw callback at all**; since
+2026-10-24 it owns the one black realism panel (see §21, sixth request).
 Everything is audio or Log.txt.
 
 - **Callouts** (`CitationX_Callouts/*.wav`, 12 files, generated with macOS `say`): V ONE,
@@ -511,7 +515,8 @@ Everything is audio or Log.txt.
 - Added as row 13 of the MasterSuite control panel (`REALISM PACK`, `realism`), nil-guarded so
   the panel still works without the script.
 - `tests/smoke_realism.lua` drives a full takeoff, approach, generator loss, hot brakes, flap
-  overspeed and icing, and asserts `do_every_draw` is never called.
+  overspeed and icing. The "no draw callback" assertion is gone: the pack now draws its own
+  black panel, and the test drives that instead.
 
 Note: `sim/weather/region/rain_percent` is a **scalar**, not an array. `probe_load_order`
 caught the first version binding it with `dataref_table` (`PROBLEM dataref_table on scalar`).
@@ -567,8 +572,9 @@ Two reasons nothing could be noticed:
 2. **Everything else only fires in abnormal situations** (generator loss, hot brakes,
    overspeed, icing) and only wrote to Log.txt — invisible in the cockpit. Those events now
    raise a **2 s toast** through `citationx_toast()`, a new nil-guarded global in
-   `CitationX_MasterSuite.lua`. `CitationX_Realism.lua` still registers **no draw callback**;
-   without the MasterSuite the notices stay in Log.txt.
+   `CitationX_MasterSuite.lua`. Since 2026-10-24 `CitationX_Realism.lua` draws the one black
+   realism panel itself (see the sixth-request section below); without the MasterSuite the
+   notices stay in Log.txt.
 
 Also fixed while in there:
 
@@ -602,9 +608,9 @@ Re-open any panel from the FlyWithLua macro menu — `CitationX Suite: control p
 `Citation X QRH: toggle panel`, `Cabin Ops: toggle panel`, `CitationX Suite: EFB panel` — or
 from the matching command.
 
-What remains on screen at load is exactly one thing: the realism pack's transient
-`REALISM PACK READY` toast (2 s), then nothing. `LandedPerformance.lua` defaults to
-`la_displayMode = LA_DISPLAY_NONE`, so it is silent too.
+What remains on screen at load is the realism pack's own black panel (added later the same day,
+see the sixth-request section) plus its 2 s `REALISM PACK READY` toast.
+`LandedPerformance.lua` defaults to `la_displayMode = LA_DISPLAY_NONE`, so it is silent too.
 
 Tests updated: `smoke_hud_toggles.lua` asserts `status_enabled`, `axis_monitor` and
 `input_learn_mode` are all false at load, and that **no** `SUITE_MODULES` row reports `ON`;
@@ -723,6 +729,38 @@ Validation: `probe_load_order` now 97 bindings, 0 failures; `check_datarefs` 34 
 0 problems; `smoke_realism` covers engage/release/re-engage, the shape itself, the hand-off
 guard and the control check.
 
+### One black realism panel (2026-10-24, sixth request)
+
+*"for all the realism controll and info i want one hud black and with a sans font"*.
+
+`CitationX_Realism.lua` now draws exactly one panel and nothing else:
+
+- **Black** (`0,0,0` at 90 % alpha) with a 1 px grey border, **Helvetica only**: 18 px title,
+  12 px rows, 10 px footer — the `draw_string_Helvetica_*` family, i.e. actual sans-serif
+  glyphs rather than FlyWithLua's default bitmap font.
+- Top-left, 430 px wide, 12 rows, so it sits where the (hidden) MasterSuite control panel used
+  to be. Bottom-anchored maths still follows the bottom-left origin: the panel is computed from
+  the top edge and extends downward, all coordinates positive.
+- Rows: **REALISM PACK**, **CALLOUTS**, **AUDIO** (backend + sounds loaded), **HANDLING CURVE**,
+  **CTRL CHECK**, **LOAD SHED** (steps + bus volts), **BRAKES** (fan + hottest MJ), **ICING**
+  (clear / protected / PROT OFF), **OVERSPEED**, **TAKEOFF CFG** (last item list),
+  **APPROACH** (STABLE / UNSTABLE + reason), **LAST** event.
+- Clickable: the four `*` rows toggle their subsystem (the CTRL CHECK row re-arms the check),
+  plus footer buttons **TEST CALLOUT** and **HIDE HUD**. `RESUME_MOUSE_CLICK` is set only when
+  a row is actually hit, so clicks elsewhere pass through.
+- `REAL_CONFIG.hud_enabled` (default **on**), command `CitationXRealism/hud`, macro
+  *Citation X Realism: realism panel*.
+
+This is the control-panel surface AGENTS.md rule 7 allows, not a telemetry HUD: it shows the
+realism pack's own state (load shed, brake energy, icing, overspeed, config, approach), never
+airspeed/altitude/heading/fuel — the PFD and EICAS already show those. The MasterSuite control
+panel stays hidden and its overlay still draws nothing.
+
+Tests: `smoke_realism.lua` asserts one draw callback, >40 primitives, the title and the four
+control rows, row-click toggling, and zero primitives when the panel is hidden.
+`smoke_panel_geometry.lua` now renders the realism panel too — 47 checks, including the panel
+fitting 1280×720.
+
 ## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
@@ -769,11 +807,13 @@ takeoff/approach, the load-shed/brake-fan behaviour, and the sharpened textures.
   - `tests/smoke_hud_toggles.lua` — 13 rows well formed, unique keys, sibling toggles safe
     with the other scripts absent, overlay draws zero primitives when everything is off.
   - `tests/smoke_realism.lua` — takeoff/approach callouts fire once, gear-up delay, load-shed
-    command after generator loss, brake fan on/off, flap overspeed and icing, and asserts the
-    pack registers no draw callback.
-  - `tests/smoke_panel_geometry.lua` — renders all four panels into a recording canvas and
-    asserts: everything fits 2560×1440, no vertical text collisions, no text overflows its
-    panel, the EFB clears the QRH and cabin panels, and a click sweep reaches every row.
+    command after generator loss, brake fan on/off, flap overspeed, icing, Vmo, takeoff config,
+    stabilised approach, gear-down, anti-ice, cabin altitude, the handling curve and the HUD's
+    draw/click behaviour.
+  - `tests/smoke_panel_geometry.lua` — renders all five panels into a recording canvas and
+    asserts: everything fits 2560×1440 (and the realism panel at 1280×720), no vertical text
+    collisions, no text overflows its panel, the EFB clears the QRH and cabin panels, and a
+    click sweep reaches every row.
   - `tests/probe_load_order.lua` — loads all of `Scripts/` in one shared LuaJIT state in
     FlyWithLua's alphabetical order. The authoritative load test.
 

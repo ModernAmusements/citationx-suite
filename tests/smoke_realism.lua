@@ -27,6 +27,7 @@ SCRIPT_DIRECTORY = "/tmp/citx-test/"
 local logs, played, commands, toasts = {}, {}, {}, {}
 local fmod_loaded, fmod_played = {}, {}
 local draw_registered = false
+local drawn = {}
 
 function dataref(name, path, mode, index)
   _G[name] = 0
@@ -40,11 +41,19 @@ function create_command() return {} end
 function add_macro() end
 function do_every_frame() end
 function do_every_draw() draw_registered = true end
+function do_on_mouse_click() end
 function do_on_exit() end
 function command_once(c) commands[#commands + 1] = c end
 function XPLMFindDataRef() return nil end
 function XPLMGetDatai() return 0 end
 function XPLMGetDataf() return 1.0 end
+function XPLMSetGraphicsState() end
+function glColor4f() end
+function glRectf() drawn[#drawn + 1] = "rect" end
+function measure_string(t, font) return #tostring(t) * 6 end
+function draw_string_Helvetica_10(x, y, t) drawn[#drawn + 1] = tostring(t) end
+function draw_string_Helvetica_12(x, y, t) drawn[#drawn + 1] = tostring(t) end
+function draw_string_Helvetica_18(x, y, t) drawn[#drawn + 1] = tostring(t) end
 function load_WAV_file(path) return #played + #logs end
 function play_sound(id) played[#played + 1] = id end
 -- FlyWithLua NG+ 2.8 FMOD bus API: the path that actually mixes in X-Plane 12.
@@ -67,11 +76,39 @@ local chunk = assert(loadfile(script))
 chunk()
 
 check(type(REAL_CONFIG) == "table", "REAL_CONFIG exists")
-check(draw_registered == false, "realism pack registers no draw callback")
+check(draw_registered == true, "realism panel registers its draw callback")
 check(has("callout sounds loaded"), "callout WAVs were loaded", logs[1])
 check(has("(fmod bus)"), "FMOD bus is preferred when the API is present")
 check(#fmod_loaded == 19, "all 19 callouts loaded through load_fmod_sound", #fmod_loaded)
 check(toasts[#toasts] == "REALISM PACK READY", "load announces itself in the toast slot", toasts[#toasts])
+
+-- ---------- the black sans-serif panel ----------
+drawn = {}
+real_draw()
+local joined = table.concat(drawn, "\n")
+check(#drawn > 40, "realism panel draws content", #drawn)
+check(joined:find("REALISM", 1, true) ~= nil, "panel has its title")
+check(joined:find("CALLOUTS", 1, true) ~= nil, "panel lists CALLOUTS")
+check(joined:find("HANDLING CURVE", 1, true) ~= nil, "panel lists HANDLING CURVE")
+check(joined:find("CTRL CHECK", 1, true) ~= nil, "panel lists CTRL CHECK")
+check(joined:find("TEST CALLOUT", 1, true) ~= nil, "panel has the test button")
+
+-- rows are clickable: first row is REALISM PACK at y = 1002 on a 1080 screen
+MOUSE_STATUS, MOUSE_X, MOUSE_Y = "down", 200, 1002
+RESUME_MOUSE_CLICK = false
+real_mouse_click()
+check(RESUME_MOUSE_CLICK == true, "HUD row consumes the click")
+check(REAL_CONFIG.enabled == false, "clicking REALISM PACK switches it off")
+RESUME_MOUSE_CLICK = false
+real_mouse_click()
+check(REAL_CONFIG.enabled == true, "clicking it again switches it back on")
+
+MOUSE_STATUS = "up"
+real_set_hud(false)
+drawn = {}
+real_draw()
+check(#drawn == 0, "hidden panel draws nothing", #drawn)
+real_set_hud(true)
 
 -- frame helper: advance sim time past the 0.1 s gate
 local t = 0
