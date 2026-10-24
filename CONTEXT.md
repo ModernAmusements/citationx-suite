@@ -4,9 +4,12 @@ Last updated: 2026-10-24
 
 ## Session handoff — read this first
 
-Last completed session (2026-10-24) fixed the realism pack's silent callouts and added the
-toast surface for its advisories; see §21. Everything below passed offline harnesses. **The
-open item is still a single in-sim confirmation run**: callouts audible, textures seen.
+Last completed session (2026-10-24) turned the realism pack into the suite's only active script:
+audible FMOD callouts, six new flight-phase monitors, a pilot-input handling curve, a
+pre-takeoff control check, and one black Helvetica panel with every realism control and its
+live state. Every other suite module now defaults OFF and every panel defaults hidden. See §21.
+Everything passed offline harnesses. **The open item is a single in-sim confirmation run**:
+callouts audible, panel legible, handling curve felt, textures seen.
 
 ### What changed 2026-10-24
 
@@ -15,10 +18,10 @@ open item is still a single in-sim confirmation run**: callouts audible, texture
 | Realism audio | `play_sound` (OpenAL, silent in XP12) → `load_fmod_sound` + `play_sound_on_master_bus`; legacy kept as fallback |
 | Realism UX | generator loss / load shed / hot brakes / overspeed / icing raise a 2 s toast via the new `citationx_toast()` |
 | Realism logic | GEAR UP no longer fires while the gear is still fully down |
-| Panels | all four suite panels default to hidden — nothing paints at load except the realism pack's 2 s toast |
+| Panels | all four suite panels default to hidden — the only thing drawn is the realism pack's own black panel |
 | Modules | every MasterSuite module defaults OFF (recorder, emergency gen, input mapper, heading knob); REALISM PACK is the only one on at init |
 | Handling | pilot-input curve (deadzone/expo/smoothing) + flight-controls check, part of the realism pack |
-| Panel | one black, Helvetica realism panel with every control and live state (default on) |
+| Realism panel | one black, Helvetica realism panel with every control and live state (default on) |
 
 ### What changed 2026-10-23
 
@@ -39,10 +42,10 @@ dataref bindings .............. ok (5 suite scripts)
 kpcrew require graph (C750) ... 0 missing
 mastersuite smoke ............. PASSED
 control panel smoke ........... PASSED (13 rows)
-realism smoke ................. PASSED (takeoff, approach, electrics, brakes, ice)
+realism smoke ................. PASSED (callouts, phases, handling, HUD draw/click)
 realism audio ................. PASSED (FMOD preferred, legacy fallback, toasts wired)
 efb smoke ..................... PASSED
-panel geometry ................ PASSED (40 checks)
+panel geometry ................ PASSED (47 checks, incl. realism panel at 1280×720)
 ```
 
 ### The one open item
@@ -60,10 +63,15 @@ turn OFF/ON, then click `HIDE HUD` and reopen it with the macro *realism panel*.
 
 Textures need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
 
-## Current runtime state (2026-10-23)
+## Current runtime state (2026-10-24)
 - **Suite scripts (tracked):** `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
   `CitationX_CabinOps.lua`, `CitationX_EFB.lua`, `CitationX_Realism.lua` plus
-  `CitationX_Callouts/*.wav`. All load clean; no `FlyWithLua Error:` lines.
+  `CitationX_Callouts/*.wav` (19 files). All load clean; no `FlyWithLua Error:` lines.
+- **At load only the realism pack is active.** Every MasterSuite module (`status`, `log`,
+  `emerg`, `input`, `stick`, `axis`, `learn`, `axmon`) is OFF, the four suite panels are hidden,
+  `LandingPerformance` is in `LA_DISPLAY_NONE`, and the only thing drawn is the realism panel.
+  Re-enable things with the macros (`CitationX Suite: <row>`, `enable all modules`) or by
+  clicking the realism panel rows that belong to the pack.
 - **Mission Generator: deleted 2026-10-21** at the user's request, together with
   `tests/smoke_mission.lua`. The `MissionGen/*` commands, the briefing panel and the cruise
   time warp no longer exist. Do not resurrect it without being asked.
@@ -457,7 +465,8 @@ Removed from `CitationX_MasterSuite.lua`:
 - `citationx_set_hud()`, `citationx_set_systems()`, `draw_systems_panel()`,
   `draw_status_section()`, `systems_panel_height()`.
 
-What remains on screen is exactly one panel: `CONTROL PANEL`, 13 clickable rows, top-left.
+What remains on screen is exactly one panel: `CONTROL PANEL`, 13 clickable rows, top-left
+(hidden at load since 2026-10-24; the realism panel is the only thing painted then).
 `HUD_STYLE` became `SUITE_STYLE` (only the panel, axis monitor, learn box and toast use it).
 `citationx_hud()` became `citationx_overlay()`; `do_every_draw` still draws every frame but
 emits nothing unless the panel, axis monitor, learn mode or a toast is active.
@@ -491,7 +500,7 @@ New fifth suite script. It originally registered **no draw callback at all**; si
 2026-10-24 it owns the one black realism panel (see §21, sixth request).
 Everything is audio or Log.txt.
 
-- **Callouts** (`CitationX_Callouts/*.wav`, 12 files, generated with macOS `say`): V ONE,
+- **Callouts** (`CitationX_Callouts/*.wav`, now 19 files, generated with macOS `say`): V ONE,
   ROTATE, POSITIVE RATE, GEAR UP, ONE THOUSAND, FIVE HUNDRED, ONE HUNDRED, MINIMUMS, BRAKES HOT,
   FLAP OVERSPEED, GEAR SPEED, ICING CONDITIONS. Missing WAVs or a missing sound API degrade to
   Log.txt lines, never an error.
@@ -616,7 +625,8 @@ Tests updated: `smoke_hud_toggles.lua` asserts `status_enabled`, `axis_monitor` 
 `input_learn_mode` are all false at load, and that **no** `SUITE_MODULES` row reports `ON`;
 `smoke_efb.lua` asserts the panel starts hidden and then opens via `efb_toggle_panel(true)`;
 `smoke_panel_geometry.lua` switches each panel on explicitly before measuring it (layout checks
-unchanged, 40 checks); `smoke_mastersuite.lua` enables the heading knob before driving it.
+unchanged at the time, later raised to 47 checks when the realism panel joined the sweep);
+`smoke_mastersuite.lua` enables the heading knob before driving it.
 
 ### Only the realism pack is enabled on init (2026-10-24, third request)
 
@@ -682,7 +692,7 @@ cockpit switch.
 New WAVs (same 22 050 Hz/16-bit mono recipe, `say -v Samantha`): `overspeed`, `to_config`,
 `stable`, `unstable`, `gear_down`, `anti_ice`, `cabin_alt`.
 
-Validation: `probe_load_order` 85 bindings, 0 failures; `check_datarefs` 22 declarations,
+Validation: `probe_load_order` 97 bindings, 0 failures; `check_datarefs` 34 declarations,
 0 problems; `smoke_realism` now also drives takeoff config, Vmo, stable/unstable, gear-down,
 anti-ice-off and cabin-altitude.
 
@@ -767,13 +777,19 @@ Everything below passed offline harnesses but has **never been seen in X-Plane**
 record these as confirmed working:
 
 - The **visual result** of the 13-row control panel (telemetry body and C750 systems panel
-  removed). Geometry is measured, not assumed (`tests/smoke_panel_geometry.lua`: 40 checks —
+  removed). Geometry is measured, not assumed (`tests/smoke_panel_geometry.lua`: 47 checks —
   panels fit the screen, no vertical text collisions, no text overflowing its panel, click sweep
   reaches every row). What remains unproven is purely aesthetic: whether `status_row_h = 20`
   reads well and whether the panel still clears the other panels at other resolutions.
 - The **realism pack in flight**: callout timing (V1/rotate/positive rate/gear up/1000/500/100/
-  minimums), whether the synthesized WAVs are audible over engine noise, and whether the
-  load-shed/brake-fan thresholds match what the aircraft actually does.
+  minimums/stable/unstable), whether the synthesized WAVs are audible over engine noise, whether
+  the load-shed/brake-fan thresholds match what the aircraft actually does, and whether the new
+  Vmo/takeoff-config/gear-down/anti-ice/cabin-altitude triggers are free of false positives.
+- The **black realism panel**: 12 rows at 430 px, Helvetica glyphs, and its click targets. The
+  geometry harness measures it, but no human has looked at it in the 3D cockpit.
+- The **handling curve**: whether deadzone 0.02 / expo 1.35 / smoothing 0.55 feels right on the
+  DS4, and whether the control check is asked at a sensible moment (it needs 60 % travel on all
+  three axes before the thrust levers advance).
 - The **sharpened textures**: DDS headers verified (4096², DXT1/DXT5, 13 mips) and a 1:1 crop
   compared before/after, but they have not been seen in the 3D cockpit.
 - The KPCrew copilot, panels and briefings. Only the *loading* path was fixed; the KPCrew UI,
@@ -789,9 +805,11 @@ record these as confirmed working:
 
 In-sim status: the suite loaded cleanly on 2026-10-21 at 18:22 and again on 2026-10-23 01:00
 (`All script files loaded successfully`, 0 `FlyWithLua Error`). The 2026-10-23 load also logged
-`Citation X Realism: loaded` with `12/12 callout sounds loaded`. What has **not** been reviewed
-by eye/ear: the 13-row control panel without the telemetry body, the callouts during a real
-takeoff/approach, the load-shed/brake-fan behaviour, and the sharpened textures.
+`Citation X Realism: loaded` with `12/12 callout sounds loaded`. **No load has happened since
+the 2026-10-24 changes**, so the current 19-sound load, the black panel, the new monitors and
+the handling curve have never run in X-Plane. What has **not** been reviewed by eye/ear: the
+control panel without the telemetry body, the callouts during a real takeoff/approach, the
+load-shed/brake-fan behaviour, and the sharpened textures.
 
 ## Validation performed
 - `luac -p` on every script in `Scripts/`, including the KPCrew ones.
@@ -830,6 +848,13 @@ takeoff/approach, the load-shed/brake-fan behaviour, and the sharpened textures.
   they do not appear in `Commands.txt` / `DataRefs.txt`.
 - Flight recorder CSV is written to `~/Desktop/XPlane_CitationX_FlightLog.csv`.
 - In zsh, `path` is a special array tied to `$PATH`; never use it as a loop variable.
+- `sim/operation/override/override_joystick_pitch` / `_roll` have exactly **one owner at a
+  time**. The realism handling curve and the MasterSuite axis optimizer both want them; the
+  realism curve backs off when `CONFIG.axis_optimizer_enabled` is true **and must not write 0
+  in that state**, or the optimizer is left driving an override it no longer owns.
+- The realism panel is the suite's single drawn surface, by explicit request. It shows realism
+  state (load shed, brake energy, icing, overspeed, config, approach, handling), never airspeed/
+  altitude/heading/fuel — those stay on the PFD/EICAS.
 
 ## Repo, agent & deployment
 - Git initialized in place in the FlyWithLua folder; `.gitignore` tracks only the five
@@ -858,6 +883,10 @@ takeoff/approach, the load-shed/brake-fan behaviour, and the sharpened textures.
   `stable_agl_ft`/`stable_vref_plus`/`stable_max_vs_fpm`, `anti_ice_repeat_s`,
   `cabin_alt_limit_ft`, `handling_deadzone`/`handling_exponent`/`handling_smoothing`,
   `control_check_travel`.
+- Realism panel: `REAL_STYLE` in `CitationX_Realism.lua` — `x`, `top`, `width`, `pad`,
+  `header_h`, `row_h`, `footer_h` and the black/white/green/amber/red palette.
+  `REAL_CONFIG.hud_enabled` hides it; `CitationXRealism/hud` and the macro *realism panel*
+  toggle it.
 - Textures: sharpened DDS originals are in
   `Aircraft/Cessna Citation X AviTab/_original_textures/`; restore them and reload the aircraft
   to undo.

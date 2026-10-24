@@ -27,9 +27,10 @@ The left-hand panel lists every subsystem with a live state. Click a row to togg
 The same toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as
 FlyWithLua macro menu entries.
 
-This is the **only** surface the suite can draw. There is no telemetry HUD and no C750 systems
-readback: the aircraft's PFD, EICAS and synoptics already show airspeed, altitude, heading,
-Mach, G, fuel flow, electrics, fuel and anti-ice, so duplicating them on screen adds nothing.
+The MasterSuite panel is the only surface *it* draws. There is no telemetry HUD and no C750
+systems readback: the aircraft's PFD, EICAS and synoptics already show airspeed, altitude,
+heading, Mach, G, fuel flow, electrics, fuel and anti-ice, so duplicating them on screen adds
+nothing. The realism pack's own black panel is separate and is described above.
 
 | Row | Key | What it toggles |
 | --- | --- | --- |

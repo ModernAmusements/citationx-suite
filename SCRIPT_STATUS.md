@@ -103,13 +103,14 @@ upstream's design — do not test it in isolation and treat the failure as a bug
 
 ## Panel geometry (measured, not eyeballed)
 
-`tests/smoke_panel_geometry.lua` renders all four panels into a recording canvas and asserts
-40 properties: everything fits 2560×1440, no vertical text collisions, no text overflows its
-panel, the EFB clears the QRH and cabin panels, and a vertical click sweep reaches every
-control-panel row.
+`tests/smoke_panel_geometry.lua` renders all five panels into a recording canvas and asserts
+47 properties: everything fits 2560×1440 (the realism panel also at 1280×720), no vertical text
+collisions, no text overflows its panel, the EFB clears the QRH and cabin panels, and a vertical
+click sweep reaches every control-panel row.
 
-It also proves the suite draws **nothing at all** when the control panel is switched off —
-there is no telemetry HUD and no C750 systems readback any more.
+It also proves the MasterSuite overlay draws **nothing at all** when its control panel is
+switched off — there is no telemetry HUD and no C750 systems readback any more. The realism
+panel is a separate draw callback and is the suite's only drawn surface at load.
 
 This does not prove the panels *look* good — only that they are mathematically well formed.
 
