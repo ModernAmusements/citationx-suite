@@ -15,6 +15,13 @@
 --       too much energy and off again once they have cooled.
 --    4. Flap and gear overspeed advisories against Vfe / Vle.
 --    5. Icing advisory from OAT + visible moisture.
+--    6. Vmo / Mmo overspeed warning (270 kt below 8000 ft, 350 above, M 0.935).
+--    7. Takeoff configuration warning at thrust application (park brake,
+--       speedbrake, landing flaps).
+--    8. Stabilised-approach gate at 1000 ft AGL, with the reason when unstable.
+--    9. GEAR DOWN confirmation when the gear locks down in flight.
+--   10. ANTI-ICE OFF advisory while icing conditions exist.
+--   11. CABIN ALTITUDE warning above 10 000 ft cabin altitude.
 --
 --  Speeds (Citation X POM, Operating-Speeds page):
 --    Vr 145 · Vref 132 · Vfe 180 · Vle/Vlo 210 · Vmo 270 (<8000 ft) / 350
@@ -66,6 +73,37 @@ REAL_CONFIG = {
     ice_oat_max_c      = 5.0,
     ice_oat_min_c      = -20.0,
     ice_repeat_s       = 120.0,
+
+    -- Vmo / Mmo overspeed ----------------------------------------------------
+    vmo_enabled        = true,
+    vmo_low_kt         = 270,   -- below vmo_low_alt_ft
+    vmo_high_kt        = 350,   -- at or above vmo_low_alt_ft
+    vmo_low_alt_ft     = 8000,
+    mmo                = 0.935,
+
+    -- Takeoff configuration --------------------------------------------------
+    to_config_enabled  = true,
+    to_throttle_ratio  = 0.70,  -- thrust lever position that arms the check
+    to_flap_max_ratio  = 0.80,  -- more flap than this is a landing setting
+
+    -- Stabilised approach ----------------------------------------------------
+    stable_enabled     = true,
+    stable_agl_ft      = 1000,
+    stable_vref_minus  = 5,     -- kt below Vref still acceptable
+    stable_vref_plus   = 25,    -- kt above Vref still acceptable
+    stable_max_vs_fpm  = -1200,
+    stable_max_bank_deg = 30,
+    stable_min_flap_ratio = 0.30,
+
+    -- Gear-down confirmation ------------------------------------------------
+    gear_down_enabled  = true,
+
+    -- Anti-ice and pressurisation -------------------------------------------
+    anti_ice_enabled   = true,
+    anti_ice_repeat_s  = 60.0,
+    cabin_alt_enabled  = true,
+    cabin_alt_limit_ft = 10000.0,
+    cabin_alt_repeat_s = 60.0,
 }
 
 -- --------------------------------------------------------------- DATAREFS ---
@@ -80,6 +118,14 @@ dataref("real_mach",       "sim/flightmodel/misc/machno", "readonly")
 dataref("real_brake_fan",  "sim/cockpit2/controls/brake_fan_on", "writable")
 dataref("real_rain",       "sim/weather/region/rain_percent", "readonly")
 dataref("real_sim_time",   "sim/time/total_running_time_sec", "readonly")
+dataref("real_elev_m",     "sim/flightmodel/position/elevation", "readonly")
+dataref("real_phi_deg",    "sim/flightmodel/position/phi", "readonly")
+dataref("real_park_brake", "sim/flightmodel/controls/parkbrake", "readonly")
+dataref("real_spoiler",    "sim/cockpit2/controls/speedbrake_ratio", "readonly")
+dataref("real_throttle",   "sim/cockpit2/engine/actuators/throttle_ratio_all", "readonly")
+dataref("real_anti_ice",   "sim/cockpit2/ice/ice_surface_hot_bleed_air_on", "readonly")
+dataref("real_cabin_alt_ft",
+    "sim/cockpit2/pressurization/indicators/cabin_altitude_ft", "readonly")
 
 real_brake_j = dataref_table("sim/flightmodel2/gear/brake_absorbed_J")
 real_gear    = dataref_table("sim/flightmodel2/gear/deploy_ratio")
@@ -101,6 +147,13 @@ local CALLOUT_FILES = {
     flap_over = "flap_overspeed.wav",
     gear_over = "gear_speed.wav",
     icing     = "icing.wav",
+    overspeed = "overspeed.wav",
+    to_config = "to_config.wav",
+    stable    = "stable.wav",
+    unstable  = "unstable.wav",
+    gear_down = "gear_down.wav",
+    anti_ice  = "anti_ice.wav",
+    cabin_alt = "cabin_alt.wav",
 }
 local callout_id  = {}
 local sound_bus   = "none"   -- "fmod" | "wav" | "none"
@@ -230,6 +283,13 @@ local S = {
     ice_next        = 0.0,
     last_tick       = -1.0,
     prev_gear       = 1.0,
+    overspeed_warned = false,
+    to_config_armed  = true,
+    stable_checked   = false,
+    gear_prev        = 1.0,
+    gear_down_called = false,
+    anti_ice_next    = 0.0,
+    cabin_next       = 0.0,
 }
 
 -- Last runtime dataref the C750 registers (read lazily: it does not exist
@@ -331,6 +391,140 @@ local function callouts_tick(now, agl_ft)
     end
 
     S.prev_gear = gear
+end
+
+-- ------------------------------------------------------ TAKEOFF CONFIG ------
+-- Fires once when the thrust levers go forward with something set for landing
+-- or parking. It does not touch the aircraft: it only says what is wrong.
+local function takeoff_config_tick(now)
+    if not REAL_CONFIG.to_config_enabled then return end
+    if real_on_ground ~= 1 then
+        S.to_config_armed = true
+        return
+    end
+    local thr = real_throttle or 0.0
+    if thr < 0.2 then S.to_config_armed = true end
+    if not S.to_config_armed or thr < REAL_CONFIG.to_throttle_ratio then return end
+    S.to_config_armed = false
+
+    local issues = {}
+    if (real_park_brake or 0.0) > 0.1 then issues[#issues + 1] = "PARK BRAKE" end
+    if (real_spoiler or 0.0) > 0.1 then issues[#issues + 1] = "SPEEDBRAKE" end
+    if (real_flap_rat or 0.0) > REAL_CONFIG.to_flap_max_ratio then
+        issues[#issues + 1] = "FLAPS"
+    end
+    if #issues == 0 then return end
+
+    callout("to_config", "TAKEOFF CONFIG")
+    notify("takeoff config: " .. table.concat(issues, ", "),
+        "TAKEOFF CONFIG: " .. table.concat(issues, " / "))
+end
+
+-- -------------------------------------------------------- VMO / MMO ---------
+local function vmo_tick(now)
+    if not REAL_CONFIG.vmo_enabled then return end
+    local ias    = real_ias_kt or 0.0
+    local mach   = real_mach or 0.0
+    local alt_ft = (real_elev_m or 0.0) * 3.28084
+    local vmo    = (alt_ft < REAL_CONFIG.vmo_low_alt_ft)
+        and REAL_CONFIG.vmo_low_kt or REAL_CONFIG.vmo_high_kt
+    local over = (ias > vmo + 3.0) or (mach > REAL_CONFIG.mmo + 0.01)
+    if over and not S.overspeed_warned then
+        S.overspeed_warned = true
+        callout("overspeed", "OVERSPEED")
+        notify(string.format("overspeed %.0f kt / M%.3f (Vmo %.0f, Mmo %.3f)",
+            ias, mach, vmo, REAL_CONFIG.mmo), "OVERSPEED")
+    elseif not over
+        and ias < vmo - 5.0
+        and mach < REAL_CONFIG.mmo - 0.01 then
+        S.overspeed_warned = false
+    end
+end
+
+-- ---------------------------------------------------- STABILISED APPROACH ---
+local function stable_tick(now, agl_ft)
+    if not REAL_CONFIG.stable_enabled then return end
+    if real_on_ground == 1 then
+        S.stable_checked = false
+        return
+    end
+    if agl_ft > REAL_CONFIG.stable_agl_ft + 500.0 then
+        S.stable_checked = false   -- re-arm after a go-around
+        return
+    end
+    if S.stable_checked or agl_ft > REAL_CONFIG.stable_agl_ft then return end
+
+    local gear = real_gear[0] or 0.0
+    local flap = real_flap_rat or 0.0
+    local vs   = real_vs_fpm or 0.0
+    if vs > -200.0 or (gear < 0.5 and flap < 0.05) then return end
+    S.stable_checked = true
+
+    local ias    = real_ias_kt or 0.0
+    local issues = {}
+    if gear < 0.95 then issues[#issues + 1] = "GEAR" end
+    if flap < REAL_CONFIG.stable_min_flap_ratio then issues[#issues + 1] = "FLAPS" end
+    if (real_spoiler or 0.0) > 0.1 then issues[#issues + 1] = "SPEEDBRAKE" end
+    if math.abs(real_phi_deg or 0.0) > REAL_CONFIG.stable_max_bank_deg then
+        issues[#issues + 1] = "BANK"
+    end
+    if vs < REAL_CONFIG.stable_max_vs_fpm then issues[#issues + 1] = "SINK RATE" end
+    if ias < REAL_CONFIG.vref_kt - REAL_CONFIG.stable_vref_minus
+        or ias > REAL_CONFIG.vref_kt + REAL_CONFIG.stable_vref_plus then
+        issues[#issues + 1] = string.format("SPEED %.0f", ias)
+    end
+
+    if #issues == 0 then
+        callout("stable", "STABLE")
+        notify(string.format("stabilised at %.0f ft, %.0f kt", agl_ft, ias),
+            "STABLE APPROACH")
+    else
+        callout("unstable", "UNSTABLE")
+        notify("not stabilised: " .. table.concat(issues, ", "),
+            "UNSTABLE: " .. table.concat(issues, " / "))
+    end
+end
+
+-- --------------------------------------------------------- GEAR CONFIRM -----
+local function gear_down_tick()
+    if not REAL_CONFIG.gear_down_enabled then return end
+    local gear = real_gear[0] or 0.0
+    if S.airborne and not S.gear_down_called
+        and S.gear_prev < 0.95 and gear >= 0.99 then
+        S.gear_down_called = true
+        callout("gear_down", "GEAR DOWN")
+    end
+    if gear < 0.05 then S.gear_down_called = false end
+    S.gear_prev = gear
+end
+
+-- ------------------------------------------------------------- ANTI-ICE -----
+local function anti_ice_tick(now)
+    if not REAL_CONFIG.anti_ice_enabled then return end
+    if real_on_ground == 1 or (real_anti_ice or 0) ~= 0 then return end
+    local oat  = real_oat_c or 15.0
+    local rain = real_rain or 0.0
+    if oat > REAL_CONFIG.ice_oat_max_c or oat < REAL_CONFIG.ice_oat_min_c then return end
+    if rain <= 0.01 then return end
+    if now < S.anti_ice_next then return end
+    S.anti_ice_next = now + REAL_CONFIG.anti_ice_repeat_s
+    callout("anti_ice", "ANTI ICE")
+    notify(string.format(
+        "icing conditions with wing anti-ice OFF (OAT %.0f C, rain %.0f%%)",
+        oat, rain * 100), "ICING - ANTI-ICE OFF")
+end
+
+-- ------------------------------------------------------ CABIN ALTITUDE ------
+local function cabin_alt_tick(now)
+    if not REAL_CONFIG.cabin_alt_enabled then return end
+    if real_on_ground == 1 then return end
+    local cab = real_cabin_alt_ft or 0.0
+    if cab < REAL_CONFIG.cabin_alt_limit_ft then return end
+    if now < S.cabin_next then return end
+    S.cabin_next = now + REAL_CONFIG.cabin_alt_repeat_s
+    callout("cabin_alt", "CABIN ALTITUDE")
+    notify(string.format("cabin altitude %.0f ft", cab),
+        string.format("CABIN ALTITUDE %.0f FT", cab))
 end
 
 -- --------------------------------------------------------------- ELECTRICAL --
@@ -436,8 +630,11 @@ end
 -- -------------------------------------------------------------------- ICING --
 local function icing_tick(now)
     if not REAL_CONFIG.ice_enabled then return end
+    if real_on_ground == 1 then return end   -- airframe icing needs flight
     local oat  = real_oat_c or 15.0
     local rain = real_rain or 0.0
+    -- With the wing anti-ice off, anti_ice_tick() owns the message instead.
+    if REAL_CONFIG.anti_ice_enabled and (real_anti_ice or 0) == 0 then return end
     if oat <= REAL_CONFIG.ice_oat_max_c
         and oat >= REAL_CONFIG.ice_oat_min_c
         and rain > 0.01
@@ -459,10 +656,16 @@ function real_frame()
     local agl_ft = (real_agl_m or 0.0) * 3.28084
 
     callouts_tick(now, agl_ft)
+    takeoff_config_tick(now)
+    vmo_tick(now)
+    stable_tick(now, agl_ft)
+    gear_down_tick()
     electrical_tick(now)
     brakes_tick(now)
     overspeed_tick(now)
     icing_tick(now)
+    anti_ice_tick(now)
+    cabin_alt_tick(now)
 
     S.was_ground = (real_on_ground == 1)
 end
@@ -479,6 +682,10 @@ function real_status_report()
         tostring(REAL_CONFIG.enabled), tostring(REAL_CONFIG.callouts_enabled),
         tostring(REAL_CONFIG.audio_enabled), tostring(REAL_CONFIG.elec_enabled),
         tostring(REAL_CONFIG.brake_enabled)))
+    logMsg(string.format("  vmo=%s to_config=%s stable=%s anti_ice=%s cabin_alt=%s",
+        tostring(REAL_CONFIG.vmo_enabled), tostring(REAL_CONFIG.to_config_enabled),
+        tostring(REAL_CONFIG.stable_enabled), tostring(REAL_CONFIG.anti_ice_enabled),
+        tostring(REAL_CONFIG.cabin_alt_enabled)))
     logMsg(string.format("  sound bus=%s, %d sound(s) loaded",
         sound_bus, (function() local n = 0 for _ in pairs(callout_id) do n = n + 1 end return n end)()))
     logMsg(string.format("  speeds V1=%d Vr=%d Vref=%d Vfe=%d Vle=%d",

@@ -32,7 +32,7 @@ open item is still a single in-sim confirmation run**: callouts audible, texture
 
 ```
 syntax ........................ ok
-runtime load (LuaJIT, shared) .. 78 bindings, 0 failures, 0 problems
+runtime load (LuaJIT, shared) .. 85 bindings, 0 failures, 0 problems
 dataref bindings .............. ok (5 suite scripts)
 kpcrew require graph (C750) ... 0 missing
 mastersuite smoke ............. PASSED
@@ -639,6 +639,46 @@ Consequence to be aware of: the DS4 heading knob and the suite's custom button b
 off until switched on. That is the literal request ("only realism"), and both are one macro
 away.
 
+### More realism (2026-10-24, fourth request)
+
+*"can you do more realism"* — the pack grew from five monitors to eleven, seven new WAVs
+(19 total). Nothing new draws except the existing 2 s toast.
+
+| Monitor | Trigger | Callout |
+| --- | --- | --- |
+| **Takeoff config** | on the ground, thrust lever ≥ 0.70, with park brake > 0.1, speedbrake > 0.1 or flaps > 0.80. Fires once per thrust application, re-arms below 0.2. | `TAKEOFF CONFIG` + toast naming the item(s) |
+| **Vmo / Mmo** | IAS > Vmo + 3 (270 kt below 8 000 ft, 350 above) or M > Mmo + 0.01 (0.935); latched until 5 kt / 0.01 back inside | `OVERSPEED` |
+| **Stabilised approach** | crossing 1 000 ft AGL descending > 200 fpm with gear or flaps already out. Criteria: gear down, flaps ≥ 0.30, spoiler retracted, bank ≤ 30°, VS ≥ −1 200 fpm, IAS within Vref −5/+25. Re-arms 500 ft above the gate | `STABLE` / `UNSTABLE` + toast with the failing item(s) |
+| **Gear confirmation** | gear reaches down-and-locked (ratio ≥ 0.99) after being < 0.95, airborne | `GEAR DOWN` |
+| **Anti-ice off** | airborne, OAT −20…+5 °C, rain > 1 %, `ice_surface_hot_bleed_air_on` = 0, at most every 60 s | `ANTI ICE` + `ICING - ANTI-ICE OFF` |
+| **Cabin altitude** | airborne, cabin altitude ≥ 10 000 ft, at most every 60 s | `CABIN ALTITUDE` |
+
+Changes to existing behaviour:
+
+- The ICING CONDITIONS callout now only fires when the wing anti-ice is **on**; with it off the
+  ANTI-ICE advisory owns the message (no double audio in the same tick).
+- Icing and anti-ice advisories now require the aircraft to be **airborne**; a parked aircraft in
+  cold rain is not in airframe icing conditions.
+- The one-shot state (`stable_checked`, `to_config_armed`, `overspeed_warned`,
+  `gear_down_called`) re-arms on touchdown / go-around / thrust reduction, so consecutive
+  approaches and touch-and-gos behave.
+
+New datarefs (all verified in `DataRefs.txt`): `sim/flightmodel/position/elevation`,
+`.../position/phi`, `sim/flightmodel/controls/parkbrake`,
+`sim/cockpit2/controls/speedbrake_ratio`,
+`sim/cockpit2/engine/actuators/throttle_ratio_all`,
+`sim/cockpit2/ice/ice_surface_hot_bleed_air_on`,
+`sim/cockpit2/pressurization/indicators/cabin_altitude_ft`. The C750's `CitX_ice.lua` uses
+`ice_surface_hot_bleed_air_on` for its slat deice, so the anti-ice advisory follows the real
+cockpit switch.
+
+New WAVs (same 22 050 Hz/16-bit mono recipe, `say -v Samantha`): `overspeed`, `to_config`,
+`stable`, `unstable`, `gear_down`, `anti_ice`, `cabin_alt`.
+
+Validation: `probe_load_order` 85 bindings, 0 failures; `check_datarefs` 22 declarations,
+0 problems; `smoke_realism` now also drives takeoff config, Vmo, stable/unstable, gear-down,
+anti-ice-off and cabin-altitude.
+
 ## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
@@ -674,7 +714,7 @@ takeoff/approach, the load-shed/brake-fan behaviour, and the sharpened textures.
 ## Validation performed
 - `luac -p` on every script in `Scripts/`, including the KPCrew ones.
 - Every `dataref(...)` declaration in `Scripts/CitationX_*.lua` checked with
-  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (78 bindings).
+  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (85 bindings).
 - Every `require()` reachable for the C750 checked with
   `tests/check_kpcrew_modules.lua C750`: 0 missing (`--all` sweeps every aircraft).
 - Every `laminar/CitX/...` command and runtime dataref checked against the Citation X's own

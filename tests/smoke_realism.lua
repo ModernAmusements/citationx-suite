@@ -70,7 +70,7 @@ check(type(REAL_CONFIG) == "table", "REAL_CONFIG exists")
 check(draw_registered == false, "realism pack registers no draw callback")
 check(has("callout sounds loaded"), "callout WAVs were loaded", logs[1])
 check(has("(fmod bus)"), "FMOD bus is preferred when the API is present")
-check(#fmod_loaded == 12, "all 12 callouts loaded through load_fmod_sound", #fmod_loaded)
+check(#fmod_loaded == 19, "all 19 callouts loaded through load_fmod_sound", #fmod_loaded)
 check(toasts[#toasts] == "REALISM PACK READY", "load announces itself in the toast slot", toasts[#toasts])
 
 -- frame helper: advance sim time past the 0.1 s gate
@@ -181,12 +181,96 @@ check(flap_hits == 1, "flap overspeed warns once per event", flap_hits)
 
 -- ---------- icing ----------
 logs = {}
-real_ias_kt   = 100
-real_flap_rat = 0
-real_oat_c    = 0
-real_rain     = 0.5
+real_on_ground = 0
+real_agl_m     = 900      -- ~2950 ft, clear of the approach gates
+real_vs_fpm    = 0
+real_gear[0]   = 0
+real_ias_kt    = 100
+real_flap_rat  = 0
+real_oat_c     = 0
+real_rain      = 0.5
+real_anti_ice  = 1
 frame()
 check(has("CALLOUT ICING"), "icing callout in visible moisture below 5 C")
+
+-- ---------- anti-ice off ----------
+logs = {}
+real_anti_ice = 0
+frame()
+check(has("CALLOUT ANTI ICE"), "anti-ice-off callout while icing conditions exist")
+real_anti_ice = 1
+
+-- ---------- takeoff configuration ----------
+logs = {}
+real_on_ground  = 1
+real_ias_kt     = 0
+real_flap_rat   = 0
+real_throttle   = 0
+real_park_brake = 0
+real_spoiler    = 0
+frame()
+real_park_brake = 1
+real_throttle   = 0.9
+frame()
+check(has("CALLOUT TAKEOFF CONFIG"), "takeoff-config warning with the park brake set")
+check(toasts[#toasts]:find("PARK BRAKE", 1, true) ~= nil,
+  "takeoff-config toast names the item", toasts[#toasts])
+real_park_brake = 0
+real_throttle   = 0
+frame()
+
+-- ---------- Vmo / Mmo ----------
+logs = {}
+real_on_ground = 0
+real_gear[0]   = 0
+real_flap_rat  = 0
+real_elev_m    = 1000      -- below 8000 ft: Vmo 270
+real_ias_kt    = 276
+real_mach      = 0.50
+real_agl_m     = 300
+real_vs_fpm    = 0
+frame()
+check(has("CALLOUT OVERSPEED"), "Vmo overspeed callout")
+local overspeed_hits = 0
+for _, l in ipairs(logs) do if l:find("CALLOUT OVERSPEED", 1, true) then overspeed_hits = overspeed_hits + 1 end end
+frame()
+check(overspeed_hits == 1, "overspeed latches once", overspeed_hits)
+
+-- ---------- stabilised approach ----------
+logs = {}
+real_ias_kt  = 132
+real_flap_rat = 1.0
+real_gear[0] = 1
+real_spoiler = 0
+real_phi_deg = 0
+real_vs_fpm  = -800
+real_agl_m   = 900 / 3.28084
+frame()
+check(has("CALLOUT STABLE"), "stabilised-approach callout at 900 ft")
+
+logs = {}
+real_agl_m = 1600 / 3.28084   -- re-arm above the gate
+frame()
+real_gear[0] = 0               -- gear up on the next approach
+real_agl_m  = 600 / 3.28084
+frame()
+check(has("CALLOUT UNSTABLE"), "unstable-approach callout")
+check(toasts[#toasts]:find("GEAR", 1, true) ~= nil, "unstable toast names GEAR", toasts[#toasts])
+
+-- ---------- gear down confirmation ----------
+logs = {}
+real_gear[0] = 0
+frame()
+real_gear[0] = 1.0
+frame()
+check(has("CALLOUT GEAR DOWN"), "gear-down confirmation when the gear locks")
+
+-- ---------- cabin altitude ----------
+logs = {}
+real_cabin_alt_ft = 12000
+frame()
+check(has("CALLOUT CABIN ALTITUDE"), "cabin-altitude warning above 10 000 ft")
+real_cabin_alt_ft = 0
 
 -- ---------- toggle ----------
 real_set_enabled(false)
