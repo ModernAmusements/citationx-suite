@@ -44,9 +44,15 @@ function do_every_draw() draw_registered = true end
 function do_on_mouse_click() end
 function do_on_exit() end
 function command_once(c) commands[#commands + 1] = c end
-function XPLMFindDataRef() return nil end
-function XPLMGetDatai() return 0 end
-function XPLMGetDataf() return 1.0 end
+local xplm = {}
+function XPLMFindDataRef(path)
+  xplm[path] = xplm[path] or { path = path, value = 0 }
+  return xplm[path]
+end
+function XPLMGetDatai(ref) return ref and ref.value or 0 end
+function XPLMGetDataf(ref) return ref and ref.value or 0 end
+function XPLMSetDatai(ref, v) if ref then ref.value = v end end
+function XPLMSetDataf(ref, v) if ref then ref.value = v end end
 function XPLMSetGraphicsState() end
 function glColor4f() end
 function glRectf() drawn[#drawn + 1] = "rect" end
@@ -70,6 +76,15 @@ local function has(pattern)
   end
   return false
 end
+
+local function xv(path)
+  return xplm[path] and xplm[path].value or 0
+end
+
+local OVR_PITCH = "sim/operation/override/override_joystick_pitch"
+local OVR_ROLL  = "sim/operation/override/override_joystick_roll"
+local YOKE_PITCH = "sim/joystick/yoke_pitch_ratio"
+local YOKE_ROLL  = "sim/joystick/yoke_roll_ratio"
 
 -- ---------- load ----------
 local chunk = assert(loadfile(script))
@@ -243,25 +258,25 @@ real_joy_roll_avail  = 1
 real_joy_pitch = 0.50
 real_joy_roll  = -0.50
 frame()
-check(real_ovr_pitch == 1 and real_ovr_roll == 1,
+check(xv(OVR_PITCH) == 1 and xv(OVR_ROLL) == 1,
   "handling curve takes the pitch/roll overrides")
-check(real_yoke_pitch > 0.0 and real_yoke_roll < 0.0, "shaped axes keep their sign")
-check(math.abs(real_yoke_pitch) < 0.5, "curve is softer than the raw axis")
+check(xv(YOKE_PITCH) > 0.0 and xv(YOKE_ROLL) < 0.0, "shaped axes keep their sign")
+check(math.abs(xv(YOKE_PITCH)) < 0.5, "curve is softer than the raw axis")
 real_set_handling(false)
-check(real_ovr_pitch == 0 and real_ovr_roll == 0,
+check(xv(OVR_PITCH) == 0 and xv(OVR_ROLL) == 0,
   "releasing the curve returns the raw axes")
 real_set_handling(true)
 frame()
-check(real_ovr_pitch == 1, "handling curve re-engages when switched back on")
+check(xv(OVR_PITCH) == 1, "handling curve re-engages when switched back on")
 
 -- ---------- hand-off to the MasterSuite axis optimizer ----------
 CONFIG = { axis_optimizer_enabled = false }
 frame()
 CONFIG.axis_optimizer_enabled = true
-real_ovr_pitch = 1          -- as the optimizer would set it
-real_ovr_roll  = 1
+xplm[OVR_PITCH].value = 1   -- as the optimizer would set it
+xplm[OVR_ROLL].value  = 1
 frame()
-check(real_ovr_pitch == 1 and real_ovr_roll == 1,
+check(xv(OVR_PITCH) == 1 and xv(OVR_ROLL) == 1,
   "handing over does not stomp the MasterSuite override")
 CONFIG.axis_optimizer_enabled = false
 real_joy_pitch_avail = 0

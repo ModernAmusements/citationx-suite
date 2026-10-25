@@ -156,10 +156,10 @@ dataref("real_joy_pitch", "sim/joystick/joy_mapped_axis_value", "readonly", 1)
 dataref("real_joy_roll",  "sim/joystick/joy_mapped_axis_value", "readonly", 2)
 dataref("real_joy_pitch_avail", "sim/joystick/joy_mapped_axis_avail", "readonly", 1)
 dataref("real_joy_roll_avail",  "sim/joystick/joy_mapped_axis_avail", "readonly", 2)
-dataref("real_yoke_pitch", "sim/joystick/yoke_pitch_ratio", "writable")
-dataref("real_yoke_roll",  "sim/joystick/yoke_roll_ratio", "writable")
-dataref("real_ovr_pitch",  "sim/operation/override/override_joystick_pitch", "writable")
-dataref("real_ovr_roll",   "sim/operation/override/override_joystick_roll", "writable")
+-- The four joystick-write DataRefs are already bound writable by the
+-- MasterSuite's axis optimizer, and FlyWithLua quarantines a second writable
+-- binding. Resolve them lazily through XPLM and write only while the handling
+-- curve actually owns the override.
 
 -- Resulting control positions, for the pre-takeoff control check.
 dataref("real_ctrl_pitch", "sim/cockpit2/controls/yoke_pitch_ratio", "readonly")
@@ -349,14 +349,28 @@ local handling_active = false
 local smooth_pitch    = 0.0
 local smooth_roll     = 0.0
 
+local handling_refs = nil
+local function handling_datarefs()
+    if not handling_refs then
+        handling_refs = {
+            yoke_pitch = XPLMFindDataRef("sim/joystick/yoke_pitch_ratio"),
+            yoke_roll  = XPLMFindDataRef("sim/joystick/yoke_roll_ratio"),
+            ovr_pitch  = XPLMFindDataRef("sim/operation/override/override_joystick_pitch"),
+            ovr_roll   = XPLMFindDataRef("sim/operation/override/override_joystick_roll"),
+        }
+    end
+    return handling_refs
+end
+
 local function release_handling()
     if not handling_active then return end
     -- Hand the overrides back only if nobody else has taken them: the
     -- MasterSuite axis optimizer writes the same two datarefs, and stomping
     -- them to 0 would leave it driving an override it no longer owns.
     if not (type(CONFIG) == "table" and CONFIG.axis_optimizer_enabled) then
-        real_ovr_pitch = 0
-        real_ovr_roll  = 0
+        local refs = handling_datarefs()
+        if refs.ovr_pitch then XPLMSetDatai(refs.ovr_pitch, 0) end
+        if refs.ovr_roll  then XPLMSetDatai(refs.ovr_roll,  0) end
     end
     handling_active = false
     logMsg("Citation X Realism: handling curve released")
@@ -385,12 +399,18 @@ local function handling_tick()
         return
     end
 
+    local refs = handling_datarefs()
+    if not (refs.yoke_pitch and refs.yoke_roll and refs.ovr_pitch and refs.ovr_roll) then
+        release_handling()
+        return
+    end
+
     local target_pitch = shaped_axis(real_joy_pitch)
     local target_roll  = shaped_axis(real_joy_roll)
 
     if not handling_active then
-        real_ovr_pitch  = 1
-        real_ovr_roll   = 1
+        XPLMSetDatai(refs.ovr_pitch, 1)
+        XPLMSetDatai(refs.ovr_roll,  1)
         handling_active = true
         smooth_pitch    = target_pitch
         smooth_roll     = target_roll
@@ -400,8 +420,8 @@ local function handling_tick()
     local k = REAL_CONFIG.handling_smoothing
     smooth_pitch = smooth_pitch + k * (target_pitch - smooth_pitch)
     smooth_roll  = smooth_roll  + k * (target_roll  - smooth_roll)
-    real_yoke_pitch = smooth_pitch
-    real_yoke_roll  = smooth_roll
+    XPLMSetDataf(refs.yoke_pitch, smooth_pitch)
+    XPLMSetDataf(refs.yoke_roll,  smooth_roll)
 end
 
 -- ---------------------------------------------------------- CONTROL CHECK ----

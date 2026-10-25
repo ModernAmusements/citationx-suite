@@ -158,9 +158,18 @@ end
 
 ----------------------------------------------------------------- analyse ------
 local problems = 0
+local first_writable = {}
 for _, b in ipairs(bound) do
   local typ = types[b.path]
   local where = string.format("%s: %s [%s]", b.script, tostring(b.name), tostring(b.path))
+  if b.mode == "writable" then
+    local owner = first_writable[b.path]
+    if owner then
+      print("  PROBLEM  duplicate writable binding: " .. where .. " (already writable in " .. owner .. ")"); problems = problems + 1
+    else
+      first_writable[b.path] = b.script
+    end
+  end
   if b.mode == "table" then
     if typ and not is_array(typ) then
       print("  PROBLEM  dataref_table on scalar: " .. where .. " (" .. typ .. ")"); problems = problems + 1

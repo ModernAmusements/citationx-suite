@@ -834,6 +834,47 @@ Test: `smoke_mastersuite.lua` section 8 marks a whole second slot as assigned an
 is left untouched, while the free slot gets `CONTROL PANEL` / `REALISM PANEL` in order and the
 bound action actually runs.
 
+## 22. Realism pack quarantined — duplicate writable DataRefs (2026-10-26)
+
+Reported: *"nothing works"*. The realism pack was missing from `Scripts/`; the only surviving
+copy sat in `Scripts (Quarantine)/CitationX_Realism.lua` (moved 2026-10-24 18:43, byte-identical
+to the committed version). With the pack gone, **no suite panel painted at all** — it is the one
+surface enabled at init — and the quarantine popup appeared on every load.
+
+`Log-2026-10-25-0109.txt` (Output/Log Archive) names the failure:
+
+```
+FlyWithLua Error: The variable "real_yoke_pitch" wants to write a DataRef, that is already handled by another variable.
+... real_yoke_roll / real_ovr_pitch / real_ovr_roll ...
+FlyWithLua Info: 2nd Moved Bad Script to .../Scripts (Quarantine)/CitationX_Realism.lua
+```
+
+Both scripts bound the same four refs writable:
+
+| DataRef | MasterSuite | Realism (old) |
+| --- | --- | --- |
+| `sim/joystick/yoke_pitch_ratio` | `yoke_pitch_ratio` | `real_yoke_pitch` |
+| `sim/joystick/yoke_roll_ratio` | `yoke_roll_ratio` | `real_yoke_roll` |
+| `sim/operation/override/override_joystick_pitch` | `ovr_joystick_pitch` | `real_ovr_pitch` |
+| `sim/operation/override/override_joystick_roll` | `ovr_joystick_roll` | `real_ovr_roll` |
+
+FlyWithLua allows one **writable** owner per DataRef; a second writable `dataref()` quarantines
+the later script (names sort MasterSuite before Realism). The logic guard that made the realism
+curve back off while the axis optimizer was on never mattered — the binding itself is fatal.
+
+Fix: `CitationX_Realism.lua` no longer binds those four refs. It resolves them lazily with
+`XPLMFindDataRef` and writes through `XPLMSetDatai` / `XPLMSetDataf`, the same pattern already
+used for `laminar/CitX/electrical/load_shed`. The MasterSuite keeps the writable bindings and the
+axis optimizer; the realism curve still backs off when it is enabled.
+
+Regression guard: `tests/probe_load_order.lua` now reports
+`PROBLEM duplicate writable binding: <script>: <var> [<ref>] (already writable in <script>)`.
+Verified against the old quarantined file (4 problems) and against the fixed tree (0 problems).
+
+Validation after the fix: `94 dataref binding(s), 0 load failure(s), 0 binding problem(s)`;
+realism smoke, MasterSuite stick/panel, EFB, panel geometry (47 checks) and
+`check_kpcrew_modules C750` all pass.
+
 ## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
@@ -901,6 +942,9 @@ load-shed/brake-fan behaviour, and the sharpened textures.
 ## Gotchas / facts
 - A bad DataRef anywhere in a script makes FlyWithLua quarantine the whole file and reload Lua.
   Check `Log.txt` for `FlyWithLua Error:` and `Moved Bad Script`.
+- Two scripts may not bind the same DataRef **writable**; the later script is quarantined even
+  if its logic would never write. Read-only duplicates are fine. `probe_load_order.lua` now
+  flags this.
 - FlyWithLua shows the "found bad lua scripts that have been quarantined" popup whenever
   `Scripts (Quarantine)/` is non-empty at the end of a load — even if nothing failed in that run.
   Keep the folder free of `.lua` files unless you actually want the popup.
