@@ -28,27 +28,35 @@
 -- ============================================================================
 
 TRAINER_CONFIG = {
-    panel_enabled    = false,   -- hidden at load; macro "Citation X QRH: toggle panel" shows it
-    panel_x          = 28,     -- panel anchor, bottom-left corner
-    panel_y          = 60,
-    panel_w          = 460,
+    panel_enabled    = false,   -- hidden at load; the Master Suite hub opens it
+    panel_x          = 24,     -- panel anchor; drag writes panel_top
+    panel_top        = nil,    -- nil = bottom-left (60 px) on first draw
+    panel_w          = 430,
     require_c750     = true,   -- only inject failures when flying the C750
-    row_h            = 22,
+    row_h            = 21,
 }
 
--- Glass-panel palette, matching the Citation X Master Suite style.
+-- Same black / Helvetica language as the realism panel.
 ST = {
-    bg         = {0.02, 0.05, 0.08, 0.62},
-    header_bg  = {0.03, 0.15, 0.21, 0.90},
-    header_act = {0.35, 0.05, 0.05, 0.92},
-    accent     = {0.22, 0.85, 1.00},
-    subhdr     = {0.36, 0.68, 0.78},
-    label      = {0.42, 0.62, 0.70},
-    value      = {0.93, 0.97, 1.00},
-    ok         = {0.32, 0.95, 0.55},
-    warn       = {1.00, 0.66, 0.12},
-    alert      = {1.00, 0.30, 0.28},
-    dim        = {0.30, 0.37, 0.42},
+    bg         = {0.00, 0.00, 0.00, 0.90},
+    header_bg  = {0.04, 0.04, 0.04, 0.96},
+    header_act = {0.16, 0.05, 0.05, 0.96},
+    border     = {0.32, 0.32, 0.32, 1.00},
+    title      = {1.00, 1.00, 1.00, 1.00},
+    sub        = {0.55, 0.55, 0.55, 1.00},
+    label      = {0.80, 0.80, 0.80, 1.00},
+    value      = {1.00, 1.00, 1.00, 1.00},
+    dim        = {0.45, 0.45, 0.45, 1.00},
+    ok         = {0.45, 0.85, 0.50, 1.00},
+    warn       = {0.95, 0.72, 0.25, 1.00},
+    alert      = {0.95, 0.36, 0.32, 1.00},
+    btn        = {0.10, 0.10, 0.10, 1.00},
+    -- legacy aliases used by the existing drawing code
+    accent     = {1.00, 1.00, 1.00, 1.00},
+    subhdr     = {0.55, 0.55, 0.55, 1.00},
+    header_h   = 34,
+    footer_h   = 34,
+    pad        = 14,
 }
 
 -- --------------------------------------------------------------- DATAREFS ---
@@ -359,80 +367,124 @@ end
 
 -- ------------------------------------------------------------- DRAWING -----
 local function bar(x, y0, y1, w, color, alpha)
-    glColor4f(color[1], color[2], color[3], alpha or 1.0)
+    glColor4f(color[1], color[2], color[3], alpha or color[4] or 1.0)
     glRectf(x, y0, x + w, y1)
 end
 
-local function txt(x, y, text, color)
-    draw_string(x, y, text, color[1], color[2], color[3])
+local function qrh_font(size)
+    if size == 18 then return draw_string_Helvetica_18 or draw_string end
+    if size == 10 then return draw_string_Helvetica_10 or draw_string end
+    return draw_string_Helvetica_12 or draw_string
 end
 
-local function txt_right(right_x, y, text, color)
-    draw_string(right_x - measure_string(text), y, text, color[1], color[2], color[3])
+local function txt(x, y, text, color, size)
+    glColor4f(color[1], color[2], color[3], color[4] or 1.0)
+    qrh_font(size or 12)(x, y, tostring(text or ""))
 end
+
+local function txt_right(right_x, y, text, color, size)
+    local s = tostring(text or "")
+    local sz = size or 12
+    local tw = measure_string(s, "Helvetica_" .. tostring(sz)) or measure_string(s)
+    txt(right_x - tw, y, s, color, sz)
+end
+
+-- Keep long QRH step labels inside the panel (the 460 px original had room;
+-- the 430 px shell needs a guard for the dotted-line steps).
+local function qrh_fit(text, max_px, size)
+    local s = tostring(text or "")
+    local font = "Helvetica_" .. tostring(size or 12)
+    local function m(t) return measure_string(t, font) or measure_string(t) end
+    if m(s) <= max_px then return s end
+    while #s > 1 and m(s .. "..") > max_px do s = s:sub(1, -2) end
+    return s .. ".."
+end
+
+local qrh_header_rect = nil
+local qrh_footer_rect = nil
+local qrh_drag = { active = false, dx = 0, dy = 0 }
 
 function qrh_draw()
-    if not TRAINER_CONFIG.panel_enabled then return end
+    if not TRAINER_CONFIG.panel_enabled then
+        qrh_drag.active = false
+        return
+    end
     qrh_rows = {}
 
     local cfg = TRAINER_CONFIG
+    local st  = ST
     local w   = cfg.panel_w
     local rh  = cfg.row_h
-    local x   = cfg.panel_x
-    local bottom = cfg.panel_y
+    local sw  = SCREEN_WIDTH or 1920
+    local sh  = SCREEN_HIGHT or 1080
 
     -- measure panel height from content
     local h
     if active then
-        h = 24 + 30 + (#active.steps) * rh + 20 + 12
-            + (proc_done and (rh + 20) or 0)
+        h = st.header_h + 30 + (#active.steps) * rh + 20 + st.footer_h + 8
+        if proc_done then h = h + rh + 8 end
     else
-        h = 24 + 16 + (#SCENARIOS + 1) * rh + 12
+        h = st.header_h + 20 + (#SCENARIOS + 1) * rh + st.footer_h + 8
     end
-    local top = bottom + h
+
+    local x = math.max(0, math.min(cfg.panel_x, sw - w))
+    local top = cfg.panel_top or (60 + h)
+    top = math.max(h + 8, math.min(top, sh - 4))
+    cfg.panel_x, cfg.panel_top = x, top
+    local bottom = top - h
 
     XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0)
 
-    -- body background, then header strip on top
-    bar(x, bottom, top, w, ST.bg, 0.75)
-    bar(x, top - 24, top, w, active and ST.header_act or ST.header_bg, 0.92)
-    bar(x, top - 2, top, w, active and ST.alert or ST.accent)
+    -- black shell: body, 1 px border, 34 px header
+    bar(x, bottom, top, w, st.bg)
+    bar(x, top - 1, top, w, st.border)
+    bar(x, bottom, top, 1, st.border)
+    bar(x + w - 1, bottom, top, 1, st.border)
+    bar(x, bottom, bottom + 1, w, st.border)
+    bar(x, top - st.header_h, top, w, active and st.header_act or st.header_bg)
+    bar(x, top - st.header_h, top - st.header_h + 2, w,
+        active and st.alert or st.border)
     if active then
-        txt(x + 10, top - 17, "QRH  " .. active.title, ST.alert)
+        txt(x + st.pad, top - 25,
+            qrh_fit("QRH  " .. active.title, w - 2 * st.pad, 18), st.alert, 18)
     else
-        txt(x + 10, top - 17, "FAILURE TRAINER - SELECT SCENARIO", ST.accent)
+        txt(x + st.pad, top - 25, "FAILURE TRAINER", st.title, 18)
+        txt_right(x + w - st.pad, top - 22, "SELECT SCENARIO", st.sub, 10)
     end
+    qrh_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
 
-    local y = top - 24
+    local y = top - st.header_h
 
     if active then
         -- condition line
-        txt(x + 10, y - 13, active.condition, ST.warn)
+        txt(x + st.pad, y - 16,
+            qrh_fit(active.condition, w - 2 * st.pad, 12), st.warn)
         y = y - 30
 
         for i, step in ipairs(active.steps) do
             local done = step_done[i]
             local col
             if step.advisory then
-                col = ST.dim
+                col = st.dim
             elseif done then
-                col = ST.ok
+                col = st.ok
             else
-                col = ST.value
+                col = st.value
             end
 
             -- check box
             if step.advisory then
-                txt(x + 12, y - 14, "~", ST.dim)
+                txt(x + st.pad - 2, y - 14, "~", st.dim)
             elseif done then
-                txt(x + 12, y - 14, "X", ST.ok)
+                txt(x + st.pad - 2, y - 14, "X", st.ok)
             else
-                glColor4f(ST.dim[1], ST.dim[2], ST.dim[3], 1.0)
-                glRectf(x + 11, y - 14, x + 20, y - 5)
+                glColor4f(st.dim[1], st.dim[2], st.dim[3], 1.0)
+                glRectf(x + st.pad - 3, y - 14, x + st.pad + 6, y - 5)
             end
 
-            txt(x + 30, y - 14, string.format("%d.", i), ST.label)
-            txt(x + 50, y - 14, step.label, col)
+            txt(x + st.pad + 16, y - 14, string.format("%d.", i), st.label)
+            txt(x + st.pad + 36, y - 14,
+                qrh_fit(step.label, w - 2 * st.pad - 36, 12), col)
 
             qrh_rows[#qrh_rows + 1] = {
                 kind = "step", step = step,
@@ -443,26 +495,27 @@ function qrh_draw()
 
         if proc_done then
             y = y - 8
-            txt(x + 12, y - 14, "PROCEDURE COMPLETE", ST.ok)
+            txt(x + st.pad, y - 14, "PROCEDURE COMPLETE", st.ok)
             y = y - rh
-            bar(x + 8, y - rh + 8, y + 5, w - 16, ST.alert, 0.80)
-            txt(x + 16, y - 14, "CLEAR FAILURE  (click)", {0.05, 0.05, 0.05})
+            bar(x + st.pad, y - rh + 8, y + 5, w - 2 * st.pad, st.alert, 0.85)
+            txt(x + st.pad + 8, y - 14, "CLEAR FAILURE  (click)", {0.05, 0.05, 0.05})
             qrh_rows[#qrh_rows + 1] = {
                 kind = "clear",
                 x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
             }
         else
             y = y - 6
-            txt(x + 12, y - 14, "Fly the switches - steps self-check.", ST.dim)
+            txt(x + st.pad, y - 14, "Fly the switches - steps self-check.", st.dim)
         end
     else
         y = y - 16
         for _, sc in ipairs(SCENARIOS) do
-            local col = (ft_on_ground or 0) == 1 and ST.value or ST.warn
-            glColor4f(ST.accent[1], ST.accent[2], ST.accent[3], 0.8)
-            glRectf(x + 10, y - 13, x + 16, y - 6)
-            txt(x + 26, y - 16, sc.title, col)
-            txt_right(x + w - 10, y - 16, "INJECT", ST.dim)
+            local col = (ft_on_ground or 0) == 1 and st.value or st.warn
+            glColor4f(st.accent[1], st.accent[2], st.accent[3], 0.8)
+            glRectf(x + st.pad - 4, y - 12, x + st.pad + 2, y - 6)
+            txt(x + st.pad + 12, y - 14,
+                qrh_fit(sc.title, w - 2 * st.pad - 72, 12), col)
+            txt_right(x + w - st.pad, y - 14, "INJECT", st.dim)
 
             qrh_rows[#qrh_rows + 1] = {
                 kind = "scenario", sc = sc,
@@ -471,29 +524,80 @@ function qrh_draw()
             y = y - rh
         end
         -- random row
-        bar(x + 8, y - rh + 8, y + 5, w - 16, ST.warn, 0.75)
-        txt(x + 16, y - 16, "RANDOM FAILURE (surprise me)", {0.05, 0.05, 0.05})
+        bar(x + st.pad, y - rh + 8, y + 5, w - 2 * st.pad, st.warn, 0.85)
+        txt(x + st.pad + 8, y - 14, "RANDOM FAILURE (surprise me)", {0.05, 0.05, 0.05})
         qrh_rows[#qrh_rows + 1] = {
             kind = "random",
             x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
         }
     end
 
+    -- footer: drag-safe hide button
+    local by0 = bottom + 8
+    local by1 = by0 + st.footer_h - 12
+    bar(x + st.pad, by0, by1, w - 2 * st.pad, st.btn)
+    local label = "HIDE PANEL"
+    local tw = measure_string(label, "Helvetica_10") or measure_string(label)
+    txt(x + (w - tw) / 2, by0 + 6, label, st.value, 10)
+    qrh_footer_rect = { x0 = x + st.pad, x1 = x + w - st.pad, y0 = by0, y1 = by1 }
+
     -- toast
     if toast_text and (ft_sim_time or 0) < toast_until then
-        local tw = measure_string(toast_text) + 32
+        local tw2 = (measure_string(toast_text, "Helvetica_12")
+            or measure_string(toast_text)) + 32
         local bx = x
-        local by = bottom - 34
-        bar(bx, by, by + 24, tw, {0.02, 0.06, 0.09}, 0.85)
-        bar(bx, by, by + 24, 4, ST.accent)
-        txt(bx + 16, by + 7, toast_text, ST.value)
+        local by = bottom - 30
+        bar(bx, by, by + 24, tw2, {0.00, 0.00, 0.00}, 0.92)
+        bar(bx, by, by + 24, 4, st.accent)
+        txt(bx + 16, by + 7, toast_text, st.value)
     end
 end
 
 -- --------------------------------------------------------------- MOUSE -----
 function qrh_mouse_click()
-    if MOUSE_STATUS ~= "down" then return end
+    if not TRAINER_CONFIG.panel_enabled then
+        qrh_drag.active = false
+        return
+    end
+
     local mx, my = MOUSE_X or -1, MOUSE_Y or -1
+    local cfg = TRAINER_CONFIG
+
+    if MOUSE_STATUS == "down" then
+        local hr = qrh_header_rect
+        if hr and mx >= hr.x0 and mx <= hr.x1 and my >= hr.y0 and my <= hr.y1 then
+            qrh_drag.active = true
+            qrh_drag.dx = mx - cfg.panel_x
+            qrh_drag.dy = my - (cfg.panel_top or my)
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    elseif MOUSE_STATUS == "drag" then
+        if qrh_drag.active then
+            local sw = SCREEN_WIDTH or 1920
+            local sh = SCREEN_HIGHT or 1080
+            cfg.panel_x = math.max(0, math.min(mx - qrh_drag.dx, sw - cfg.panel_w))
+            cfg.panel_top = math.max(120, math.min(my - qrh_drag.dy, sh - 4))
+            RESUME_MOUSE_CLICK = true
+        end
+        return
+    elseif MOUSE_STATUS == "up" then
+        if qrh_drag.active then
+            qrh_drag.active = false
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    end
+
+    if MOUSE_STATUS ~= "down" then return end
+
+    local f = qrh_footer_rect
+    if f and mx >= f.x0 and mx <= f.x1 and my >= f.y0 and my <= f.y1 then
+        qrh_toggle_panel(false)
+        RESUME_MOUSE_CLICK = true
+        return
+    end
+
     for _, r in ipairs(qrh_rows) do
         if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
             RESUME_MOUSE_CLICK = true

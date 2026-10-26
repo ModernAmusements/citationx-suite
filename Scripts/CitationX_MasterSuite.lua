@@ -36,8 +36,9 @@ CONFIG = {
     log_to_desktop         = true,
 
     -- Control panel: the live "which subsystem is active" readout and the
-    -- suite's only on-screen surface. Click a row to toggle that subsystem.
-    status_enabled         = false,  -- panels start hidden: only the realism pack is visible
+    -- suite's panel hub. Visible at load, next to the realism panel; every
+    -- other panel starts hidden and is opened from here.
+    status_enabled         = true,
     status_clickable       = true,   -- click a row to toggle that system
 
     -- Takes over pitch/roll input via the per-axis joystick overrides.
@@ -92,6 +93,22 @@ CONFIG = {
     -- outpaces it; fast enough to track drift.
     stick_hdg_base_track    = 0.001,
 
+    -- Right-stick click (DS4 R3) + right-stick movement = look around the 3-D
+    -- cockpit. The button suppresses the heading knob while it is held, so the
+    -- same stick does not move the bug at the same time. view_pan_axis_* = -1
+    -- auto-detects the right stick as the first *moved* spring-centred axis
+    -- pair (DS4: raw 2/3). Pin them to fixed RAW indices to override.
+    view_pan_enabled        = true,
+    view_pan_button         = 11,    -- 0-based physical button in a 64-button device slot (R3)
+    view_pan_axis_x         = -1,
+    view_pan_axis_y         = -1,
+    view_pan_deadzone       = 0.12,
+    view_pan_rate_dps       = 80,    -- look speed at full stick deflection
+    view_pan_invert_x       = false,
+    view_pan_invert_y       = false,
+    view_pan_force_3d       = true,  -- R3 switches to the 3-D cockpit if in 2-D
+    view_pan_pitch_limit    = 80,    -- degrees, keeps the head inside the cockpit
+
     axis_monitor            = false,
 
     altitude_step_ft        = 100,
@@ -101,24 +118,36 @@ CONFIG = {
 }
 
 -- ----------------------------------------------------------- PANEL STYLE ----
--- Glass-panel palette, {r, g, b} in 0..1. Background entries carry alpha.
+-- Matches the realism panel: black body, grey border, white Helvetica title,
+-- 12 px rows and a 10 px sub-header. {r, g, b} in 0..1; background entries
+-- carry alpha. `top` is the absolute top edge in FlyWithLua screen pixels
+-- (origin bottom-left) and is updated when the panel is dragged.
 SUITE_STYLE = {
-    x            = 28,
-    width        = 396,
-    status_row_h = 20,
-    pad          = 12,
-    bg           = {0.02, 0.05, 0.08, 0.62},
-    header_bg    = {0.03, 0.15, 0.21, 0.90},
-    accent       = {0.22, 0.85, 1.00},
-    subhdr       = {0.36, 0.68, 0.78},
-    label        = {0.42, 0.62, 0.70},
-    value        = {0.93, 0.97, 1.00},
-    ok           = {0.32, 0.95, 0.55},
-    warn         = {1.00, 0.66, 0.12},
-    alert        = {1.00, 0.30, 0.28},
-    dim          = {0.30, 0.37, 0.42},
+    x            = 470,
+    top          = nil,          -- nil = top-right of the realism panel on first draw
+    width        = 430,
+    pad          = 14,
+    header_h     = 34,
+    sub_h        = 20,
+    row_h        = 21,
+    footer_h     = 34,
+    bg           = {0.00, 0.00, 0.00, 0.90},
+    header_bg    = {0.04, 0.04, 0.04, 0.96},
+    border       = {0.32, 0.32, 0.32, 1.00},
+    title        = {1.00, 1.00, 1.00, 1.00},
+    sub          = {0.55, 0.55, 0.55, 1.00},
+    label        = {0.80, 0.80, 0.80, 1.00},
+    value        = {1.00, 1.00, 1.00, 1.00},
+    dim          = {0.45, 0.45, 0.45, 1.00},
+    ok           = {0.45, 0.85, 0.50, 1.00},
+    warn         = {0.95, 0.72, 0.25, 1.00},
+    alert        = {0.95, 0.36, 0.32, 1.00},
+    btn          = {0.10, 0.10, 0.10, 1.00},
+    -- legacy names kept so the older rows/toast code keeps working
+    accent       = {1.00, 1.00, 1.00, 1.00},
+    subhdr       = {0.55, 0.55, 0.55, 1.00},
     learn_bg     = {0.10, 0.07, 0.02, 0.85},
-    learn        = {1.00, 0.75, 0.20},
+    learn        = {1.00, 0.75, 0.20, 1.00},
 }
 
 -- ----------------------------------------------------------- INPUT MAP ------
@@ -257,6 +286,12 @@ dataref("alt_sel_ft",    "sim/cockpit2/autopilot/altitude_dial_ft", "writable")
 dataref("alt_legacy_ft", "sim/cockpit/autopilot/altitude", "writable")
 dataref("hdg_sel_deg",   "sim/cockpit2/autopilot/heading_dial_deg_mag_pilot", "writable")
 
+-- 3-D cockpit look (R3 + right stick). These are the head-tracking offsets the
+-- sim itself uses, so writing them pans the view without touching the camera.
+dataref("view_head_psi",   "sim/graphics/view/pilots_head_psi", "writable")
+dataref("view_head_the",   "sim/graphics/view/pilots_head_the", "writable")
+dataref("view_panel_type", "sim/graphics/view/panel_render_type", "readonly")
+
 local fuel_flow_kg_sec = dataref_table("sim/cockpit2/engine/indicators/fuel_flow_kg_sec")
 
 local joy_buttons      = dataref_table("sim/joystick/joystick_button_values")
@@ -287,6 +322,13 @@ local stick_dead_axis  = {}
 local stick_hdg_hold_s = 0.0
 local stick_hdg_diag_at = 0.0
 local joy_autobind_done = false
+
+-- 3-D cockpit look state (R3 + right stick).
+local view_pan_axis_x   = -1
+local view_pan_axis_y   = -1
+local view_pan_was_held = false
+local view_pan_logged   = false
+local view_pan_wait_center = false
 
 -- Center a raw 0..1 axis value to -1..1 around CONFIG.stick_hdg_center
 -- (used by the AXIS MONITOR display only).
@@ -387,6 +429,139 @@ local function detect_stick_hdg_axis()
     return best_idx
 end
 
+-- ---------------------------------------------------------- COCKPIT LOOK ----
+-- The DS4 right stick is a pair of adjacent spring-centred axes. Detection
+-- runs only while R3 is held and the stick is actually pushed, so the left
+-- stick (assigned to pitch/roll) and the triggers (rest at an extreme) can
+-- never be picked. Pinned CONFIG.view_pan_axis_x/y values win.
+local function view_pan_axis_eligible(j)
+    if j < 0 or j > 63 then return false end
+    local a = joy_raw_assign[j] or 0
+    return a ~= 1 and a ~= 2 and a ~= 3 and a ~= 4
+        and not stick_dead_axis[j]
+        and not stick_axis_excluded(j)
+        and stick_base_raw[j] ~= nil
+end
+
+local function view_pan_pair()
+    if CONFIG.view_pan_axis_x >= 0 and CONFIG.view_pan_axis_y >= 0 then
+        return CONFIG.view_pan_axis_x, CONFIG.view_pan_axis_y
+    end
+    if view_pan_axis_x >= 0 and view_pan_axis_y >= 0 then
+        return view_pan_axis_x, view_pan_axis_y
+    end
+
+    -- Most-deflected eligible axis = the stick the pilot just pushed.
+    local best, best_mag = nil, CONFIG.view_pan_deadzone
+    for i = 0, 31 do
+        if view_pan_axis_eligible(i) and stick_axis_is_centered(i) then
+            local mag = math.abs(stick_axis_deflection(i))
+            if mag > best_mag then best, best_mag = i, mag end
+        end
+    end
+    if not best then return -1, -1 end
+
+    -- Its hardware partner: the adjacent index (DS4 Z/Rz = 2/3, Rx/Ry = 4/5).
+    -- Check both neighbours; a pad slot can start on either parity.
+    local partner = nil
+    local first  = (best % 2 == 0) and (best + 1) or (best - 1)
+    local second = (best % 2 == 0) and (best - 1) or (best + 1)
+    if view_pan_axis_eligible(first) then
+        partner = first
+    elseif view_pan_axis_eligible(second) then
+        partner = second
+    end
+    if not partner then return -1, -1 end
+
+    local ax, ay = best, partner
+    if ax > ay then ax, ay = ay, ax end
+    view_pan_axis_x, view_pan_axis_y = ax, ay
+    if not view_pan_logged then
+        view_pan_logged = true
+        logMsg(string.format(
+            "Citation X Suite: cockpit look axes %d/%d on button %d",
+            ax, ay, CONFIG.view_pan_button))
+    end
+    return ax, ay
+end
+
+local function view_pan_button_held()
+    local b = CONFIG.view_pan_button
+    for slot = 0, 1 do
+        if (joy_buttons[slot * 64 + b] or 0) == 1 then return true end
+    end
+    return false
+end
+
+-- Returns true while R3 is held, so the heading knob stands down for that frame.
+local function citationx_view_pan(dt)
+    if not CONFIG.view_pan_enabled then return false end
+    if not view_pan_button_held() then
+        if view_pan_was_held then
+            view_pan_was_held = false
+            -- Do not hand the same stick back to the heading knob while it is
+            -- still deflected; wait until it re-centres.
+            view_pan_wait_center = true
+        end
+        if view_pan_wait_center then
+            local ax, ay = view_pan_axis_x, view_pan_axis_y
+            if ax >= 0 and ay >= 0 then
+                local dz = CONFIG.view_pan_deadzone
+                if math.abs(stick_axis_deflection(ax)) > dz
+                    or math.abs(stick_axis_deflection(ay)) > dz then
+                    return true
+                end
+            end
+            view_pan_wait_center = false
+        end
+        return false
+    end
+    view_pan_wait_center = false
+
+    if not view_pan_was_held then
+        view_pan_was_held = true
+        if CONFIG.view_pan_force_3d and (view_panel_type or 2) == 0 then
+            command_once("sim/view/3d_cockpit_cmnd_look")
+        end
+        if type(citationx_toast) == "function" then citationx_toast("COCKPIT LOOK") end
+    end
+
+    if dt > 0.0 and (view_panel_type or 2) ~= 0 then
+        local ax, ay = view_pan_pair()
+        if ax >= 0 and ay >= 0 then
+            local function shape(v)
+                local m = math.abs(v)
+                if m <= CONFIG.view_pan_deadzone then return 0.0 end
+                local s = (m - CONFIG.view_pan_deadzone)
+                        / (1.0 - CONFIG.view_pan_deadzone)
+                if v < 0.0 then s = -s end
+                return s
+            end
+            local yaw   = shape(stick_axis_deflection(ax))
+            local pitch = -shape(stick_axis_deflection(ay))  -- stick up looks up
+            if CONFIG.view_pan_invert_x then yaw   = -yaw end
+            if CONFIG.view_pan_invert_y then pitch = -pitch end
+
+            if yaw ~= 0.0 then
+                local psi = (view_head_psi or 0.0)
+                    + yaw * CONFIG.view_pan_rate_dps * dt
+                if psi > 180 then psi = psi - 360 end
+                if psi < -180 then psi = psi + 360 end
+                view_head_psi = psi
+            end
+            if pitch ~= 0.0 then
+                local lim = CONFIG.view_pan_pitch_limit
+                local the = (view_head_the or 0.0)
+                    + pitch * CONFIG.view_pan_rate_dps * dt
+                if the >  lim then the =  lim end
+                if the < -lim then the = -lim end
+                view_head_the = the
+            end
+        end
+    end
+    return true
+end
+
 -- ------------------------------------------------------------ STATE (early) --
 -- Declared before SUITE_MODULES so its closures capture these locals (in Lua a
 -- local is only visible to code textually after its declaration).
@@ -476,6 +651,16 @@ SUITE_MODULES = {
             return "OFF"
         end,
     },
+    {
+        key = "look", label = "COCKPIT LOOK", macro = "cockpit look (R3 + stick)",
+        get = function() return CONFIG.view_pan_enabled end,
+        set = function(on) citationx_set_view_pan(on) end,
+        state = function()
+            if not CONFIG.view_pan_enabled then return "OFF" end
+            if view_pan_was_held then return "PAN" end
+            return "ON"
+        end,
+    },
     -- --- sibling panels from the other suite scripts -------------------------
     -- These scripts share one Lua state, so their globals are reachable here.
     -- Every accessor is nil-guarded so the panel keeps working if a script is
@@ -556,7 +741,8 @@ SUITE_MODULES = {
 local function state_color(text)
     local st = SUITE_STYLE
     if text == "ON" or text == "LIVE" or text == "REC"
-        or text == "ACTIVE" or text == "ARMED" or text == "SHOWN" then
+        or text == "ACTIVE" or text == "ARMED" or text == "SHOWN"
+        or text == "PAN" then
         return st.ok
     end
     if text == "TRIGGERED" then return st.alert end
@@ -578,6 +764,10 @@ local learn_events     = 0
 local prev_joy_buttons = {}
 local prev_raw_axes    = {}
 local status_rects     = {}
+local panel_footer_rect = nil
+local panel_header_rect = nil
+local panel_drag = { active = false, dx = 0, dy = 0 }
+local control_panel_height   -- forward declaration (used by the mouse handler)
 
 -- ---------------------------------------------------------------- HELPERS ---
 local LOG_HEADER = "Time_Sec,Altitude_FT,Mach,IAS_KTS,Pitch_Deg,Roll_Deg,G_Load,FuelFlow_KgH\n"
@@ -739,6 +929,16 @@ function citationx_set_axis_monitor(on)
     toast_state("AXIS MONITOR", CONFIG.axis_monitor)
 end
 
+function citationx_set_view_pan(on)
+    CONFIG.view_pan_enabled = (on == true)
+    if not CONFIG.view_pan_enabled then
+        view_pan_was_held = false
+        view_pan_wait_center = false
+        view_pan_axis_x, view_pan_axis_y = -1, -1
+    end
+    toast_state("COCKPIT LOOK", CONFIG.view_pan_enabled)
+end
+
 function citationx_test_emergency()
     emergency_left  = CONFIG.emergency_duration_sec
     emergency_armed = false
@@ -787,7 +987,7 @@ function citationx_autobind_joy()
     for slot = 0, 1 do
         for b = 8, 17 do
             local idx = slot * 64 + b
-            if (joy_btn_assign[idx] or 0) == 0 then
+            if b ~= CONFIG.view_pan_button and (joy_btn_assign[idx] or 0) == 0 then
                 free[b] = free[b] or {}
                 free[b][#free[b] + 1] = idx
             end
@@ -901,18 +1101,59 @@ function citationx_mouse_click()
     if CONFIG.input_learn_mode then
         probe_log("CLICK status=" .. tostring(MOUSE_STATUS))
     end
+    if not CONFIG.status_enabled then
+        panel_drag.active = false
+        return
+    end
 
-    -- Click the on-screen status panel to toggle a subsystem.
-    if CONFIG.status_clickable and CONFIG.status_enabled and MOUSE_STATUS == "down" then
-        local mx = MOUSE_X or -1.0
-        local my = MOUSE_Y or -1.0
-        for i = 1, #status_rects do
-            local r = status_rects[i]
-            if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
-                citationx_toggle_module(r.key)
-                RESUME_MOUSE_CLICK = true
-                return
-            end
+    local mx = MOUSE_X or -1.0
+    local my = MOUSE_Y or -1.0
+    local st = SUITE_STYLE
+
+    -- Drag by the header: down starts, drag moves, up ends.
+    if MOUSE_STATUS == "down" then
+        local r = panel_header_rect
+        if r and mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
+            panel_drag.active = true
+            panel_drag.dx = mx - st.x
+            panel_drag.dy = my - (st.top or my)
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    elseif MOUSE_STATUS == "drag" then
+        if panel_drag.active then
+            local sw = SCREEN_WIDTH or 1920
+            local sh = SCREEN_HIGHT or 1080
+            local h  = control_panel_height()
+            st.x = math.max(0, math.min(mx - panel_drag.dx, sw - st.width))
+            st.top = math.max(h, math.min(my - panel_drag.dy, sh))
+            RESUME_MOUSE_CLICK = true
+        end
+        return
+    elseif MOUSE_STATUS == "up" then
+        if panel_drag.active then
+            panel_drag.active = false
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    end
+
+    if not CONFIG.status_clickable or MOUSE_STATUS ~= "down" then return end
+
+    local f = panel_footer_rect
+    if f and mx >= f.x0 and mx <= f.x1 and my >= f.y0 and my <= f.y1 then
+        citationx_set_status(false)
+        RESUME_MOUSE_CLICK = true
+        return
+    end
+
+    -- Click a row to toggle that subsystem.
+    for i = 1, #status_rects do
+        local r = status_rects[i]
+        if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
+            citationx_toggle_module(r.key)
+            RESUME_MOUSE_CLICK = true
+            return
         end
     end
 end
@@ -1019,10 +1260,14 @@ function citationx_frame()
         logMsg("Citation X Suite: axis optimizer released")
     end
 
+    -- R3 + right stick pans the 3-D cockpit. While it is held the same stick
+    -- must not also drive the heading bug, so the knob block is skipped.
+    local look_held = citationx_view_pan(dt)
+
     -- Spring-centered stick axis -> rate-based heading bug. Deflection is
     -- measured against each axis' learned rest value, so a parked axis (idle
     -- trigger at raw 0, stale pad slot, drift) never drives the bug.
-    if CONFIG.stick_hdg_enabled and dt > 0.0 then
+    if CONFIG.stick_hdg_enabled and dt > 0.0 and not look_held then
         -- Revive a vetoed slot once it reports a sane centered value again.
         for idx in pairs(stick_dead_axis) do
             local raw = joy_raw_axes[idx]
@@ -1129,6 +1374,8 @@ function citationx_frame()
                 end
             end
         end
+    end
+    if (CONFIG.stick_hdg_enabled or CONFIG.view_pan_enabled) and dt > 0.0 then
         stick_baseline_update()
     end
 
@@ -1191,7 +1438,7 @@ local function draw_text_right(right_x, y, text, r, g, b)
 end
 
 local function draw_bar(x, y_bottom, y_top, w, color, alpha)
-    glColor4f(color[1], color[2], color[3], alpha or 1.0)
+    glColor4f(color[1], color[2], color[3], alpha or color[4] or 1.0)
     glRectf(x, y_bottom, x + w, y_top)
 end
 
@@ -1204,47 +1451,99 @@ local function fit_text(text, max_px)
     return trimmed .. "..."
 end
 
--- header (24) + sub-header gap (20) + rows + bottom padding
-local function control_panel_height()
+-- Helvetica faces and the realism panel's text metrics.
+local function suite_font(size)
+    if size == 18 then return draw_string_Helvetica_18 or draw_string end
+    if size == 10 then return draw_string_Helvetica_10 or draw_string end
+    return draw_string_Helvetica_12 or draw_string
+end
+
+local function suite_text(x, y, text, size, color)
+    glColor4f(color[1], color[2], color[3], color[4] or 1.0)
+    suite_font(size)(x, y, tostring(text or ""))
+end
+
+local function suite_text_right(right_x, y, text, size, color)
+    local s = tostring(text or "")
+    local w = measure_string(s, "Helvetica_" .. tostring(size)) or measure_string(s)
+    suite_text(right_x - w, y, s, size, color)
+end
+
+-- Shared black-shell drawing: body, 1 px border, 34 px header, divider.
+local function draw_shell(x, top, w, h, title, sub)
     local st = SUITE_STYLE
-    return 44 + 20 + (#SUITE_MODULES - 1) * st.status_row_h + st.pad
+    local bottom = top - h
+    draw_bar(x, bottom, top, w, st.bg)
+    draw_bar(x, top - 1, top, w, st.border)
+    draw_bar(x, bottom, top, 1, st.border)
+    draw_bar(x + w - 1, bottom, top, 1, st.border)
+    draw_bar(x, bottom, bottom + 1, w, st.border)
+    draw_bar(x, top - st.header_h, top, w, st.header_bg)
+    draw_bar(x, top - st.header_h, top - st.header_h + 2, w, st.border)
+    suite_text(x + st.pad, top - 25, title, 18, st.title)
+    if sub and sub ~= "" then
+        suite_text_right(x + w - st.pad, top - 22, sub, 10, st.sub)
+    end
+end
+
+-- Footer button, returns its clickable rectangle.
+local function draw_footer_button(x, bottom, w, label)
+    local st = SUITE_STYLE
+    local by0 = bottom + 8
+    local by1 = by0 + st.footer_h - 12
+    draw_bar(x + st.pad, by0, by1, w - 2 * st.pad, st.btn)
+    local tw = measure_string(label, "Helvetica_10") or measure_string(label)
+    suite_text(x + (w - tw) / 2, by0 + 6, label, 10, st.value)
+    return { x0 = x + st.pad, x1 = x + w - st.pad, y0 = by0, y1 = by1 }
+end
+
+-- header (34) + sub-header (20) + rows + footer + padding
+function control_panel_height()
+    local st = SUITE_STYLE
+    return st.header_h + st.sub_h + 16
+        + #SUITE_MODULES * st.row_h + st.footer_h + 8
 end
 
 local function draw_control_panel(screen_h)
     local st = SUITE_STYLE
-    local x, w, pad = st.x, st.width, st.pad
-    local top = screen_h - 20
+    local w, pad = st.width, st.pad
+    local x = st.x
+
+    -- first draw: park the hub to the right of the realism panel
+    if st.top == nil then st.top = screen_h - 24 end
+    x = math.max(8, math.min(x, (SCREEN_WIDTH or 1920) - w - 8))
+    st.x = x
+    local top = math.max(control_panel_height() + 8,
+        math.min(st.top, screen_h - 8))
+    st.top = top
     local bottom = top - control_panel_height()
 
     status_rects = {}
 
-    draw_bar(x, bottom, top, w, st.bg)
-    draw_bar(x, top - 24, top, w, st.header_bg, 0.90)
-    draw_bar(x, top - 26, top - 24, w, st.accent)
-    draw_string(x + pad, top - 18, "CITATION X   MASTER SUITE",
-        st.accent[1], st.accent[2], st.accent[3])
+    draw_shell(x, top, w, control_panel_height(), "CITATION X", "MASTER SUITE")
+    suite_text(x + pad, top - st.header_h - 14, "CONTROL PANEL", 10, st.sub)
 
-    local header_y = top - 24 - 20
-    draw_string(x + pad, header_y, "CONTROL PANEL", st.subhdr[1], st.subhdr[2], st.subhdr[3])
-
-    local first_y = header_y - 20
+    local first_y = top - st.header_h - st.sub_h - 14
     for i = 1, #SUITE_MODULES do
         local m = SUITE_MODULES[i]
-        local y = first_y - (i - 1) * st.status_row_h
+        local y = first_y - (i - 1) * st.row_h
         local text = m.state()
         local col  = state_color(text)
 
         glColor4f(col[1], col[2], col[3], 1.0)
         glRectf(x + pad, y - 1, x + pad + 5, y + 8)
-        draw_string(x + pad + 11, y, m.label, st.label[1], st.label[2], st.label[3])
-        draw_text_right(x + w - pad, y, text, col[1], col[2], col[3])
+        suite_text(x + pad + 11, y, m.label, 12, st.label)
+        suite_text_right(x + w - pad, y, text, 12, col)
 
         status_rects[#status_rects + 1] = {
             key = m.key,
             x0 = x, x1 = x + w,
-            y0 = y - 3, y1 = y + st.status_row_h - 3,
+            y0 = y - 4, y1 = y + st.row_h - 4,
         }
     end
+
+    panel_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
+    panel_footer_rect = draw_footer_button(x, bottom, w, "HIDE PANEL")
 end
 
 function citationx_overlay()
@@ -1274,26 +1573,24 @@ function citationx_overlay()
         local box_h = 44 + (#rows + 2) * 18
         glColor4f(st.learn_bg[1], st.learn_bg[2], st.learn_bg[3], st.learn_bg[4])
         glRectf(box_x, box_y, box_x + box_w, box_y + box_h)
-        draw_string(box_x + 10, box_y + box_h - 20, "AXIS MONITOR",
-            st.learn[1], st.learn[2], st.learn[3])
+        suite_text(box_x + 10, box_y + box_h - 20, "AXIS MONITOR", 10, st.learn)
         local ry = box_y + box_h - 42
         for _, a in ipairs(rows) do
             local live = (a.idx == stick_hdg_live_axis)
             local r, g, b = st.label[1], st.label[2], st.label[3]
             if live then r, g, b = st.ok[1], st.ok[2], st.ok[3] end
-            draw_string(box_x + 10, ry, string.format("AX%3d", a.idx), r, g, b)
-            draw_string(box_x + 48, ry, fit_text(axis_assign_name(a.assign), 90), r, g, b)
+            suite_text(box_x + 10, ry, string.format("AX%3d", a.idx), 12, { r, g, b })
+            suite_text(box_x + 48, ry, fit_text(axis_assign_name(a.assign), 90), 12, { r, g, b })
             local cx = box_x + 190
             glColor4f(st.dim[1], st.dim[2], st.dim[3], 1.0)
             glRectf(cx - 40, ry + 2, cx + 40, ry + 5)
             glColor4f(r, g, b, 1.0)
             glRectf(cx, ry + 1, cx + a.c * 40, ry + 7)
-            draw_string(box_x + 238, ry, string.format("%+.2f", a.c), r, g, b)
+            suite_text(box_x + 238, ry, string.format("%+.2f", a.c), 12, { r, g, b })
             ry = ry - 18
         end
-        draw_string(box_x + 10, ry, "Push the right stick; triggers (L2/R2) are ignored.",
-            0.60, 0.80, 0.90)
-        draw_string(box_x + 10, ry - 18, "Green = locked heading-knob axis.", 0.60, 0.80, 0.90)
+        suite_text(box_x + 10, ry, "Push the right stick; triggers (L2/R2) are ignored.", 10, st.sub)
+        suite_text(box_x + 10, ry - 18, "Green = locked heading-knob axis.", 10, st.sub)
     end
 
     if toast_text and (citationx_sim_time or 0.0) < toast_until then
@@ -1302,12 +1599,11 @@ function citationx_overlay()
         local box_w  = text_w + 32
         local box_x  = (screen_w - box_w) / 2
         local box_y  = screen_h - 96
-        glColor4f(0.02, 0.06, 0.09, 0.85)
+        glColor4f(0.00, 0.00, 0.00, 0.92)
         glRectf(box_x, box_y - 8, box_x + box_w, box_y + 22)
         glColor4f(SUITE_STYLE.accent[1], SUITE_STYLE.accent[2], SUITE_STYLE.accent[3], 1.0)
         glRectf(box_x, box_y - 8, box_x + 4, box_y + 22)
-        draw_string(box_x + 16, box_y + 3, toast_text,
-            SUITE_STYLE.value[1], SUITE_STYLE.value[2], SUITE_STYLE.value[3])
+        suite_text(box_x + 16, box_y + 3, toast_text, 12, SUITE_STYLE.value)
     end
 
     if CONFIG.input_learn_mode then

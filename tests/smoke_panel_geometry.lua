@@ -86,8 +86,8 @@ function read_preferences() end
 _G.imgui = setmetatable({}, { __index = function() return function() return false end end })
 
 -- optional modules
-_G.CAB_CONFIG = { panel_enabled = true, panel_w = 360, panel_bottom = 60, row_h = 22, pax_total = 12 }
-_G.TRAINER_CONFIG = { panel_enabled = true, panel_x = 28, panel_y = 60, panel_w = 460, row_h = 22 }
+_G.CAB_CONFIG = { panel_enabled = true, panel_w = 430, row_h = 21, pax_total = 12 }
+_G.TRAINER_CONFIG = { panel_enabled = true, panel_x = 24, panel_w = 430, row_h = 21 }
 _G.CABV = nil
 
 --------------------------------------------------------------- assertions ----
@@ -187,7 +187,8 @@ print("== CitationX_MasterSuite.lua ==")
 do
   local chunk = assert(loadfile("Scripts/CitationX_MasterSuite.lua"))
   chunk()
-  CONFIG.status_enabled = true -- hidden by default now; layout test only
+  -- The hub is visible at load, next to the realism panel.
+  check(CONFIG.status_enabled == true, "control panel is visible at load")
 
   reset()
   citationx_overlay()
@@ -196,6 +197,25 @@ do
   assert_on_screen("control panel", nil)
   assert_row_spacing("control panel")
   assert_text_inside_panel("control panel")
+
+  -- Drag the header and confirm the panel follows the mouse.
+  local st = SUITE_STYLE
+  local x0, top0 = st.x, st.top
+  MOUSE_STATUS = "down"
+  MOUSE_X, MOUSE_Y = x0 + 20, top0 - 10
+  RESUME_MOUSE_CLICK = false
+  citationx_mouse_click()
+  check(RESUME_MOUSE_CLICK == true, "header press starts a drag")
+  MOUSE_STATUS = "drag"
+  MOUSE_X, MOUSE_Y = x0 + 20 - 120, top0 - 10 - 70
+  citationx_mouse_click()
+  check(math.abs(st.x - (x0 - 120)) < 1 and math.abs(st.top - (top0 - 70)) < 1,
+    "panel follows the mouse while dragging",
+    string.format("%.0f/%.0f vs %.0f/%.0f", st.x, st.top, x0 - 120, top0 - 70))
+  MOUSE_STATUS = "up"
+  citationx_mouse_click()
+  check(st.x == x0 - 120, "drag position is kept after release")
+  st.x, st.top = x0, top0
 
   -- The control panel is the suite's only surface. With it switched off the
   -- overlay must draw nothing at all (no telemetry HUD, no systems readback).
@@ -206,13 +226,13 @@ do
   CONFIG.status_enabled = true
 
   -- Behaviour-level click test: sweep the panel vertically and confirm each
-  -- click hits at most one row and actually toggles something.
-  local hs = SUITE_STYLE
+  -- click hits at most one row and actually toggles something. The HIDE footer
+  -- is excluded here; it is checked separately.
   local hit_count = 0
   local errors = 0
   for y = 40, screen_h - 40, 4 do
     MOUSE_STATUS = "down"
-    MOUSE_X = hs.x + hs.width / 2
+    MOUSE_X = st.x + st.width / 2
     MOUSE_Y = y
     RESUME_MOUSE_CLICK = false
     local ok = pcall(citationx_mouse_click)
@@ -220,6 +240,8 @@ do
     if RESUME_MOUSE_CLICK then
       hit_count = hit_count + 1
     end
+    -- a row hit may toggle the panel itself off; keep sweeping
+    CONFIG.status_enabled = true
     MOUSE_STATUS = "up"
   end
   check(errors == 0, "click sweep over the control panel never errors", errors .. " error(s)")
@@ -233,6 +255,20 @@ do
   pcall(citationx_mouse_click)
   check(RESUME_MOUSE_CLICK == false, "click outside the panel is not consumed")
   MOUSE_STATUS = "up"
+
+  -- HIDE button closes the hub
+  reset()
+  citationx_overlay()
+  CONFIG.status_enabled = true
+  reset()
+  citationx_overlay()
+  MOUSE_X = st.x + st.width / 2
+  MOUSE_Y = st.top - (34 + 20 + 16 + #SUITE_MODULES * st.row_h + 34 + 8) + 20
+  MOUSE_STATUS = "down"
+  RESUME_MOUSE_CLICK = false
+  citationx_mouse_click()
+  check(CONFIG.status_enabled == false, "HIDE PANEL footer button closes the hub")
+  CONFIG.status_enabled = true
 end
 
 --------------------------------------------------------------- CabinOps ----
@@ -241,7 +277,7 @@ do
   CAB_CONFIG = nil
   local chunk = assert(loadfile("Scripts/CitationX_CabinOps.lua"))
   chunk()
-  cab_toggle_panel(true)       -- hidden by default now
+  cab_toggle_panel(true)       -- hidden at load; the hub opens it
 
   reset()
   cab_draw()
@@ -250,13 +286,31 @@ do
   assert_row_spacing("cabin")
   assert_text_inside_panel("cabin")
 
+  -- header drag
+  local cx0, ctop0 = CAB_CONFIG.panel_x, CAB_CONFIG.panel_top
+  MOUSE_STATUS = "down"
+  MOUSE_X, MOUSE_Y = cx0 + 20, ctop0 - 10
+  RESUME_MOUSE_CLICK = false
+  cab_mouse_click()
+  check(RESUME_MOUSE_CLICK == true, "cabin header press starts a drag")
+  MOUSE_STATUS = "drag"
+  MOUSE_X, MOUSE_Y = cx0 + 20 - 80, ctop0 - 10 - 60
+  cab_mouse_click()
+  check(math.abs(CAB_CONFIG.panel_x - (cx0 - 80)) < 1
+    and math.abs(CAB_CONFIG.panel_top - (ctop0 - 60)) < 1,
+    "cabin panel follows the mouse while dragging")
+  MOUSE_STATUS = "up"
+  cab_mouse_click()
+  CAB_CONFIG.panel_x, CAB_CONFIG.panel_top = cx0, ctop0
+
   -- behaviour-level: clicking inside the panel is consumed, outside is not
   local hit = 0
-  for y = CAB_CONFIG.panel_bottom, CAB_CONFIG.panel_bottom + 260, 6 do
-    MOUSE_STATUS = "down"; MOUSE_X = screen_w - 60; MOUSE_Y = y
+  for y = ctop0 - 260, ctop0, 6 do
+    MOUSE_STATUS = "down"; MOUSE_X = cx0 + 60; MOUSE_Y = y
     RESUME_MOUSE_CLICK = false
     pcall(cab_mouse_click)
     if RESUME_MOUSE_CLICK then hit = hit + 1 end
+    CAB_CONFIG.panel_enabled = true
     MOUSE_STATUS = "up"
   end
   check(hit > 0, "cabin panel consumes clicks on its rows", hit .. " hit(s)")
@@ -268,7 +322,7 @@ do
   TRAINER_CONFIG = nil
   local chunk = assert(loadfile("Scripts/CitationX_FailureTrainer.lua"))
   chunk()
-  qrh_toggle_panel(true)       -- hidden by default now
+  qrh_toggle_panel(true)       -- hidden at load; the hub opens it
 
   reset()
   qrh_draw()
@@ -277,15 +331,44 @@ do
   assert_row_spacing("qrh")
   assert_text_inside_panel("qrh")
 
+  local qx0, qtop0 = TRAINER_CONFIG.panel_x, TRAINER_CONFIG.panel_top
+  MOUSE_STATUS = "down"
+  MOUSE_X, MOUSE_Y = qx0 + 20, qtop0 - 10
+  RESUME_MOUSE_CLICK = false
+  qrh_mouse_click()
+  check(RESUME_MOUSE_CLICK == true, "QRH header press starts a drag")
+  MOUSE_STATUS = "drag"
+  MOUSE_X, MOUSE_Y = qx0 + 20 + 120, qtop0 - 10 - 60
+  qrh_mouse_click()
+  check(math.abs(TRAINER_CONFIG.panel_x - (qx0 + 120)) < 1
+    and math.abs(TRAINER_CONFIG.panel_top - (qtop0 - 60)) < 1,
+    "QRH panel follows the mouse while dragging")
+  MOUSE_STATUS = "up"
+  qrh_mouse_click()
+  TRAINER_CONFIG.panel_x, TRAINER_CONFIG.panel_top = qx0, qtop0
+
   local hit = 0
-  for y = TRAINER_CONFIG.panel_y, TRAINER_CONFIG.panel_y + 300, 6 do
-    MOUSE_STATUS = "down"; MOUSE_X = TRAINER_CONFIG.panel_x + 40; MOUSE_Y = y
+  for y = qtop0 - 300, qtop0, 6 do
+    MOUSE_STATUS = "down"; MOUSE_X = qx0 + 40; MOUSE_Y = y
     RESUME_MOUSE_CLICK = false
     pcall(qrh_mouse_click)
     if RESUME_MOUSE_CLICK then hit = hit + 1 end
+    TRAINER_CONFIG.panel_enabled = true
     MOUSE_STATUS = "up"
   end
   check(hit > 0, "QRH panel consumes clicks on its rows", hit .. " hit(s)")
+
+  -- active procedure: long step labels must still fit the narrower panel
+  TRAINER_CONFIG.require_c750 = false
+  qrh_inject_by_key("engine_fire_l")
+  reset()
+  qrh_draw()
+  check(#drawn > 10, "active QRH procedure draws content", #drawn)
+  assert_on_screen("qrh-active", nil)
+  assert_row_spacing("qrh-active")
+  assert_text_inside_panel("qrh-active")
+  qrh_clear()
+  TRAINER_CONFIG.require_c750 = true
 end
 
 --------------------------------------------------------------------- EFB ----
@@ -296,12 +379,30 @@ do
   chunk()
 
   reset()
-  efb_toggle_panel(true)   -- the script now loads with the panel hidden
+  efb_toggle_panel(true)   -- the script loads with the panel hidden
   efb_draw()
   check(#drawn > 20, "EFB panel draws content", #drawn)
   assert_on_screen("efb", nil)
   assert_row_spacing("efb")
   assert_text_inside_panel("efb")
+
+  local ex0, etop0 = EFB_CONFIG.panel_x, EFB_CONFIG.panel_top
+  MOUSE_STATUS = "down"
+  MOUSE_X, MOUSE_Y = ex0 + 20, etop0 - 10
+  RESUME_MOUSE_CLICK = false
+  efb_mouse_click()
+  check(RESUME_MOUSE_CLICK == true, "EFB header press starts a drag")
+  MOUSE_STATUS = "drag"
+  MOUSE_X, MOUSE_Y = ex0 + 20 - 100, etop0 - 10 - 50
+  efb_mouse_click()
+  check(math.abs(EFB_CONFIG.panel_x - (ex0 - 100)) < 1
+    and math.abs(EFB_CONFIG.panel_top - (etop0 - 50)) < 1,
+    "EFB panel follows the mouse while dragging")
+  MOUSE_STATUS = "up"
+  efb_mouse_click()
+  EFB_CONFIG.panel_x, EFB_CONFIG.panel_top = ex0, etop0
+  reset()
+  efb_draw()
 
   -- every page must render without leaving the screen
   for _, page in ipairs({ 2, 3, 1 }) do
@@ -313,12 +414,12 @@ do
     assert_text_inside_panel("efb-page-" .. page)
   end
 
-  -- bottom-centre panel must not collide with the bottom-left QRH or the
-  -- bottom-right cabin panel
-  local x1 = (screen_w - EFB_CONFIG.panel_w) / 2
+  -- default positions must not collide: hub + realism top-left, QRH left,
+  -- EFB centre, cabin right
+  local x1 = EFB_CONFIG.panel_x
   local x2 = x1 + EFB_CONFIG.panel_w
   local qrh_right = TRAINER_CONFIG.panel_x + TRAINER_CONFIG.panel_w
-  local cab_left = screen_w - CAB_CONFIG.panel_w - 20
+  local cab_left = CAB_CONFIG.panel_x
   check(x1 > qrh_right, "EFB clears the QRH panel", string.format("%.0f > %d", x1, qrh_right))
   check(x2 < cab_left, "EFB clears the cabin panel", string.format("%.0f < %d", x2, cab_left))
 end
@@ -334,6 +435,22 @@ do
   assert_on_screen("realism", nil)
   assert_row_spacing("realism")
   assert_text_inside_panel("realism")
+
+  local rx0, rtop0 = REAL_STYLE.x, REAL_STYLE.y
+  MOUSE_STATUS = "down"
+  MOUSE_X, MOUSE_Y = rx0 + 20, rtop0 - 10
+  RESUME_MOUSE_CLICK = false
+  real_mouse_click()
+  check(RESUME_MOUSE_CLICK == true, "realism header press starts a drag")
+  MOUSE_STATUS = "drag"
+  MOUSE_X, MOUSE_Y = rx0 + 20 + 80, rtop0 - 10 - 50
+  real_mouse_click()
+  check(math.abs(REAL_STYLE.x - (rx0 + 80)) < 1
+    and math.abs(REAL_STYLE.y - (rtop0 - 50)) < 1,
+    "realism panel follows the mouse while dragging")
+  MOUSE_STATUS = "up"
+  real_mouse_click()
+  REAL_STYLE.x, REAL_STYLE.y = rx0, rtop0
 
   -- the panel must survive a small screen too
   SCREEN_WIDTH, SCREEN_HIGHT = 1280, 720

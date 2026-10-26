@@ -15,13 +15,14 @@ local defaults = {
     yoke_pitch_ratio = 0, yoke_roll_ratio = 0,
     ovr_joystick_pitch = 0, ovr_joystick_roll = 0,
     alt_sel_ft = 10000, alt_legacy_ft = 10000, hdg_sel_deg = 180,
+    view_panel_type = 2,   -- 3-D cockpit lit: the look tests run there
 }
 
 function dataref(name, path, access, index)
     _G[name] = defaults[name] or 0
 end
 
-local axis_values, axis_assign, button_assign
+local axis_values, axis_assign, button_assign, button_values
 function dataref_table(path)
     local t = setmetatable({}, { __index = function() return 0 end })
     if path == "sim/joystick/joystick_axis_values" then
@@ -30,6 +31,8 @@ function dataref_table(path)
         axis_assign = t
     elseif path == "sim/joystick/joystick_button_assignments" then
         button_assign = t
+    elseif path == "sim/joystick/joystick_button_values" then
+        button_values = t
     end
     return t
 end
@@ -45,6 +48,7 @@ end
 
 function create_command() end
 function add_macro() end
+function command_once() end
 function do_every_frame() end
 function do_every_draw() end
 function do_on_exit() end
@@ -192,5 +196,80 @@ local panel_before = CONFIG.status_enabled
 JOY_BINDINGS[8].action()
 check("bound action actually runs", CONFIG.status_enabled ~= panel_before)
 CONFIG.status_enabled = panel_before
+
+-- 9. R3 + right stick looks around the 3-D cockpit ----------------------------
+-- By now the right stick is locked to axis 27 (heading knob). Holding R3 must
+-- take it over: same stick pans the head, the heading bug stays put.
+axis_values[27], axis_values[28] = 0.5, 0.5
+frame(40)
+local hdg_before_look = hdg_sel_deg
+local psi0, the0 = view_head_psi, view_head_the
+button_values[11] = 1
+axis_values[27] = 0.9
+frame(41)
+check("R3 + stick yaws the 3-D cockpit view", view_head_psi ~= psi0,
+    view_head_psi)
+check("R3 suppresses the heading knob", hdg_sel_deg == hdg_before_look,
+    delta(hdg_sel_deg, hdg_before_look))
+
+axis_values[27] = 0.5
+axis_values[28] = 0.1                              -- stick pushed up
+frame(42)
+check("R3 + stick up pitches the view up", view_head_the > the0, view_head_the)
+
+axis_values[28] = 0.5
+button_values[11] = 0
+frame(43)
+axis_values[27] = 0.9
+local hdg_after_look = hdg_sel_deg
+frame(44)
+check("heading knob resumes after R3 is released",
+    delta(hdg_sel_deg, hdg_after_look) > 10,
+    delta(hdg_sel_deg, hdg_after_look))
+
+-- centring the stick while R3 is held must not drift the view
+button_values[11] = 1
+axis_values[27], axis_values[28] = 0.5, 0.5
+frame(45)
+local psi_hold, the_hold = view_head_psi, view_head_the
+frame(46)
+check("R3 at stick centre holds the view",
+    view_head_psi == psi_hold and view_head_the == the_hold)
+button_values[11] = 0
+frame(47)
+
+-- releasing R3 while the stick is still deflected must not hand the stick back
+-- to the heading bug until it re-centres
+button_values[11] = 1
+axis_values[27], axis_values[28] = 0.5, 0.5
+frame(48)
+axis_values[27] = 0.9
+frame(49)
+local hdg_latched = hdg_sel_deg
+button_values[11] = 0
+frame(50)
+check("heading knob waits for the stick to centre after R3",
+    hdg_sel_deg == hdg_latched, delta(hdg_sel_deg, hdg_latched))
+axis_values[27] = 0.5
+frame(51)
+axis_values[27] = 0.9
+local hdg_recentre = hdg_sel_deg
+frame(52)
+check("heading knob resumes after the stick re-centres",
+    delta(hdg_sel_deg, hdg_recentre) > 10,
+    delta(hdg_sel_deg, hdg_recentre))
+
+-- in a 2-D view the head offsets must not be written (R3 asks X-Plane for the
+-- 3-D cockpit first; the pan starts on a later frame)
+view_panel_type = 0
+button_values[11] = 1
+axis_values[27], axis_values[28] = 0.9, 0.5
+local psi_2d = view_head_psi
+frame(53)
+check("2-D view: no head-offset writes", view_head_psi == psi_2d, view_head_psi)
+button_values[11] = 0
+axis_values[27] = 0.5
+view_panel_type = 2
+frame(54)
 
 print("\nALL MASTERSUITE STICK TESTS PASSED")

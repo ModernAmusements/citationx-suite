@@ -7,7 +7,7 @@ standalone landing-performance scorer.
 
 | File | Purpose |
 | --- | --- |
-| `Scripts/CitationX_MasterSuite.lua` | 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored), free-controller-button autobind (only buttons X-Plane reports unassigned), simulated bleed-air/pressurization emergency, and the control panel that toggles every suite subsystem. No telemetry HUD. |
+| `Scripts/CitationX_MasterSuite.lua` | 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored), 3-D cockpit look on right-stick click (R3) + right-stick movement, free-controller-button autobind (only buttons X-Plane reports unassigned), simulated bleed-air/pressurization emergency, and the draggable control panel that toggles every suite subsystem. No telemetry HUD. |
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
 | `Scripts/CitationX_EFB.lua` | Electronic flight bag panel: PERF (density altitude, wind components, V1/VR/V2/Vref, takeoff and landing distance by runway condition), CHECK (interactive 8-phase checklists) and FUEL (trip/contingency/alternate/reserve/endurance). Advisory data only. |
@@ -16,16 +16,19 @@ standalone landing-performance scorer.
 
 ## Control panel
 
-**Only the realism panel is on screen at load; every MasterSuite drawing module starts OFF.
-The keyboard input layer and the DS4 right-stick heading knob stay ON** because they are the
-controls the user flies with and draw nothing. The realism pack itself paints its
-own black Helvetica panel at the top-left
-(`CitationXRealism/hud` hides it). Open any other panel from the FlyWithLua macro menu or the
-commands below; the suite control panel is `CitationX Suite: control panel`
-(`CitationXSuite/toggle_status`). Two macros flip the whole suite:
-`CitationX Suite: enable all modules` / `disable all modules`.
+**Two panels are on screen at load: the black realism panel and the Master Suite hub.**
+The keyboard input layer, the DS4 right-stick heading knob and the R3 cockpit-look modifier
+stay ON because they are the controls the user flies with and draw nothing. Every other panel
+starts hidden and is opened from a hub row, the FlyWithLua macro menu or the commands below.
+Two macros flip the whole suite: `CitationX Suite: enable all modules` /
+`disable all modules`.
 
-The left-hand panel lists every subsystem with a live state. Click a row to toggle it.
+All five panels share the realism panel's language: black body, grey 1 px border, white
+Helvetica 18 title, grey 10 px sub-header, 12 px rows, 21 px row pitch and a 34 px footer with
+a **HIDE PANEL** button. **Drag any panel by its header** to move it; the position is kept for
+the session. The hub and the realism panel start side by side at the top-left.
+
+The hub lists every subsystem with a live state. Click a row to toggle it.
 The same toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as
 FlyWithLua macro menu entries.
 
@@ -44,6 +47,7 @@ nothing. The realism pack's own black panel is separate and is described above.
 | LEARN MODE | `learn` | Input probe overlay |
 | STICK HDG KNOB | `stick` | Heading bug on the right stick |
 | AXIS MONITOR | `axmon` | Raw axis overlay |
+| COCKPIT LOOK | `look` | R3 + right stick 3-D cockpit look |
 | CABIN OPS | `cabin` | `CitationX_CabinOps` panel |
 | QRH TRAINER | `qrh` | `CitationX_FailureTrainer` panel |
 | LANDING PERF | `landperf` | `LandingPerformance` result card |
@@ -52,6 +56,16 @@ nothing. The realism pack's own black panel is separate and is described above.
 
 The sibling rows are nil-guarded: if that script is not installed the row shows
 `ABSENT` and clicking it does nothing.
+
+### 3-D cockpit look
+
+Hold the right stick click (DS4 **R3**, button 11) and move the right stick: the view pans in
+the 3-D cockpit, and pressing R3 from a 2-D view switches to the 3-D cockpit first. While R3 is
+held the stick does **not** move the heading bug; release it and the knob resumes exactly where
+it was. The look axes are auto-detected as the spring-centred pair the stick belongs to
+(DS4 raw 2/3); pin them with `view_pan_axis_x` / `view_pan_axis_y` if your pad differs.
+`view_pan_button` selects a different button, and `view_pan_invert_x` / `view_pan_invert_y`
+flip the direction. R3 is excluded from free-button autobind.
 
 ## Requirements
 
@@ -67,18 +81,24 @@ Copy the `Scripts/CitationX_*.lua` files into:
 X-Plane 12/Resources/plugins/FlyWithLua/Scripts/
 ```
 
-Then reload the scripts from the FlyWithLua menu (*Reload all Lua script files*). This
+Then **restart X-Plane** (or reload the scripts from the FlyWithLua menu). This
 repository is designed to live directly inside that folder: git tracks only the first-party
 suite, while the rest of the FlyWithLua install (binaries, Modules, Internals, Documentation)
 stays untracked via `.gitignore`.
+
+> **FlyWithLua 2.8.16 and older:** *Reload all Lua script files* can crash X-Plane while it
+> tears down the realism pack's FMOD sounds. This install is on **2.8.20** (2026-10-23), which
+> contains the upstream fix; if you ever roll the plugin back, quit and restart the sim after
+> changing scripts instead of reloading.
 
 ## Configuration
 
 - `CitationX_MasterSuite.lua` — `CONFIG` table: flight recorder, axis optimizer,
   emergency generator, input mapper, `joy_autobind_enabled` / `joy_map_enabled` (the
-  free-controller-button map) and the right-stick heading knob
-  (`stick_hdg_*`, including `stick_hdg_exclude_axes` and a fixed `stick_hdg_axis` pin).
-  Panel layout lives in `SUITE_STYLE` (`status_row_h` and the panel geometry).
+  free-controller-button map), the right-stick heading knob
+  (`stick_hdg_*`, including `stick_hdg_exclude_axes` and a fixed `stick_hdg_axis` pin) and
+  the 3-D cockpit look (`view_pan_*`: button, axis pair, rate, inversion, 3-D switch).
+  Panel layout lives in `SUITE_STYLE` (`row_h`, `header_h`, `footer_h`, `pad`, `x`/`top`).
 - `CitationX_CabinOps.lua` — `CAB_CONFIG` (`row_h` controls row spacing).
 - `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG` (`row_h` controls row spacing).
 - `CitationX_Realism.lua` — `REAL_CONFIG`: callout speeds (V1/Vr/Vref/Vfe/Vle), Vmo/Mmo,
@@ -96,8 +116,9 @@ stays untracked via `.gitignore`.
 CitationXSuite/toggle_status
 CitationXSuite/toggle_axis     CitationXSuite/toggle_log      CitationXSuite/toggle_emerg
 CitationXSuite/toggle_input    CitationXSuite/toggle_learn    CitationXSuite/toggle_stick
-CitationXSuite/toggle_axmon    CitationXSuite/toggle_cabin    CitationXSuite/toggle_qrh
-CitationXSuite/toggle_landperf CitationXSuite/toggle_efb    CitationXSuite/toggle_realism
+CitationXSuite/toggle_axmon    CitationXSuite/toggle_look     CitationXSuite/toggle_cabin
+CitationXSuite/toggle_qrh      CitationXSuite/toggle_landperf CitationXSuite/toggle_efb
+CitationXSuite/toggle_realism
 
 CitationXQRH/*                 CabinOps/*                    CitationXRealism/*
 ```

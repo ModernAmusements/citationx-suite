@@ -21,10 +21,11 @@
 -- ============================================================================
 
 CAB_CONFIG = {
-    panel_enabled    = false,   -- hidden at load; macro "Cabin Ops: toggle panel" shows it
-    panel_w          = 360,
-    panel_bottom     = 60,     -- panel sits bottom-right
-    row_h            = 22,
+    panel_enabled    = false,   -- hidden at load; the Master Suite hub opens it
+    panel_w          = 430,
+    panel_x          = nil,    -- nil = top-right on first draw; drag writes here
+    panel_top        = nil,    -- absolute top edge (bottom-left origin)
+    row_h            = 21,
     pax_total        = 8,      -- passengers (C750 cabin is 8-12 typical)
     boarding_seconds = 150,    -- real seconds from START to boarding complete
     require_c750     = true,   -- only run the flow when flying the C750
@@ -32,15 +33,25 @@ CAB_CONFIG = {
     ground_reset_s   = 20,     -- engines idle on ground this long -> STANDBY
 }
 
+-- Same black / Helvetica language as the realism panel.
 CS = {
-    bg        = {0.02, 0.05, 0.08, 0.62},
-    header_bg = {0.03, 0.15, 0.21, 0.90},
-    accent    = {0.22, 0.85, 1.00},
-    label     = {0.42, 0.62, 0.70},
-    value     = {0.93, 0.97, 1.00},
-    ok        = {0.32, 0.95, 0.55},
-    warn      = {1.00, 0.66, 0.12},
-    dim       = {0.30, 0.37, 0.42},
+    bg        = {0.00, 0.00, 0.00, 0.90},
+    header_bg = {0.04, 0.04, 0.04, 0.96},
+    border    = {0.32, 0.32, 0.32, 1.00},
+    title     = {1.00, 1.00, 1.00, 1.00},
+    sub       = {0.55, 0.55, 0.55, 1.00},
+    label     = {0.80, 0.80, 0.80, 1.00},
+    value     = {1.00, 1.00, 1.00, 1.00},
+    dim       = {0.45, 0.45, 0.45, 1.00},
+    ok        = {0.45, 0.85, 0.50, 1.00},
+    warn      = {0.95, 0.72, 0.25, 1.00},
+    bad       = {0.95, 0.36, 0.32, 1.00},
+    btn       = {0.10, 0.10, 0.10, 1.00},
+    -- legacy aliases used by the existing drawing code
+    accent    = {1.00, 1.00, 1.00, 1.00},
+    header_h  = 34,
+    footer_h  = 34,
+    pad       = 14,
 }
 
 -- --------------------------------------------------------------- DATAREFS ---
@@ -283,16 +294,26 @@ end
 
 -- ------------------------------------------------------------- DRAWING -----
 local function bar(x, y0, y1, w, color, alpha)
-    glColor4f(color[1], color[2], color[3], alpha or 1.0)
+    glColor4f(color[1], color[2], color[3], alpha or color[4] or 1.0)
     glRectf(x, y0, x + w, y1)
 end
 
-local function txt(x, y, text, color)
-    draw_string(x, y, text, color[1], color[2], color[3])
+local function cab_font(size)
+    if size == 18 then return draw_string_Helvetica_18 or draw_string end
+    if size == 10 then return draw_string_Helvetica_10 or draw_string end
+    return draw_string_Helvetica_12 or draw_string
 end
 
-local function txt_right(right_x, y, text, color)
-    draw_string(right_x - measure_string(text), y, text, color[1], color[2], color[3])
+local function txt(x, y, text, color, size)
+    glColor4f(color[1], color[2], color[3], color[4] or 1.0)
+    cab_font(size or 12)(x, y, tostring(text or ""))
+end
+
+local function txt_right(right_x, y, text, color, size)
+    local s = tostring(text or "")
+    local sz = size or 12
+    local tw = measure_string(s, "Helvetica_" .. tostring(sz)) or measure_string(s)
+    txt(right_x - tw, y, s, color, sz)
 end
 
 local function state_word(v)
@@ -300,56 +321,30 @@ local function state_word(v)
     return "OFF", CS.dim
 end
 
+local cab_header_rect = nil
+local cab_footer_rect = nil
+local cab_drag = { active = false, dx = 0, dy = 0 }
+
 function cab_draw()
-    if not CAB_CONFIG.panel_enabled then return end
+    if not CAB_CONFIG.panel_enabled then
+        cab_drag.active = false
+        return
+    end
     cb_rows = {}
 
     local cfg = CAB_CONFIG
+    local st  = CS
     local w   = cfg.panel_w
     local rh  = cfg.row_h
     local sw  = SCREEN_WIDTH or 1920
-    local x   = sw - w - 20
-    local bottom = cfg.panel_bottom
+    local sh  = SCREEN_HIGHT or 1080
 
-    local h = 24 + 42 + 7 * rh + 16
-    local top = bottom + h
-
-    XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0)
-
-    bar(x, bottom, top, w, CS.bg, 0.75)
-    bar(x, top - 24, top, w, CS.header_bg, 0.92)
-    bar(x, top - 2, top, w, CS.accent)
-    txt(x + 10, top - 17, "CABIN & GROUND OPS", CS.accent)
-    txt_right(x + w - 10, top - 17, PHASE_NAME[phase + 1],
-        phase == PHASE_STANDBY and CS.dim or CS.ok)
-
-    local y = top - 24
-
-    -- pax progress
-    txt(x + 10, y - 13, string.format("PAX  %d / %d",
-        math.floor(pax_boarded + 0.5), cfg.pax_total), CS.value)
-    if phase == PHASE_DEPARTED then
-        txt_right(x + w - 10, y - 13, "ALL ABOARD", CS.ok)
-    elseif phase == PHASE_PREP then
-        txt_right(x + w - 10, y - 13, "PREFLIGHT", CS.warn)
-    else
-        txt_right(x + w - 10, y - 13,
-            string.format("%d%%", math.floor(100 * pax_boarded / cfg.pax_total + 0.5)),
-            CS.accent)
-    end
-    -- progress bar
-    local pbx, pby, pbw = x + 10, y - 28, w - 20
-    bar(pbx, pby, pby + 8, pbw, {0.05, 0.10, 0.14}, 0.9)
-    local frac = pax_boarded / cfg.pax_total
-    if frac > 0 then bar(pbx, pby, pby + 8, pbw * frac, CS.accent, 0.95) end
-    y = y - 44
-
-    -- status / action rows
+    -- status / action rows (built first: the panel height follows the content)
     local rows = {}
     if phase == PHASE_STANDBY then
-        rows[#rows + 1] = { "START BOARDING", "start", true }
+        rows[#rows + 1] = { "START BOARDING", "start", true, true }
     elseif phase == PHASE_BOARDING then
-        rows[#rows + 1] = { "SKIP BOARDING", "skip", true }
+        rows[#rows + 1] = { "SKIP BOARDING", "skip", true, true }
     end
     rows[#rows + 1] = { "GROUND POWER (GPU)", "gpu", gpu_requested }
     rows[#rows + 1] = { "CABIN LIGHTS", "cabin", (CBV.cabin_master or 0) > 0.5 }
@@ -361,24 +356,67 @@ function cab_draw()
         rows[#rows + 1] = { "RESET", "reset", false }
     end
 
-    for _, r in ipairs(rows) do
-        local clickable = r[3] ~= nil and r[2] ~= "start" and r[2] ~= "skip"
-        local name, key, on = r[1], r[2], r[3]
-        local col = (on == true) and CS.ok or CS.value
+    local h = st.header_h + 44 + #rows * rh + st.footer_h + 8
 
-        if key == "start" or key == "skip" then
-            bar(x + 8, y - rh + 6, y + 4, w - 16,
-                key == "start" and CS.ok or CS.warn, 0.75)
-            txt(x + 16, y - 16, name, {0.05, 0.05, 0.05})
+    local x = cfg.panel_x or (sw - w - 24)
+    x = math.max(0, math.min(x, sw - w))
+    local top = cfg.panel_top or (sh - 24)
+    top = math.max(h, math.min(top, sh - 4))
+    cfg.panel_x, cfg.panel_top = x, top
+    local bottom = top - h
+
+    XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0)
+
+    -- black shell: body, 1 px border, 34 px header
+    bar(x, bottom, top, w, st.bg)
+    bar(x, top - 1, top, w, st.border)
+    bar(x, bottom, top, 1, st.border)
+    bar(x + w - 1, bottom, top, 1, st.border)
+    bar(x, bottom, bottom + 1, w, st.border)
+    bar(x, top - st.header_h, top, w, st.header_bg)
+    bar(x, top - st.header_h, top - st.header_h + 2, w, st.border)
+    txt(x + st.pad, top - 25, "CABIN / GROUND", st.title, 18)
+    txt_right(x + w - st.pad, top - 22, PHASE_NAME[phase + 1],
+        phase == PHASE_STANDBY and st.dim or st.ok, 10)
+    cab_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
+
+    local y = top - st.header_h
+
+    -- pax progress
+    txt(x + st.pad, y - 15, string.format("PAX  %d / %d",
+        math.floor(pax_boarded + 0.5), cfg.pax_total), st.value)
+    if phase == PHASE_DEPARTED then
+        txt_right(x + w - st.pad, y - 15, "ALL ABOARD", st.ok)
+    elseif phase == PHASE_PREP then
+        txt_right(x + w - st.pad, y - 15, "PREFLIGHT", st.warn)
+    else
+        txt_right(x + w - st.pad, y - 15,
+            string.format("%d%%", math.floor(100 * pax_boarded / cfg.pax_total + 0.5)),
+            st.accent)
+    end
+    local pbx, pby, pbw = x + st.pad, y - 32, w - 2 * st.pad
+    bar(pbx, pby, pby + 8, pbw, {0.05, 0.05, 0.05}, 0.9)
+    local frac = pax_boarded / cfg.pax_total
+    if frac > 0 then bar(pbx, pby, pby + 8, pbw * frac, st.ok, 0.95) end
+    y = y - 44
+
+    for _, r in ipairs(rows) do
+        local name, key, on = r[1], r[2], r[3]
+        local full = r[4]
+
+        if full then
+            bar(x + st.pad, y - rh + 6, y + 4, w - 2 * st.pad,
+                key == "start" and st.ok or st.warn, 0.85)
+            txt(x + st.pad + 8, y - 13, name, {0.05, 0.05, 0.05})
         else
-            glColor4f((on == true) and CS.ok[1] or CS.dim[1],
-                      (on == true) and CS.ok[2] or CS.dim[2],
-                      (on == true) and CS.ok[3] or CS.dim[3], 1.0)
-            glRectf(x + 10, y - 13, x + 16, y - 7)
-            txt(x + 26, y - 16, name, col)
+            glColor4f((on == true) and st.ok[1] or st.dim[1],
+                      (on == true) and st.ok[2] or st.dim[2],
+                      (on == true) and st.ok[3] or st.dim[3], 1.0)
+            glRectf(x + st.pad, y - 12, x + st.pad + 6, y - 6)
+            txt(x + st.pad + 16, y - 12, name, st.label)
             if key ~= "trucks" then
-                txt_right(x + w - 10, y - 16, on == true and "ON" or "OFF",
-                    on == true and CS.ok or CS.dim)
+                txt_right(x + w - st.pad, y - 12, on == true and "ON" or "OFF",
+                    on == true and st.ok or st.dim)
             end
         end
 
@@ -388,13 +426,23 @@ function cab_draw()
         y = y - rh
     end
 
+    -- footer: drag-safe hide button
+    local by0 = bottom + 8
+    local by1 = by0 + st.footer_h - 12
+    bar(x + st.pad, by0, by1, w - 2 * st.pad, st.btn)
+    local label = "HIDE PANEL"
+    local tw = measure_string(label, "Helvetica_10") or measure_string(label)
+    txt(x + (w - tw) / 2, by0 + 6, label, st.value, 10)
+    cab_footer_rect = { x0 = x + st.pad, x1 = x + w - st.pad, y0 = by0, y1 = by1 }
+
     -- toast
     if cb_toast_text and (cab_sim_time or 0) < cb_toast_until then
-        local tw = measure_string(cb_toast_text) + 32
-        local by = bottom - 34
-        bar(x + w - tw, by, by + 24, tw, {0.02, 0.06, 0.09}, 0.85)
-        bar(x + w - tw, by, by + 24, 4, CS.accent)
-        txt(x + w - tw + 16, by + 7, cb_toast_text, CS.value)
+        local tw2 = (measure_string(cb_toast_text, "Helvetica_12")
+            or measure_string(cb_toast_text)) + 32
+        local by = bottom - 30
+        bar(x + w - tw2, by, by + 24, tw2, {0.00, 0.00, 0.00}, 0.92)
+        bar(x + w - tw2, by, by + 24, 4, st.ok)
+        txt(x + w - tw2 + 16, by + 7, cb_toast_text, st.value)
     end
 end
 
@@ -412,8 +460,50 @@ local CAB_ACTIONS = {
 }
 
 function cab_mouse_click()
-    if MOUSE_STATUS ~= "down" then return end
+    if not CAB_CONFIG.panel_enabled then
+        cab_drag.active = false
+        return
+    end
+
     local mx, my = MOUSE_X or -1, MOUSE_Y or -1
+    local cfg = CAB_CONFIG
+    local st  = CS
+
+    if MOUSE_STATUS == "down" then
+        local hr = cab_header_rect
+        if hr and mx >= hr.x0 and mx <= hr.x1 and my >= hr.y0 and my <= hr.y1 then
+            cab_drag.active = true
+            cab_drag.dx = mx - (cfg.panel_x or mx)
+            cab_drag.dy = my - (cfg.panel_top or my)
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    elseif MOUSE_STATUS == "drag" then
+        if cab_drag.active then
+            local sw = SCREEN_WIDTH or 1920
+            local sh = SCREEN_HIGHT or 1080
+            cfg.panel_x = math.max(0, math.min(mx - cab_drag.dx, sw - cfg.panel_w))
+            cfg.panel_top = math.max(120, math.min(my - cab_drag.dy, sh - 4))
+            RESUME_MOUSE_CLICK = true
+        end
+        return
+    elseif MOUSE_STATUS == "up" then
+        if cab_drag.active then
+            cab_drag.active = false
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    end
+
+    if MOUSE_STATUS ~= "down" then return end
+
+    local f = cab_footer_rect
+    if f and mx >= f.x0 and mx <= f.x1 and my >= f.y0 and my <= f.y1 then
+        cab_toggle_panel(false)
+        RESUME_MOUSE_CLICK = true
+        return
+    end
+
     for _, r in ipairs(cb_rows) do
         if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
             RESUME_MOUSE_CLICK = true

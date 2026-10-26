@@ -39,15 +39,15 @@ callouts audible, panel legible, handling curve felt, textures seen.
 
 ```
 syntax ........................ ok
-runtime load (LuaJIT, shared) .. 98 bindings, 0 failures, 0 problems
+runtime load (LuaJIT, shared) .. 104 bindings, 0 failures, 0 problems
 dataref bindings .............. ok (5 suite scripts)
 kpcrew require graph (C750) ... 0 missing
-mastersuite smoke ............. PASSED
-control panel smoke ........... PASSED (13 rows)
+mastersuite smoke ............. PASSED (incl. R3 look)
+control panel smoke ........... PASSED (14 rows)
 realism smoke ................. PASSED (callouts, phases, handling, HUD draw/click)
 realism audio ................. PASSED (FMOD preferred, legacy fallback, toasts wired)
 efb smoke ..................... PASSED
-panel geometry ................ PASSED (47 checks, incl. realism panel at 1280×720)
+panel geometry ................ PASSED (65 checks, incl. drag and active QRH)
 ```
 
 ### The one open item
@@ -373,7 +373,7 @@ FlyWithLua helper script that declares `sim_time` will collide again — keep th
   `Aircraft/Cessna Citation X GTNXi`. It is **Windows-only** (TDS GTNXi plugin; the README
   says so) and its GTN screen stays dead on macOS, while both FMCs are inoperable. Removed
   (Trash) after the user chose the AviTab-only variant.
-- `Aircraft/Cessna Citation X AviTab` was built from a copy of the stock aircraft plus the
+- `Aircraft/Cessna Citation X AviTab_mods` was built from a copy of the stock aircraft plus the
   mod's AviTab layer only: `AviTab.json`, `objects/ipad/*`, `plugins/xlua/scripts/avitab_guard`
   and acf objects 25/26 (`xPad_arm.obj`, `Ipad.obj`, both hidden by `citationx/gtnxi/hide_avitab`).
   The GTN object (obja 27), `TDSGTN.ini`, the GTN bezel meshes and the 14 TDS manipulator blocks
@@ -382,7 +382,8 @@ FlyWithLua helper script that declares `sim_time` will collide again — keep th
   ("minor problem parsing the VRCONFIG") when a `BEGIN_MANIP` has no matching object
   manipulator, so every remaining block was re-checked against the object (56/56 match).
   Those two FMC zoom knobs simply have no VR manipulator any more.
-- `acf/_name` = `Cessna Citation X AviTab`, `acf/_ICAO` stays `C750` so the suite and KPCrew
+- `acf/_name` = `Cessna Citation X AviTab` (renamed to `..._mods` on 2026-10-26, see §26),
+  `acf/_ICAO` stays `C750` so the suite and KPCrew
   treat it like the stock aircraft. Stock `Cessna Citation X` untouched.
 - **AviTab panel rect was wrong and is now fixed.** AviTab's panel coordinates live in a
   **1024×1024 space** (proved from AviTab's own sample: JSON 800×600 ↔ UV 0.781×0.586), but the
@@ -544,7 +545,7 @@ anisotropic filtering on an M1 Max. So the pass was **sharpening**, not upscalin
 - `liveries/plain white/objects/fuselage_wing/fuselage.dds` (DXT5, 4096) — unsharp mask
   `0x1.2+1.0+0.02`. `plain white` is the active livery (`_livery_req 5`).
 - Re-encoded as DXT1/DXT5 with 13 mip levels. Originals preserved in
-  `Aircraft/Cessna Citation X AviTab/_original_textures/` (mirrors the folder structure).
+  `Aircraft/Cessna Citation X AviTab_mods/_original_textures/` (mirrors the folder structure).
 
 **Textures load when the aircraft loads, not when Lua reloads.** A FlyWithLua *Reload all Lua
 script files* will not show them; use Developer → Reload Aircraft or restart X-Plane.
@@ -958,7 +959,7 @@ What was done:
 - **Interior:** copied the high-res assets into the base object tree used by `plain white`:
   `cockpit_overall/cockpit.dds` → **8192² DXT5**, `cabin/cabin.dds` → **8192² DXT5**,
   `cockpit_seat/cockpit_seat.dds` → **4096² DXT5**.
-- **Backups:** `Aircraft/Cessna Citation X AviTab/_texture_backups/2026-10-26_cockpit_highres/`
+- **Backups:** `Aircraft/Cessna Citation X AviTab_mods/_texture_backups/2026-10-26_cockpit_highres/`
   mirrors every replaced path (current sharpened panel, old overall/seat/cabin, all six livery
   panel DDS files).
 
@@ -985,16 +986,134 @@ current install only borrows its detail.
 FlyWithLua's Lua reload. In-sim confirmation of the 8K panel (texture cap, VRAM, label
 readability) is still pending.
 
+## 26. Edited aircraft renamed to `Cessna Citation X AviTab_mods` (2026-10-26)
+
+There are four C750 copies under `Aircraft/`: the stock `Laminar Research/Cessna Citation X`,
+`Laminar Research/Cessna Citation X GTNXi`, `Laminar Research/Cessna Citation X avi`, and the
+one this project actually edits. To make the edit target unmistakable the folder was renamed
+from `Aircraft/Cessna Citation X AviTab` to **`Aircraft/Cessna Citation X AviTab_mods`**, and
+`P acf/_name` in `Cessna_CitationX.acf` was changed to match (`acf/_ICAO` stays `C750`).
+
+- All §16 and §25 work (AviTab rect + guard, 8K/dark cockpit textures, backups) lives in that
+  folder; no file was moved between copies.
+- The stock `Laminar Research/Cessna Citation X` is still the canonical source for
+  `laminar/CitX/...` dataref/command validation, and remains untouched.
+- FlyWithLua scripts are aircraft-agnostic: they live in `Resources/plugins/FlyWithLua` and
+  bind to whichever C750 is loaded, so the rename needs no script change.
+- X-Plane was running with the **stock** Citation X loaded when the rename happened (Log.txt
+  `Loading airplane ... Laminar Research/Cessna Citation X`); the renamed folder is picked up
+  on the next aircraft selection. Stale `_loads_crc32 _AircraftCessnaCitationXAviTab...`
+  bookkeeping in `Output/preferences/Freeflight.prf` is harmless.
+
+## 27. Panel reskin, drag & drop, R3 cockpit look (2026-10-26)
+
+Requested in one pass: every panel should look like the realism panel, be draggable, the load
+state should show only the realism panel plus one hub, and right-stick click + movement should
+pan the 3-D cockpit.
+
+- **One visual language.** `SUITE_STYLE`, `CS`, `EFB_STYLE` and `ST` now carry the realism
+  palette (`bg` 0/0/0 0.90, `header_bg` 0.04, `border` 0.32, white title, 0.55 sub, 0.80
+  label) and 34/21/34/14 geometry (header / row / footer / pad). Titles use
+  `draw_string_Helvetica_18`, sub-headers `_10`, rows `_12`; the old blue glass palette is
+  gone. Every panel draws the same 1 px border, header strip, divider and footer button
+  (**HIDE PANEL**); the realism panel keeps its TEST CALLOUT / HIDE HUD pair.
+- **Drag & drop.** Each script stores its absolute top edge (`panel_top`, realism uses
+  `REAL_STYLE.y`) and handles `MOUSE_STATUS == "drag"` in its own `do_on_mouse_click`
+  callback: press the header, move, release. `MOUSE_STATUS` is `"down"`, `"drag"` or `"up"`
+  in FlyWithLua NG+, so no per-frame polling is needed. Positions are session-only and are
+  clamped to the screen. **Offsets are per script** (`cab_drag`, `efb_drag`, `qrh_drag`,
+  `panel_drag`, `real_drag`) so a missing sibling cannot break another panel.
+- **Load state.** `CONFIG.status_enabled` is now `true`: the realism panel (top-left) and the
+  Master Suite hub (right of it, `SUITE_STYLE.x = 470`) are the only surfaces at load. EFB,
+  cabin, QRH, landing report and axis monitor stay off; the keyboard layer, heading knob and
+  the new look module stay on because they draw nothing.
+- **R3 cockpit look.** Hold the right-stick click (DS4 R3 = 0-based button 11, `view_pan_button`)
+  and move the stick: `sim/graphics/view/pilots_head_psi` / `_the` are integrated at
+  `view_pan_rate_dps` per second, with a deadzone, pitch clamp and per-axis inversion. From a
+  2-D view the press first fires `sim/view/3d_cockpit_cmnd_look`. While R3 is held the heading
+  knob block is skipped, so the same stick cannot move the bug; releasing R3 resumes it. The
+  axis pair is auto-detected from the most-deflected spring-centred axis plus its adjacent
+  hardware partner (DS4 raw 2/3); `view_pan_axis_x/y` pin it. R3 is excluded from
+  `citationx_autobind_joy`, which otherwise would have claimed it for a free-button action.
+  The hub gains a **COCKPIT LOOK** row (`CitationXSuite/toggle_look`).
+- **Tests.** `smoke_panel_geometry.lua` now drags all five panels and checks the new default
+  positions and the active QRH (65 checks); `smoke_mastersuite.lua` proves R3 yaws/pitches, suppresses the heading
+  bug, resumes it on release and holds the view at centre; `smoke_hud_toggles.lua` asserts the
+  new load state and the 14th module.
+- **Not verified in-sim:** the look datarefs are writable per `DataRefs.txt`, but whether
+  X-Plane 12.4.3 lets a plugin hold the head offset while the aircraft is flown has not been
+  seen yet. If the view snaps back, pin `view_pan_axis_x/y` first, then check Log.txt for the
+  `cockpit look axes` line to confirm the button/axis detection.
+
+## 28. Script reload CTD — FlyWithLua 2.8.16 FMOD teardown (2026-10-26)
+
+At 19:53 on 2026-10-26 a `FlyWithLua: User forced a script reload` crashed X-Plane. The log
+ends in `deinitFmodSupport() ... FmodSounds.size = 0` followed by
+`--=={This application has crashed!}==--`, **before any script was loaded again**. The session
+started at 19:30, i.e. it was still running the pre-change scripts; the new panel code was
+never executed in that run. The crash is in the plugin's script-unload path.
+
+- Installed plugin: **FlyWithLua NG+ 2.8.16, build 2026-08-13**.
+- Upstream fixed exactly this class of CTD after that build:
+  - `9d4e68db` (2026-10-20) *Prevent CTD on plugin reload by safely recycling FMOD channel groups*
+  - `be39ff21` (2026-10-21) *Prevent FMOD mixer race on reload by stopping groups and flushing queue*
+- Upstream `master` is **2.8.20 build 2026-10-23** (universal x86_64/arm64, ad-hoc signed) and
+  contains the stop/flush fix in `fmod_uninitialize()` plus a redundant-call guard in
+  `deinitFmodSupport()`.
+- **Resolved on 2026-10-26:** the live plugin was updated to **2.8.20 build 2026-10-23**
+  (`mac_x64/FlyWithLua.xpl`, universal x86_64/arm64), taken from upstream `master` at the
+  commit that carries the FMOD reload fixes. The 2.8.16 binary is kept next to it as
+  `mac_x64/FlyWithLua.xpl.2.8.16.bak` (untracked). File hashes:
+  `0c3c0537…` (2.8.20) vs `5cc54d43…` (2.8.16). Reloading scripts is expected to be safe
+  again; still verify the first reload in-sim.
+- **Workaround if the plugin is ever rolled back:** after editing scripts, quit and restart
+  X-Plane. Do **not** use *Reload all Lua script files* on 2.8.16 while the realism pack has
+  its 22 FMOD callouts loaded. There is no Lua-side workaround: FlyWithLua exposes no
+  `unload_fmod_sound`, and the crash happens inside the plugin's own unload after our
+  `do_on_exit` handlers have run.
+- The cockpit-look writes are additionally gated on `sim/graphics/view/panel_render_type ~= 0`
+  (3-D view), so no head-offset dataref is written from a 2-D panel.
+
+## 29. Dark interior pass, texture gallery, AviTab screen check (2026-10-26)
+
+After the texture gallery the request was **"dark and all"** — the panel was already dark, so the
+three interior atlases were darkened to match it.
+
+- **Files changed:** `objects/cockpit_overall/cockpit.dds`, `objects/cabin/cabin.dds`,
+  `objects/cockpit_seat/cockpit_seat.dds`. RGB ×0.55 (sRGB multiply; alpha untouched), DXT5,
+  mip chains preserved (14 levels at 8192², 13 at 4096²).
+- **Livery copies:** `liveries/Cascade 3/objects/{cockpit_overall,cabin,cockpit_seat}/*.dds` were
+  byte-identical to the base, so the darkened files were copied there too. Other liveries have no
+  interior overrides and inherit the base.
+- **Backup:** `_texture_backups/2026-10-26_dark_interior/` (the light-beige 8K set plus the
+  Cascade 3 duplicates, 384 MB). The pre-8K originals remain in `_texture_backups/2026-10-26_cockpit_highres/`
+  and `_original_textures/`.
+- **Result (mean sRGB):** overall 0.202, cabin 0.189, seat 0.205 — the dark panel is 0.209. Stock
+  was 0.357 / 0.355 / 0.689.
+- **Gallery:** `~/Desktop/CitationX_textures_before_after/index.html` (+ full-page PNG), regenerated
+  with the dark interior. Textures and galleries are outside the repo, so they are not committed.
+- **AviTab digital screen:** the in-cockpit screen is AviTab's panel integration, not a Mac PFD/PDF
+  feature. The 19:30 log loaded the **stock** `Laminar Research/Cessna Citation X`, whose
+  `AviTab.json` still has the old `left 1358` rect, outside the 1024 panel. The mod has
+  `679 / 208 / 344×206`; geometry verified: `TRIS 57651` in `cockpit_panel_interactive.obj` maps
+  to UV 679..1023 × 208..414 of `cockpit_3d/-PANELS-/Panel.png` (1024², byte-identical to stock).
+  AviTab 0.7.1 is universal and loads. **Pending in-sim:** load `Cessna Citation X AviTab_mods`;
+  if the screen is blank, toggle AviTab off/on in Plugin Admin to force `createPanel()`, then
+  consider TeamAvitab 1.1.0 (signature change; back up 0.7.1 first).
+- **Unrelated to the screen:** the dark pass did not touch `-PANELS-/Panel.png`, `Ipad.png` or
+  `xPad_arm.dds`.
+
 ## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
 record these as confirmed working:
 
-- The **visual result** of the 13-row control panel (telemetry body and C750 systems panel
-  removed). Geometry is measured, not assumed (`tests/smoke_panel_geometry.lua`: 47 checks —
-  panels fit the screen, no vertical text collisions, no text overflowing its panel, click sweep
-  reaches every row). What remains unproven is purely aesthetic: whether `status_row_h = 20`
-  reads well and whether the panel still clears the other panels at other resolutions.
+- The **visual result** of the 14-row control panel (telemetry body and C750 systems panel
+  removed). Geometry is measured, not assumed (`tests/smoke_panel_geometry.lua`: 65 checks —
+  panels fit the screen, no vertical text collisions, no text overflowing its panel, drag moves
+  each panel, click sweep reaches every row). What remains unproven is purely aesthetic:
+  whether `row_h = 21` reads well and whether the panels still clear each other at other
+  resolutions.
 - The **realism pack in flight**: callout timing (V1/rotate/positive rate/gear up/1000/500/100/
   minimums/stable/unstable), whether the synthesized WAVs are audible over engine noise, whether
   the load-shed/brake-fan thresholds match what the aircraft actually does, and whether the new
@@ -1024,32 +1143,37 @@ In-sim status: the suite loaded cleanly on 2026-10-21 at 18:22 and again on 2026
 (`All script files loaded successfully`, 0 `FlyWithLua Error`). The 2026-10-23 load also logged
 `Citation X Realism: loaded` with `12/12 callout sounds loaded`. **No clean load has happened
 since the 2026-10-26 duplicate-writable and keyboard fixes**, so the current 22-sound load, the
-16-row black panel, the new monitors and the handling curve have never run in X-Plane. What has
-**not** been reviewed by eye/ear: the control panel without the telemetry body, the callouts
-during a real takeoff/approach, the load-shed/brake-fan behaviour, and the new cockpit
-textures.
+16-row black panel, the new monitors, the panel reskin/drag and the R3 cockpit look have never
+run in X-Plane. What has **not** been reviewed by eye/ear: the control panel without the
+telemetry body, the callouts during a real takeoff/approach, the load-shed/brake-fan behaviour,
+the dark interior pass, the AviTab in-cockpit screen on `..._AviTab_mods`, and whether the
+head-offset datarefs actually pan in 12.4.3.
 
 ## Validation performed
 - `luac -p` on every script in `Scripts/`, including the KPCrew ones.
 - Every `dataref(...)` declaration in `Scripts/CitationX_*.lua` checked with
-  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (98 bindings).
+  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (104 bindings, including the
+  three cockpit-look refs).
 - Every `require()` reachable for the C750 checked with
   `tests/check_kpcrew_modules.lua C750`: 0 missing (`--all` sweeps every aircraft).
 - Every `laminar/CitX/...` command and runtime dataref checked against the Citation X's own
   `plugins/xlua/scripts/*.lua`.
 - Mock-FlyWithLua smoke tests, all run under **luajit** (the sim's Lua, see below):
   - `tests/smoke_mastersuite.lua` — DS4 heading: triggers ignored, sticky lock, dead-slot
-    recovery, and the late-enumeration regression (rest `-0.01` before the pad is live).
-  - `tests/smoke_hud_toggles.lua` — 13 rows well formed, unique keys, sibling toggles safe
-    with the other scripts absent, overlay draws zero primitives when everything is off.
+    recovery, and the late-enumeration regression (rest `-0.01` before the pad is live); plus
+    R3 cockpit look (yaw, pitch, heading suppression, resume, hold at centre).
+  - `tests/smoke_hud_toggles.lua` — 14 rows well formed, unique keys, sibling toggles safe
+    with the other scripts absent, overlay draws zero primitives when everything is off, and
+    only the realism panel + hub are visible at load.
   - `tests/smoke_realism.lua` — takeoff/approach callouts fire once, gear-up delay, load-shed
     command after generator loss, brake fan on/off, flap overspeed, icing, Vmo, takeoff config,
     stabilised approach, gear-down, anti-ice, cabin altitude, the handling curve and the HUD's
-    draw/click behaviour.
+    draw/click/drag behaviour.
   - `tests/smoke_panel_geometry.lua` — renders all five panels into a recording canvas and
     asserts: everything fits 2560×1440 (and the realism panel at 1280×720), no vertical text
-    collisions, no text overflows its panel, the EFB clears the QRH and cabin panels, and a
-    click sweep reaches every row.
+    collisions, no text overflows its panel, the default positions do not collide, a click
+    sweep reaches every row, and every header drag moves its panel by the mouse delta
+    (65 checks).
   - `tests/probe_load_order.lua` — loads all of `Scripts/` in one shared LuaJIT state in
     FlyWithLua's alphabetical order. The authoritative load test.
 
@@ -1073,9 +1197,10 @@ textures.
   time**. The realism handling curve and the MasterSuite axis optimizer both want them; the
   realism curve backs off when `CONFIG.axis_optimizer_enabled` is true **and must not write 0
   in that state**, or the optimizer is left driving an override it no longer owns.
-- The realism panel is the suite's single drawn surface, by explicit request. It shows realism
-  state (load shed, brake energy, icing, overspeed, config, approach, handling), never airspeed/
-  altitude/heading/fuel — those stay on the PFD/EICAS.
+- The realism panel and the Master Suite hub are the suite's drawn surfaces at load. They show
+  realism/subsystem state (load shed, brake energy, icing, overspeed, config, approach, handling,
+  panel toggles), never airspeed/altitude/heading/fuel — those stay on the PFD/EICAS. Every
+  other panel is opt-in; axis monitor and learn mode remain explicit diagnostics.
 
 ## Repo, agent & deployment
 - Git initialized in place in the FlyWithLua folder; `.gitignore` tracks only the five
@@ -1092,9 +1217,15 @@ textures.
   Textures are outside the repo and need an aircraft reload, not a Lua reload.
 
 ## Tuning knobs
-- Control panel: `SUITE_STYLE` (`status_row_h`, `width`, `pad`) in
-  `CitationX_MasterSuite.lua`; `CAB_CONFIG.row_h` in `CitationX_CabinOps.lua`;
-  `TRAINER_CONFIG.row_h` in `CitationX_FailureTrainer.lua`.
+- Control panel: `SUITE_STYLE` (`x`, `top`, `row_h`, `header_h`, `footer_h`, `pad`, `width`) in
+  `CitationX_MasterSuite.lua`; `CAB_CONFIG.row_h` / `panel_x` / `panel_top` in
+  `CitationX_CabinOps.lua`; `TRAINER_CONFIG.row_h` / `panel_x` / `panel_top` in
+  `CitationX_FailureTrainer.lua`; `EFB_CONFIG.row_h` / `panel_x` / `panel_top` in
+  `CitationX_EFB.lua`; `REAL_STYLE.x` / `y` in `CitationX_Realism.lua`.
+- 3-D cockpit look: `CONFIG.view_pan_*` — `view_pan_button` (0-based, default 11 = R3),
+  `view_pan_axis_x` / `view_pan_axis_y` (-1 auto, DS4 2/3), `view_pan_rate_dps`,
+  `view_pan_deadzone`, `view_pan_invert_x` / `view_pan_invert_y`, `view_pan_pitch_limit`,
+  `view_pan_force_3d`.
 - Heading knob: `CONFIG` in `CitationX_MasterSuite.lua`; `stick_hdg_axis` can be pinned to a
   RAW index shown by AXIS MONITOR, or slots vetoed via `stick_hdg_exclude_axes`.
 - Realism pack: `REAL_CONFIG` in `CitationX_Realism.lua` — `v1_kt`/`vr_kt`/`vref_kt`/`vfe_kt`/
@@ -1109,7 +1240,7 @@ textures.
   `REAL_CONFIG.hud_enabled` hides it; `CitationXRealism/hud` and the macro *realism panel*
   toggle it.
 - Textures: the pre-2026-10-26 sharpened originals and pre-8K interior are in
-  `Aircraft/Cessna Citation X AviTab/_texture_backups/2026-10-26_cockpit_highres/`; the light
+  `Aircraft/Cessna Citation X AviTab_mods/_texture_backups/2026-10-26_cockpit_highres/`; the light
   8K panel (and every removed livery panel DDS) is in
   `_texture_backups/2026-10-26_dark_panel/`; pre-sharpening originals are in
   `_original_textures/`. Restore a set and reload the aircraft to undo.

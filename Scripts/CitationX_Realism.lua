@@ -1105,6 +1105,8 @@ REAL_STYLE = {
 }
 
 local hud_hits = {}
+local real_header_rect = nil
+local real_drag = { active = false, dx = 0, dy = 0 }
 
 local function hud_bar(x0, y0, x1, y1, col, alpha)
     glColor4f(col[1], col[2], col[3], alpha or col[4] or 1.0)
@@ -1303,10 +1305,16 @@ function real_draw()
     local sh = SCREEN_HIGHT or 1080
     local st = REAL_STYLE
     local x, w, pad = st.x, st.width, st.pad
-    local top = sh - st.top
+    x = math.max(0, math.min(x, sw - w))
+    local top = st.y or (sh - st.top)
+    if top > sh - 4 then top = sh - 4 end
     local box_h = hud_height()
     local bottom = top - box_h
-    if bottom < 8 then bottom = 8 end
+    if bottom < 8 then
+        bottom = 8
+        top = bottom + box_h
+    end
+    st.x, st.y = x, top
 
     XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
     hud_hits = {}
@@ -1321,6 +1329,7 @@ function real_draw()
 
     hud_text(x + pad, top - 25, "REALISM", 18, st.title)
     hud_text_right(x + w - pad, top - 22, "CITATION X", 10, st.sub)
+    real_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
 
     local y = top - st.header_h - 20
     for i = 1, #REAL_HUD_ROWS do
@@ -1360,12 +1369,47 @@ function real_draw()
 end
 
 function real_mouse_click()
-    if not REAL_CONFIG.hud_enabled then return end
+    if not REAL_CONFIG.hud_enabled then
+        real_drag.active = false
+        return
+    end
+
+    local mx = MOUSE_X or -1.0
+    local my = MOUSE_Y or -1.0
+    local st = REAL_STYLE
+
+    -- Drag by the header: down starts, drag moves, up ends.
+    if MOUSE_STATUS == "down" then
+        local r = real_header_rect
+        if r and mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
+            real_drag.active = true
+            real_drag.dx = mx - st.x
+            real_drag.dy = my - (st.y or my)
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    elseif MOUSE_STATUS == "drag" then
+        if real_drag.active then
+            local sw = SCREEN_WIDTH or 1920
+            local sh = SCREEN_HIGHT or 1080
+            st.x = math.max(0, math.min(mx - real_drag.dx, sw - st.width))
+            st.y = math.max(hud_height(), math.min(my - real_drag.dy, sh - 4))
+            RESUME_MOUSE_CLICK = true
+        end
+        return
+    elseif MOUSE_STATUS == "up" then
+        if real_drag.active then
+            real_drag.active = false
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    end
+
     if MOUSE_STATUS ~= "down" then return end
     for i = 1, #hud_hits do
         local h = hud_hits[i]
-        if MOUSE_X >= h.x0 and MOUSE_X <= h.x1
-            and MOUSE_Y >= h.y0 and MOUSE_Y <= h.y1 then
+        if mx >= h.x0 and mx <= h.x1
+            and my >= h.y0 and my <= h.y1 then
             h.act()
             RESUME_MOUSE_CLICK = true
             return

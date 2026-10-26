@@ -94,20 +94,22 @@ chunk()
 check(type(SUITE_MODULES) == "table", "SUITE_MODULES exists")
 check(type(SUITE_STYLE) == "table", "SUITE_STYLE exists")
 
--- ---------- nothing is on screen at load ----------
-check(CONFIG.status_enabled == false, "control panel starts hidden")
+-- ---------- at load only the realism panel and the hub are on screen ----------
+check(CONFIG.status_enabled == true, "control panel is visible at load")
 check(CONFIG.axis_monitor == false, "axis monitor starts hidden")
 check(CONFIG.input_learn_mode == false, "learn mode starts hidden")
 
--- ---------- and nothing runs except the heading knob and keyboard layer ----------
+-- ---------- and nothing runs except the keyboard layer, heading knob and look ----------
 local on_at_load = {}
 for i = 1, #SUITE_MODULES do
   local m = SUITE_MODULES[i]
   if m.state() == "ON" then on_at_load[#on_at_load + 1] = m.key end
 end
 table.sort(on_at_load)
-check(#on_at_load == 2 and on_at_load[1] == "input" and on_at_load[2] == "stick",
-  "only the keyboard layer and right-stick heading knob start ON",
+check(#on_at_load == 4
+    and on_at_load[1] == "input" and on_at_load[2] == "look"
+    and on_at_load[3] == "status" and on_at_load[4] == "stick",
+  "only the keyboard layer, look, hub and heading knob start ON",
   table.concat(on_at_load, ","))
 
 -- ---------- the duplicate cockpit readouts must not come back ----------
@@ -118,7 +120,7 @@ check(rawget(_G, "HUD_STYLE") == nil, "no HUD palette left behind")
 -- ---------- every module row is complete ----------
 local expected = {
   "status", "axis", "log", "emerg", "input", "learn", "stick", "axmon",
-  "cabin", "qrh", "landperf", "efb", "realism",
+  "look", "cabin", "qrh", "landperf", "efb", "realism",
 }
 local seen = {}
 for i, m in ipairs(SUITE_MODULES) do

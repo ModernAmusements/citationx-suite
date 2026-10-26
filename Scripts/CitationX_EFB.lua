@@ -31,10 +31,11 @@
 
 -- ------------------------------------------------------------------ CONFIG --
 EFB_CONFIG = {
-    panel_enabled   = false,   -- hidden at load; macro "CitationX Suite: EFB panel" shows it
+    panel_enabled   = false,   -- hidden at load; the Master Suite hub opens it
     panel_w         = 470,
-    panel_bottom    = 60,      -- bottom-centre panel
-    row_h           = 22,
+    panel_x         = nil,     -- nil = bottom-centre on first draw; drag writes here
+    panel_top       = nil,     -- absolute top edge (bottom-left origin)
+    row_h           = 21,
 
     -- Performance reference data (C750, advisory only)
     mtow_kg         = 16374,
@@ -58,18 +59,26 @@ EFB_CONFIG = {
     contingency_pct = 0.05,
 }
 
+-- Same black / Helvetica language as the realism panel.
 EFB_STYLE = {
-    bg        = {0.02, 0.05, 0.08, 0.62},
-    header_bg = {0.03, 0.15, 0.21, 0.90},
-    accent    = {0.22, 0.85, 1.00},
-    label     = {0.42, 0.62, 0.70},
-    value     = {0.93, 0.97, 1.00},
-    ok        = {0.32, 0.95, 0.55},
-    warn      = {1.00, 0.66, 0.12},
-    alert     = {1.00, 0.35, 0.30},
-    dim       = {0.30, 0.37, 0.42},
-    tab_on    = {0.10, 0.42, 0.55, 0.95},
-    tab_off   = {0.05, 0.12, 0.17, 0.85},
+    bg        = {0.00, 0.00, 0.00, 0.90},
+    header_bg = {0.04, 0.04, 0.04, 0.96},
+    border    = {0.32, 0.32, 0.32, 1.00},
+    title     = {1.00, 1.00, 1.00, 1.00},
+    sub       = {0.55, 0.55, 0.55, 1.00},
+    label     = {0.80, 0.80, 0.80, 1.00},
+    value     = {1.00, 1.00, 1.00, 1.00},
+    dim       = {0.45, 0.45, 0.45, 1.00},
+    ok        = {0.45, 0.85, 0.50, 1.00},
+    warn      = {0.95, 0.72, 0.25, 1.00},
+    alert     = {0.95, 0.36, 0.32, 1.00},
+    btn       = {0.10, 0.10, 0.10, 1.00},
+    accent    = {1.00, 1.00, 1.00, 1.00},
+    tab_on    = {0.16, 0.16, 0.16, 0.96},
+    tab_off   = {0.06, 0.06, 0.06, 0.92},
+    header_h  = 34,
+    footer_h  = 34,
+    pad       = 14,
 }
 
 -- --------------------------------------------------------------- DATAREFS ---
@@ -201,12 +210,22 @@ local function efb_bar(x, y0, y1, w, color, alpha)
     glRectf(x, y0, x + w, y1)
 end
 
-local function efb_txt(x, y, text, color)
-    draw_string(x, y, text, color[1], color[2], color[3])
+local function efb_font(size)
+    if size == 18 then return draw_string_Helvetica_18 or draw_string end
+    if size == 10 then return draw_string_Helvetica_10 or draw_string end
+    return draw_string_Helvetica_12 or draw_string
 end
 
-local function efb_txt_right(right_x, y, text, color)
-    draw_string(right_x - measure_string(text), y, text, color[1], color[2], color[3])
+local function efb_txt(x, y, text, color, size)
+    glColor4f(color[1], color[2], color[3], color[4] or 1.0)
+    efb_font(size or 12)(x, y, tostring(text or ""))
+end
+
+local function efb_txt_right(right_x, y, text, color, size)
+    local s = tostring(text or "")
+    local sz = size or 12
+    local tw = measure_string(s, "Helvetica_" .. tostring(sz)) or measure_string(s)
+    efb_txt(right_x - tw, y, s, color, sz)
 end
 
 local function efb_register_row(x1, y1, x2, y2, fn)
@@ -398,41 +417,41 @@ local function efb_draw_perf(x, y, w)
 
     efb_row_label(x, y, w, "GROSS WEIGHT",
         string.format("%.0f KG  (%.0f LB)", efb_weight_kg or 0, (efb_weight_kg or 0) * 2.20462))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "FUEL ON BOARD",
         string.format("%.0f KG", efb_fuel_kg or 0))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "FIELD / QNH",
         string.format("%.0f FT / %.2f IN", efb_field_alt_ft(), efb_qnh_inhg or 29.92))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "OAT / ISA",
         string.format("%+.0f C / %+.0f C", efb_oat_c or 0, efb_isa_temp_c()))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "PRESSURE ALT",
         string.format("%.0f FT", efb_pressure_alt_ft()))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     local da_col = (da > 8000) and EFB_STYLE.warn or EFB_STYLE.value
     efb_row_label(x, y, w, "DENSITY ALT", string.format("%.0f FT", da), da_col)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "WIND  HDG / KT",
         string.format("%03.0f / %.0f   HD %+.0f  XW %+.0f",
             efb_wind_dir or 0, efb_wind_kt or 0, head, cross))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "V1 / VR / V2",
         string.format("%.0f / %.0f / %.0f KT", v1, vr, v2), EFB_STYLE.accent)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "VREF", string.format("%.0f KT", vref), EFB_STYLE.accent)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "TAKEOFF DIST",
         string.format("%.0f M  (%.0f FT)", to_m, to_m * 3.28084), EFB_STYLE.value)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "LANDING DIST",
         string.format("%.0f M  (%.0f FT)", ldg_m, ldg_m * 3.28084), EFB_STYLE.value)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "RUNWAY CONDITION",
         EFB_CONFIG.condition_names[EFB_CONFIG.rwy_condition], EFB_STYLE.warn,
         function() efb_cycle_condition() end)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_txt(x + 12, y - 14, "ADVISORY ONLY - NOT AFM DATA", EFB_STYLE.dim)
     return y
 end
@@ -446,11 +465,11 @@ local function efb_draw_check(x, y, w)
     efb_row_label(x, y, w, "PHASE " .. efb_chk_phase .. " / " .. #EFB_CHECKS,
         phase.name, EFB_STYLE.accent,
         function() efb_check_next() end)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "PROGRESS",
         string.format("%d / %d", done, #phase.items),
         (done == #phase.items) and EFB_STYLE.ok or EFB_STYLE.value)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
 
     for i = 1, #phase.items do
         local on  = state[i] == true
@@ -464,12 +483,12 @@ local function efb_draw_check(x, y, w)
         local item = i
         efb_register_row(x + 6, y - 19, x + w - 6, y + 1,
             function() efb_toggle_check_item(item) end)
-        y = y - 22
+        y = y - EFB_CONFIG.row_h
     end
 
     efb_row_label(x, y, w, "NEXT PHASE", "CLICK / CMD", EFB_STYLE.label,
         function() efb_check_next() end)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "RESET THIS PHASE", "CLICK", EFB_STYLE.warn,
         function() efb_reset_checklist() end)
     return y - 22
@@ -482,33 +501,33 @@ local function efb_draw_fuel(x, y, w)
     efb_row_label(x, y, w, "DISTANCE",
         string.format("%d NM", cfg.dist_nm), EFB_STYLE.value,
         function() efb_dist(cfg.dist_step_nm) end)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "CRUISE LEVEL",
         string.format("FL%03d", math.floor(cfg.cruise_alt_ft / 100)), EFB_STYLE.value,
         function() efb_alt(cfg.alt_step_ft) end)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "WIND (+HEAD / -TAIL)",
         string.format("%+d KT", cfg.wind_kt), EFB_STYLE.value,
         function() efb_wind(cfg.wind_step_kt) end)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "TAXI FUEL",
         string.format("%d KG", cfg.taxi_kg), EFB_STYLE.value,
         function() efb_taxi(cfg.taxi_step_kg) end)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "TAS / GS",
         string.format("%.0f / %.0f KT", p.tas, p.gs))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "TRIP TIME / FUEL",
         string.format("%.1f H / %.0f KG", p.trip_h, p.trip))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "CONTINGENCY 5%", string.format("%.0f KG", p.cont))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "ALTERNATE 10 MIN", string.format("%.0f KG", p.altn))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "FINAL RESERVE 45 MIN", string.format("%.0f KG", p.resv))
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "BLOCK FUEL", string.format("%.0f KG", p.total), EFB_STYLE.ok)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
 
     local burn = p.burn
     local usable = math.max((efb_fuel_kg or 0) - cfg.taxi_kg - p.resv, 0)
@@ -516,34 +535,55 @@ local function efb_draw_fuel(x, y, w)
     efb_row_label(x, y, w, "ENDURANCE (CURRENT FUEL)",
         string.format("%.0f MIN", endurance_min),
         (endurance_min < p.trip_h * 60 + cfg.alternate_min) and EFB_STYLE.warn or EFB_STYLE.ok)
-    y = y - 22
+    y = y - EFB_CONFIG.row_h
     efb_txt(x + 12, y - 14, "CLICK A ROW TO INCREASE  -  SHIFT-CLICK DECREASES", EFB_STYLE.dim)
     return y
 end
 
+local efb_header_rect = nil
+local efb_footer_rect = nil
+local efb_drag = { active = false, dx = 0, dy = 0 }
+
 function efb_draw()
-    if not EFB_CONFIG.panel_enabled then return end
+    if not EFB_CONFIG.panel_enabled then
+        efb_drag.active = false
+        return
+    end
     efb_rows = {}
 
     local cfg = EFB_CONFIG
+    local st  = EFB_STYLE
     local w   = cfg.panel_w
     local rh  = cfg.row_h
     local sw  = SCREEN_WIDTH or 1920
-    local x   = (sw - w) / 2
-    local bottom = cfg.panel_bottom
-    local top    = bottom + 24 + 30 + 12 * rh + 18
+    local sh  = SCREEN_HIGHT or 1080
+
+    local h = st.header_h + 30 + 12 * rh + st.footer_h + 8
+
+    local x = cfg.panel_x or ((sw - w) / 2)
+    x = math.max(0, math.min(x, sw - w))
+    local top = cfg.panel_top or (60 + h)
+    top = math.max(h + 8, math.min(top, sh - 4))
+    cfg.panel_x, cfg.panel_top = x, top
+    local bottom = top - h
 
     XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0)
 
-    efb_bar(x, bottom, top, w, EFB_STYLE.bg, 0.78)
-    efb_bar(x, top - 24, top, w, EFB_STYLE.header_bg, 0.92)
-    efb_bar(x, top - 2, top, w, EFB_STYLE.accent)
+    -- black shell: body, 1 px border, 34 px header
+    efb_bar(x, bottom, top, w, st.bg)
+    efb_bar(x, top - 1, top, w, st.border)
+    efb_bar(x, bottom, top, 1, st.border)
+    efb_bar(x + w - 1, bottom, top, 1, st.border)
+    efb_bar(x, bottom, bottom + 1, w, st.border)
+    efb_bar(x, top - st.header_h, top, w, st.header_bg)
+    efb_bar(x, top - st.header_h, top - st.header_h + 2, w, st.border)
 
     local page_name = ({ "PERFORMANCE", "CHECKLISTS", "FUEL PLANNING" })[efb_page]
-    efb_txt(x + 10, top - 17, "CITATION X EFB", EFB_STYLE.accent)
-    efb_txt_right(x + w - 10, top - 17, page_name, EFB_STYLE.label)
+    efb_txt(x + st.pad, top - 25, "CITATION X EFB", st.title, 18)
+    efb_txt_right(x + w - st.pad, top - 22, page_name, st.sub, 10)
+    efb_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
 
-    local y = top - 24
+    local y = top - st.header_h
     efb_draw_tabs(x, y, w)
     y = y - 30
 
@@ -555,11 +595,22 @@ function efb_draw()
         efb_draw_fuel(x, y, w)
     end
 
+    -- footer: drag-safe hide button
+    local by0 = bottom + 8
+    local by1 = by0 + st.footer_h - 12
+    efb_bar(x + st.pad, by0, by1, w - 2 * st.pad, st.btn)
+    local label = "HIDE PANEL"
+    local tw = measure_string(label, "Helvetica_10") or measure_string(label)
+    efb_txt(x + (w - tw) / 2, by0 + 6, label, st.value, 10)
+    efb_footer_rect = { x0 = x + st.pad, x1 = x + w - st.pad, y0 = by0, y1 = by1 }
+
     -- toast
     if efb_toast_text and (efb_sim_time or 0) < efb_toast_until then
-        local tw = measure_string(efb_toast_text) + 24
-        efb_bar(x + (w - tw) / 2, bottom - 24, bottom - 4, tw, EFB_STYLE.header_bg, 0.95)
-        efb_txt(x + (w - tw) / 2 + 12, bottom - 18, efb_toast_text, EFB_STYLE.accent)
+        local tw2 = (measure_string(efb_toast_text, "Helvetica_12")
+            or measure_string(efb_toast_text)) + 24
+        local tx = x + (w - tw2) / 2
+        efb_bar(tx, bottom - 26, bottom - 2, tw2, st.header_bg, 0.95)
+        efb_txt(tx + 12, bottom - 19, efb_toast_text, st.value)
     end
 end
 
@@ -571,11 +622,49 @@ function efb_clickable_rows()
 end
 
 function efb_mouse_click()
-    if not EFB_CONFIG.panel_enabled then return end
-    if MOUSE_STATUS ~= "down" then return end
+    if not EFB_CONFIG.panel_enabled then
+        efb_drag.active = false
+        return
+    end
 
     local mx = MOUSE_X or -1
     local my = MOUSE_Y or -1
+    local cfg = EFB_CONFIG
+
+    if MOUSE_STATUS == "down" then
+        local hr = efb_header_rect
+        if hr and mx >= hr.x0 and mx <= hr.x1 and my >= hr.y0 and my <= hr.y1 then
+            efb_drag.active = true
+            efb_drag.dx = mx - (cfg.panel_x or mx)
+            efb_drag.dy = my - (cfg.panel_top or my)
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    elseif MOUSE_STATUS == "drag" then
+        if efb_drag.active then
+            local sw = SCREEN_WIDTH or 1920
+            local sh = SCREEN_HIGHT or 1080
+            cfg.panel_x = math.max(0, math.min(mx - efb_drag.dx, sw - cfg.panel_w))
+            cfg.panel_top = math.max(160, math.min(my - efb_drag.dy, sh - 4))
+            RESUME_MOUSE_CLICK = true
+        end
+        return
+    elseif MOUSE_STATUS == "up" then
+        if efb_drag.active then
+            efb_drag.active = false
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    end
+
+    if MOUSE_STATUS ~= "down" then return end
+
+    local f = efb_footer_rect
+    if f and mx >= f.x0 and mx <= f.x1 and my >= f.y0 and my <= f.y1 then
+        efb_toggle_panel(false)
+        RESUME_MOUSE_CLICK = true
+        return
+    end
 
     for i = 1, #efb_rows do
         local r = efb_rows[i]

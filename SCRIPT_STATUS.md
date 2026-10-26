@@ -9,7 +9,7 @@ Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 
 | Script | State | Evidence / purpose |
 | --- | --- | --- |
-| `CitationX_MasterSuite.lua` | ✅ works* | `status report`, `flight recorder armed`, `heading knob locked to raw axis 28`; smoke tests pass. Every module starts **OFF** except the **DS4 right-stick heading knob**, and the panel starts hidden (2026-10-24). The knob's learned rest no longer latches X-Plane's `-0.01` pre-enumeration value, so it actually locks. Free controller buttons are auto-bound from `joystick_button_assignments` (never overwrites a mapped button). Turn other modules on from the macros (`CitationX Suite: <row>`, or `enable all modules`). |
+| `CitationX_MasterSuite.lua` | ✅ works* | `status report`, `flight recorder armed`, `heading knob locked to raw axis 28`; smoke tests pass. At load the suite shows exactly two panels: the realism panel and the Master Suite hub (`status` is ON now, 2026-10-26). Every other drawing module is OFF; the keyboard layer, right-stick heading knob and R3 cockpit look stay ON. The knob's learned rest no longer latches X-Plane's `-0.01` pre-enumeration value, so it actually locks. R3 + right stick pans `pilots_head_psi/the` and suppresses the heading knob while held; R3 is excluded from autobind. Free controller buttons are auto-bound from `joystick_button_assignments` (never overwrites a mapped button). |
 | `CitationX_FailureTrainer.lua` | ✅ works* | `Citation X Failure Trainer + QRH loaded` |
 | `CitationX_CabinOps.lua` | ✅ works* | `Cabin & Ground Ops loaded` |
 | `CitationX_Realism.lua` | ✅ tests | one black Helvetica realism panel (16 rows, clickable), audio callouts (FMOD master bus), handling curve, control check, takeoff trim/flap gate, fuel balance, MTOW/MLW weight limits, load-shed manager, brake fan, Vmo/Mmo overspeed, takeoff config, stabilised approach, gear-down confirmation, flap/gear overspeed, crosswind, icing/anti-ice and cabin-altitude advisories. `tests/smoke_realism.lua` drives all of it; `smoke_panel_geometry.lua` renders the panel |
@@ -104,13 +104,15 @@ upstream's design — do not test it in isolation and treat the failure as a bug
 ## Panel geometry (measured, not eyeballed)
 
 `tests/smoke_panel_geometry.lua` renders all five panels into a recording canvas and asserts
-47 properties: everything fits 2560×1440 (the realism panel also at 1280×720), no vertical text
-collisions, no text overflows its panel, the EFB clears the QRH and cabin panels, and a vertical
-click sweep reaches every control-panel row.
+65 properties: everything fits 2560×1440 (the realism panel also at 1280×720), no vertical text
+collisions, no text overflows its panel, the EFB clears the QRH and cabin panels, the default
+panel positions do not collide, a vertical click sweep reaches every control-panel row, and
+every panel's header drag moves it by the mouse delta and keeps the new position.
 
 It also proves the MasterSuite overlay draws **nothing at all** when its control panel is
-switched off — there is no telemetry HUD and no C750 systems readback any more. The realism
-panel is a separate draw callback and is the suite's only drawn surface at load.
+switched off — there is no telemetry HUD and no C750 systems readback any more. At load the
+suite draws exactly two surfaces: the realism panel and the Master Suite hub. The other three
+panels are opened from the hub and share the same black/Helvetica shell.
 
 This does not prove the panels *look* good — only that they are mathematically well formed.
 
