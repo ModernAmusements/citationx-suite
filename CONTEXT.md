@@ -32,7 +32,7 @@ callouts audible, panel legible, handling curve felt, textures seen.
 | HUD | Telemetry body, alert pills and the C750 systems readback **deleted**; one 13-row control panel left |
 | Realism | New `CitationX_Realism.lua`: audio callouts, load-shed manager, brake fan, overspeed/icing advisories. Now also draws the one black realism panel |
 | Input | DS4 button scan widened to both device slots (`0–127`), so Bluetooth works |
-| Textures | Cockpit panel (all liveries) and `plain white` fuselage sharpened, not upscaled |
+| Textures | Cockpit panel: 8K PNG with detail transplant (4K DDS fallback); cockpit overall/cabin 8K, seat 4K; `plain white` fuselage sharpened |
 | Tests | `smoke_realism.lua` added; control-panel and geometry harnesses updated |
 
 ### Verification status
@@ -927,6 +927,48 @@ adds no HUD and no panel. The default is now `input_map_enabled = true`; `status
 off. Two modules are deliberately live at init: the DS4 heading knob and the keyboard layer.
 `tests/smoke_hud_toggles.lua` now asserts exactly `input + stick` are ON at load.
 
+## 25. Cockpit texture pass: 8K panel and high-res interior (2026-10-26)
+
+Asked how to improve the cockpit texture after the realism work. Inspection found a complete
+high-resolution interior already on disk but unused by the active livery:
+`objects/as/Cascade 3/objects/` contains **8192²** `cockpit_panel.dds`, `cockpit_overall/cockpit.dds`
+and `cabin.dds`, plus a **4096²** `cockpit_seat.dds`. The base `objects/` tree used by
+`plain white` had 4096/4096/4096/1024 versions. The high-res panel is the darker Cascade 3
+finish (the other assets are colour-identical, mean difference ~1–2 %).
+
+The bigger discovery: `objects/cockpit_panel/cockpit_panel.obj` line 5 already says
+`TEXTURE cockpit_panel.png`, but only a **DXT1** `.dds` was shipped. X-Plane's own guidance is
+that **the cockpit object's texture is exempt from compression** precisely to protect label
+readability — so the panel was being shown through a compressed 4K DXT1 texture with no
+uncompressed source. That is why the labels looked blocky even after the 2026-10-23 sharpening.
+
+What was done:
+
+- **Panel (plain white look preserved):** the 8192² dark panel was used as a detail source, not
+  a colour source. Frequency separation —
+  `out = hi + blur(current) - blur(hi)` — transfers the 8K high-frequency detail onto the
+  current light panel's low-frequency tone. Then a light unsharp mask
+  (`0x1.0+0.8+0.02`) and a 2× downscale.
+  - `objects/cockpit_panel/cockpit_panel.png` — new **8192² lossless PNG** (62 MB), the file the
+    OBJ already referenced.
+  - `objects/cockpit_panel/cockpit_panel.dds` — **4096² DXT1, 13 mips** fallback.
+  - `liveries/plain white/objects/cockpit_panel/cockpit_panel.png` — the same 8K PNG; its old
+    DDS override was removed so the livery does not mask the lossless file.
+  - the other five livery panel DDS copies were replaced with the improved 4K DDS.
+- **Interior:** copied the high-res assets into the base object tree used by `plain white`:
+  `cockpit_overall/cockpit.dds` → **8192² DXT5**, `cabin/cabin.dds` → **8192² DXT5**,
+  `cockpit_seat/cockpit_seat.dds` → **4096² DXT5**.
+- **Backups:** `Aircraft/Cessna Citation X AviTab/_texture_backups/2026-10-26_cockpit_highres/`
+  mirrors every replaced path (current sharpened panel, old overall/seat/cabin, all six livery
+  panel DDS files).
+
+The dark 8192² Cascade 3 panel is still available if a dark cockpit finish is wanted later; the
+current install only borrows its detail.
+
+**Textures load when the aircraft loads.** Use *Developer → Reload Aircraft* (or restart), not
+FlyWithLua's Lua reload. In-sim confirmation of the 8K panel (texture cap, VRAM, label
+readability) is still pending.
+
 ## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not
@@ -941,13 +983,15 @@ record these as confirmed working:
   minimums/stable/unstable), whether the synthesized WAVs are audible over engine noise, whether
   the load-shed/brake-fan thresholds match what the aircraft actually does, and whether the new
   Vmo/takeoff-config/gear-down/anti-ice/cabin-altitude triggers are free of false positives.
-- The **black realism panel**: 12 rows at 430 px, Helvetica glyphs, and its click targets. The
+- The **black realism panel**: 16 rows at 430 px, Helvetica glyphs, and its click targets. The
   geometry harness measures it, but no human has looked at it in the 3D cockpit.
 - The **handling curve**: whether deadzone 0.02 / expo 1.35 / smoothing 0.55 feels right on the
   DS4, and whether the control check is asked at a sensible moment (it needs 60 % travel on all
   three axes before the thrust levers advance).
-- The **sharpened textures**: DDS headers verified (4096², DXT1/DXT5, 13 mips) and a 1:1 crop
-  compared before/after, but they have not been seen in the 3D cockpit.
+- The **8K cockpit textures**: the panel PNG is 8192² lossless with a 4096² DXT1 fallback, the
+  overall/cabin are 8192² DXT5 and the seat is 4096² DXT5. File dimensions, mip counts and 1:1
+  crops were verified, but nothing has been seen in the 3D cockpit or with the simulator's
+  texture-resolution cap.
 - The KPCrew copilot, panels and briefings. Only the *loading* path was fixed; the KPCrew UI,
   the SOP checklists and the SimBrief import have had no functional test.
 - The `metargen.lua` METAR fix (array weather refs → `dataref_table`, visibility in statute
@@ -961,11 +1005,12 @@ record these as confirmed working:
 
 In-sim status: the suite loaded cleanly on 2026-10-21 at 18:22 and again on 2026-10-23 01:00
 (`All script files loaded successfully`, 0 `FlyWithLua Error`). The 2026-10-23 load also logged
-`Citation X Realism: loaded` with `12/12 callout sounds loaded`. **No load has happened since
-the 2026-10-24 changes**, so the current 19-sound load, the black panel, the new monitors and
-the handling curve have never run in X-Plane. What has **not** been reviewed by eye/ear: the
-control panel without the telemetry body, the callouts during a real takeoff/approach, the
-load-shed/brake-fan behaviour, and the sharpened textures.
+`Citation X Realism: loaded` with `12/12 callout sounds loaded`. **No clean load has happened
+since the 2026-10-26 duplicate-writable and keyboard fixes**, so the current 22-sound load, the
+16-row black panel, the new monitors and the handling curve have never run in X-Plane. What has
+**not** been reviewed by eye/ear: the control panel without the telemetry body, the callouts
+during a real takeoff/approach, the load-shed/brake-fan behaviour, and the new cockpit
+textures.
 
 ## Validation performed
 - `luac -p` on every script in `Scripts/`, including the KPCrew ones.
@@ -1046,6 +1091,7 @@ load-shed/brake-fan behaviour, and the sharpened textures.
   `header_h`, `row_h`, `footer_h` and the black/white/green/amber/red palette.
   `REAL_CONFIG.hud_enabled` hides it; `CitationXRealism/hud` and the macro *realism panel*
   toggle it.
-- Textures: sharpened DDS originals are in
-  `Aircraft/Cessna Citation X AviTab/_original_textures/`; restore them and reload the aircraft
-  to undo.
+- Textures: the pre-2026-10-26 sharpened originals and pre-8K interior are in
+  `Aircraft/Cessna Citation X AviTab/_texture_backups/2026-10-26_cockpit_highres/`; the
+  pre-sharpening originals are in `_original_textures/`. Restore either set and reload the
+  aircraft to undo.
