@@ -32,7 +32,7 @@ callouts audible, panel legible, handling curve felt, textures seen.
 | HUD | Telemetry body, alert pills and the C750 systems readback **deleted**; one 13-row control panel left |
 | Realism | New `CitationX_Realism.lua`: audio callouts, load-shed manager, brake fan, overspeed/icing advisories. Now also draws the one black realism panel |
 | Input | DS4 button scan widened to both device slots (`0–127`), so Bluetooth works |
-| Textures | Cockpit panel: 8K PNG with detail transplant (4K DDS fallback); cockpit overall/cabin 8K, seat 4K; `plain white` fuselage sharpened |
+| Textures | Cockpit panel: 8K dark Cascade 3 PNG + 8K DDS; cockpit overall/cabin 8K, seat 4K; `plain white` fuselage sharpened |
 | Tests | `smoke_realism.lua` added; control-panel and geometry harnesses updated |
 
 ### Verification status
@@ -965,6 +965,22 @@ What was done:
 The dark 8192² Cascade 3 panel is still available if a dark cockpit finish is wanted later; the
 current install only borrows its detail.
 
+### Dark panel installed (2026-10-26, follow-up)
+
+*"go"* — the dark 8K panel was installed directly, replacing the light detail-transplant:
+
+- `objects/cockpit_panel/cockpit_panel.png` — 8192² RGB, 32 MB.
+- `objects/cockpit_panel/cockpit_panel.dds` — 8192² DXT5, 14 mips, 85 MB.
+- `liveries/plain white/objects/cockpit_panel/cockpit_panel.png` — same dark PNG.
+- the five remaining livery `cockpit_panel.dds` overrides were removed, so the base dark panel
+  applies to every livery (all six had been byte-identical anyway).
+- the previous **light** 8K PNG/4K DDS and every removed livery DDS are in
+  `_texture_backups/2026-10-26_dark_panel/`. To restore the light look, copy them back and
+  reload the aircraft.
+- `cockpit_overall`, `cabin` and `cockpit_seat` remain the high-res light-beige set, which is
+  the intended combination in the Cascade 3 asset pack (dark panel, light surroundings).
+- Preview: `~/Desktop/CitationX_panel_light_vs_dark.png`.
+
 **Textures load when the aircraft loads.** Use *Developer → Reload Aircraft* (or restart), not
 FlyWithLua's Lua reload. In-sim confirmation of the 8K panel (texture cap, VRAM, label
 readability) is still pending.
@@ -988,10 +1004,11 @@ record these as confirmed working:
 - The **handling curve**: whether deadzone 0.02 / expo 1.35 / smoothing 0.55 feels right on the
   DS4, and whether the control check is asked at a sensible moment (it needs 60 % travel on all
   three axes before the thrust levers advance).
-- The **8K cockpit textures**: the panel PNG is 8192² lossless with a 4096² DXT1 fallback, the
-  overall/cabin are 8192² DXT5 and the seat is 4096² DXT5. File dimensions, mip counts and 1:1
-  crops were verified, but nothing has been seen in the 3D cockpit or with the simulator's
-  texture-resolution cap.
+- The **8K cockpit textures**: the panel is a 8192² dark Cascade 3 PNG with an 8192² DXT5
+  fallback, the overall/cabin are 8192² DXT5 and the seat is 4096² DXT5. File dimensions, mip
+  counts and 1:1 crops were verified, but nothing has been seen in the 3D cockpit or with the
+  simulator's texture-resolution cap. The dark panel is a deliberate finish change, not just a
+  resolution upgrade; the light 8K transplant is backed up.
 - The KPCrew copilot, panels and briefings. Only the *loading* path was fixed; the KPCrew UI,
   the SOP checklists and the SimBrief import have had no functional test.
 - The `metargen.lua` METAR fix (array weather refs → `dataref_table`, visibility in statute
@@ -1092,6 +1109,7 @@ textures.
   `REAL_CONFIG.hud_enabled` hides it; `CitationXRealism/hud` and the macro *realism panel*
   toggle it.
 - Textures: the pre-2026-10-26 sharpened originals and pre-8K interior are in
-  `Aircraft/Cessna Citation X AviTab/_texture_backups/2026-10-26_cockpit_highres/`; the
-  pre-sharpening originals are in `_original_textures/`. Restore either set and reload the
-  aircraft to undo.
+  `Aircraft/Cessna Citation X AviTab/_texture_backups/2026-10-26_cockpit_highres/`; the light
+  8K panel (and every removed livery panel DDS) is in
+  `_texture_backups/2026-10-26_dark_panel/`; pre-sharpening originals are in
+  `_original_textures/`. Restore a set and reload the aircraft to undo.
