@@ -11,13 +11,14 @@ standalone landing-performance scorer.
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
 | `Scripts/CitationX_EFB.lua` | Electronic flight bag panel: PERF (density altitude, wind components, V1/VR/V2/Vref, takeoff and landing distance by runway condition), CHECK (interactive 8-phase checklists) and FUEL (trip/contingency/alternate/reserve/endurance). Advisory data only. |
-| `Scripts/CitationX_Realism.lua` | Realism pack with one black, sans-serif (Helvetica) panel: live state of every realism subsystem plus clickable toggles. Behind it: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable) on FlyWithLua's FMOD master bus; pilot-input handling curve (deadzone/expo/smoothing); flight-controls check; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing and cabin-altitude advisories (each also raises a 2 s toast). |
+| `Scripts/CitationX_Realism.lua` | Realism pack with one black, sans-serif (Helvetica) panel: live state of every realism subsystem plus clickable toggles. Behind it: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable, fuel imbalance, crosswind, overweight) on FlyWithLua's FMOD master bus; pilot-input handling curve (deadzone/expo/smoothing); flight-controls check; takeoff trim/flap gate; fuel-balance monitor; MTOW/MLW weight limits; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing, cabin-altitude and crosswind advisories (each also raises a 2 s toast). |
 | `Scripts/LandingPerformance.lua` | Standalone landing scoring and debrief card (third-party, untracked in git). |
 
 ## Control panel
 
-**Only the realism panel is on screen at load; every MasterSuite module starts OFF except the
-DS4 right-stick heading knob.** The one exception is the REALISM PACK itself, which draws its
+**Only the realism panel is on screen at load; every MasterSuite drawing module starts OFF.
+The keyboard input layer and the DS4 right-stick heading knob stay ON** because they are the
+controls the user flies with and draw nothing. The realism pack itself paints its
 own black Helvetica panel at the top-left
 (`CitationXRealism/hud` hides it). Open any other panel from the FlyWithLua macro menu or the
 commands below; the suite control panel is `CitationX Suite: control panel`
@@ -82,9 +83,12 @@ stays untracked via `.gitignore`.
 - `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG` (`row_h` controls row spacing).
 - `CitationX_Realism.lua` — `REAL_CONFIG`: callout speeds (V1/Vr/Vref/Vfe/Vle), Vmo/Mmo,
   minima, load-shed threshold, brake-energy limits, icing window, anti-ice/cabin-altitude
-  triggers, stabilised-approach gate, handling curve (`handling_deadzone`,
-  `handling_exponent`, `handling_smoothing`), control-check travel, `audio_backend`
-  (`auto`/`fmod`/`wav`) and `toasts_enabled`.
+  triggers, stabilised-approach gate, takeoff trim/flap gate (`to_flap_*`,
+  `to_trim_tolerance`), fuel balance (`fuel_imbalance_lb`, `fuel_rearm_lb`,
+  `fuel_imbalance_delay_s`), weight limits (`mtow_lb`, `mlw_lb`), crosswind
+  (`crosswind_limit_kt`), handling curve (`handling_deadzone`, `handling_exponent`,
+  `handling_smoothing`), control-check travel, `audio_backend` (`auto`/`fmod`/`wav`) and
+  `toasts_enabled`.
 
 ## Bindable commands
 

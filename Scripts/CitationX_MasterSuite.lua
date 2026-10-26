@@ -28,10 +28,10 @@
 
 -- ------------------------------------------------------------------ CONFIG --
 CONFIG = {
-    -- Everything starts disabled except the DS4 right-stick heading knob (the
-    -- one thing the user flies with). Every module here can be switched on
-    -- from the control panel (once shown) or the FlyWithLua macro menu /
-    -- CitationXSuite/toggle_<key> commands.
+    -- Everything starts disabled except the DS4 right-stick heading knob and
+    -- the keyboard input layer (the one thing the user flies with). Every
+    -- module here can be switched on from the control panel (once shown) or
+    -- the FlyWithLua macro menu / CitationXSuite/toggle_<key> commands.
     log_enabled            = false,
     log_to_desktop         = true,
 
@@ -53,7 +53,10 @@ CONFIG = {
     emergency_alt_ft       = 15000,
     emergency_mach         = 0.85,
 
-    input_map_enabled      = false,
+    -- Keyboard layers for the C750 systems. This is a control surface, not a
+    -- panel: it must stay on at init even though every drawing module starts
+    -- off, otherwise Ctrl+Shift/Alt shortcuts silently stop working.
+    input_map_enabled      = true,
     joy_map_enabled        = true,   -- auto-bind only UNASSIGNED controller buttons
     joy_autobind_enabled   = true,
     input_learn_mode       = false,

@@ -99,14 +99,15 @@ check(CONFIG.status_enabled == false, "control panel starts hidden")
 check(CONFIG.axis_monitor == false, "axis monitor starts hidden")
 check(CONFIG.input_learn_mode == false, "learn mode starts hidden")
 
--- ---------- and nothing runs either: only the heading knob may be ON at load ----------
+-- ---------- and nothing runs except the heading knob and keyboard layer ----------
 local on_at_load = {}
 for i = 1, #SUITE_MODULES do
   local m = SUITE_MODULES[i]
   if m.state() == "ON" then on_at_load[#on_at_load + 1] = m.key end
 end
-check(#on_at_load == 1 and on_at_load[1] == "stick",
-  "only the right-stick heading knob starts ON",
+table.sort(on_at_load)
+check(#on_at_load == 2 and on_at_load[1] == "input" and on_at_load[2] == "stick",
+  "only the keyboard layer and right-stick heading knob start ON",
   table.concat(on_at_load, ","))
 
 -- ---------- the duplicate cockpit readouts must not come back ----------

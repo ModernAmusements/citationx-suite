@@ -94,7 +94,7 @@ check(type(REAL_CONFIG) == "table", "REAL_CONFIG exists")
 check(draw_registered == true, "realism panel registers its draw callback")
 check(has("callout sounds loaded"), "callout WAVs were loaded", logs[1])
 check(has("(fmod bus)"), "FMOD bus is preferred when the API is present")
-check(#fmod_loaded == 19, "all 19 callouts loaded through load_fmod_sound", #fmod_loaded)
+check(#fmod_loaded == 22, "all 22 callouts loaded through load_fmod_sound", #fmod_loaded)
 check(toasts[#toasts] == "REALISM PACK READY", "load announces itself in the toast slot", toasts[#toasts])
 
 -- ---------- the black sans-serif panel ----------
@@ -372,6 +372,95 @@ real_cabin_alt_ft = 12000
 frame()
 check(has("CALLOUT CABIN ALTITUDE"), "cabin-altitude warning above 10 000 ft")
 real_cabin_alt_ft = 0
+
+-- ---------- 15-degree flap limit ----------
+logs = {}
+real_on_ground = 0
+real_gear[0]   = 0
+real_flap_rat  = 0.75
+real_ias_kt    = 200
+real_agl_m     = 3000 / 3.28084
+real_vs_fpm    = 0
+frame()
+check(not has("CALLOUT FLAP OVERSPEED"),
+  "flaps 15 at 200 kt is inside the 210 kt limit")
+real_ias_kt = 215
+frame()
+check(has("CALLOUT FLAP OVERSPEED"), "flaps 15 overspeed above 210 kt")
+
+-- ---------- takeoff trim ----------
+logs = {}
+real_on_ground  = 1
+real_ias_kt     = 0
+real_flap_rat   = 0.5
+real_elev_trim  = -0.55
+real_ail_trim   = 0
+real_rud_trim   = 0
+real_throttle   = 0
+real_park_brake = 0
+real_spoiler    = 0
+real_weight_kg  = 12000
+frame()
+real_throttle = 0.9
+frame()
+check(has("CALLOUT TAKEOFF CONFIG"), "stab trim out of the green band is caught")
+check(toasts[#toasts]:find("STAB TRIM", 1, true) ~= nil,
+  "takeoff-config toast names STAB TRIM", toasts[#toasts])
+real_throttle = 0
+frame()
+logs = {}
+real_elev_trim = -0.30
+real_throttle  = 0.9
+frame()
+check(not has("CALLOUT TAKEOFF CONFIG"), "trim inside the flap-5 green band passes")
+
+-- ---------- fuel balance ----------
+logs = {}
+real_on_ground = 1
+real_ias_kt    = 0
+real_throttle  = 0
+real_engine_rpm[0] = 800
+real_fuel[1], real_fuel[2] = 1000, 1200   -- 200 kg = 441 lb
+for _ = 1, 30 do frame() end                -- 6 s, past the 5 s debounce
+check(has("CALLOUT FUEL IMBALANCE"), "fuel imbalance above 200 lb is called")
+local fuel_hits = 0
+for _, l in ipairs(logs) do
+  if l:find("CALLOUT FUEL IMBALANCE", 1, true) then fuel_hits = fuel_hits + 1 end
+end
+check(fuel_hits == 1, "fuel imbalance latches once", fuel_hits)
+real_engine_rpm[0] = 0
+real_fuel[1], real_fuel[2] = 1000, 1000
+frame()
+
+-- ---------- overweight landing ----------
+logs = {}
+real_weight_kg = 15000                     -- 33 069 lb, above MLW 31 800
+real_on_ground = 0
+frame()
+real_on_ground = 1
+frame()
+check(has("CALLOUT OVERWEIGHT"), "landing above MLW is called")
+real_weight_kg = 13000                     -- 28 660 lb, below MLW
+real_on_ground = 0
+frame()
+logs = {}
+real_on_ground = 1
+frame()
+check(not has("CALLOUT OVERWEIGHT"), "landing below MLW stays quiet")
+
+-- ---------- crosswind ----------
+logs = {}
+real_on_ground     = 1
+real_ias_kt        = 100
+real_heading_deg   = 0
+real_wind_dir_deg  = 90
+real_wind_speed_kt = 8
+frame()
+check(not has("CALLOUT CROSSWIND"), "8 kt crosswind is inside the demonstrated limit")
+real_wind_speed_kt = 20
+frame()
+check(has("CALLOUT CROSSWIND"), "20 kt crosswind is called")
+real_wind_speed_kt = 0
 
 -- ---------- toggle ----------
 real_set_enabled(false)

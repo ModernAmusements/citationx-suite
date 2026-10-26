@@ -1,7 +1,7 @@
 -- ============================================================================
 --  CESSNA CITATION X — REALISM PACK
 --  X-Plane 12  |  FlyWithLua NG+ (2.8+)
---  Version 1.0
+--  Version 1.1
 -- ----------------------------------------------------------------------------
 --  Adds the things the aircraft and X-Plane do not do on their own. Everything
 --  is audio or Log.txt, plus ONE black, sans-serif panel (item 14) listing the
@@ -18,7 +18,7 @@
 --    5. Icing advisory from OAT + visible moisture.
 --    6. Vmo / Mmo overspeed warning (270 kt below 8000 ft, 350 above, M 0.935).
 --    7. Takeoff configuration warning at thrust application (park brake,
---       speedbrake, landing flaps).
+--       speedbrake, flaps).
 --    8. Stabilised-approach gate at 1000 ft AGL, with the reason when unstable.
 --    9. GEAR DOWN confirmation when the gear locks down in flight.
 --   10. ANTI-ICE OFF advisory while icing conditions exist.
@@ -31,10 +31,16 @@
 --       warning says CONTROL CHECK.
 --   14. One black, sans-serif panel (Helvetica) with every control and its live
 --       state; click a row to toggle it. CitationXRealism/hud hides it.
+--   15. Takeoff trim gate: elevator trim must sit in the aircraft checklist's
+--       green band for the selected flap detent, aileron/rudder trim neutral.
+--   16. Fuel-balance monitor: left/right wing tank difference above 200 lb.
+--   17. Weight limits: MTOW 36 100 lb at takeoff, MLW 31 800 lb at touchdown.
+--   18. Crosswind advisory: component above the 10 kt demonstrated limit
+--       during the takeoff roll or on short final.
 --
---  Speeds (Citation X POM, Operating-Speeds page):
---    Vr 145 · Vref 132 · Vfe 180 · Vle/Vlo 210 · Vmo 270 (<8000 ft) / 350
---    Mmo 0.935 · Vso 115 · Vs1 136
+--  Speeds (Citation X POM, Operating-Speeds page / aircraft checklist):
+--    Vr 145 · Vref 132 · Vfe 5° 250, 15° 210, full 180 · Vle/Vlo 210
+--    Vmo 270 (<8000 ft) / 350 · Mmo 0.935 · Vso 115 · Vs1 136
 --  V1 is not published in the POM table; it is a configurable advisory value.
 --
 --  Audio files live in Scripts/CitationX_Callouts/. If a file or the FlyWithLua
@@ -75,8 +81,12 @@ REAL_CONFIG = {
 
     -- Overspeed advisories ---------------------------------------------------
     overspeed_enabled  = true,
-    flap15_vfe_kt      = 250,   -- 15 deg detent (POM publishes 180 for full)
-    flap_full_ratio    = 0.60,
+    -- Citation X checklist: Vfe 250 kt at flaps 5, 210 kt at flaps 15,
+    -- 180 kt at full flaps. The detents are 0.50 / 0.75 / 1.00 of travel.
+    flap5_vfe_kt       = 250,
+    flap15_vfe_kt      = 210,
+    flap5_ratio_max    = 0.60,
+    flap15_ratio_max   = 0.85,
 
     -- Icing ------------------------------------------------------------------
     ice_enabled        = true,
@@ -94,7 +104,24 @@ REAL_CONFIG = {
     -- Takeoff configuration --------------------------------------------------
     to_config_enabled  = true,
     to_throttle_ratio  = 0.70,  -- thrust lever position that arms the check
-    to_flap_max_ratio  = 0.80,  -- more flap than this is a landing setting
+    to_flap_min_ratio  = 0.45,  -- takeoff flaps 5 (0.50) or 15 (0.75)
+    to_flap_max_ratio  = 0.80,
+    to_trim_tolerance  = 0.02,  -- checklist green band, plus rig tolerance
+
+    -- Weight limits (aircraft checklist: MTOW 36 100 lb, MLW 31 800 lb) -----
+    weight_enabled     = true,
+    mtow_lb            = 36100,
+    mlw_lb             = 31800,
+
+    -- Fuel balance (Before Taxi checklist: imbalance < 200 lb) --------------
+    fuel_balance_enabled = true,
+    fuel_imbalance_lb    = 200,
+    fuel_rearm_lb        = 150,
+    fuel_imbalance_delay_s = 5.0,   -- ignore transient transfer/refuel slosh
+
+    -- Crosswind (POM: maximum demonstrated crosswind 10 kt) -----------------
+    crosswind_enabled  = true,
+    crosswind_limit_kt = 10,
 
     -- Stabilised approach ----------------------------------------------------
     stable_enabled     = true,
@@ -151,6 +178,17 @@ dataref("real_anti_ice",   "sim/cockpit2/ice/ice_surface_hot_bleed_air_on", "rea
 dataref("real_cabin_alt_ft",
     "sim/cockpit2/pressurization/indicators/cabin_altitude_ft", "readonly")
 
+-- Takeoff trim, weight and crosswind monitors.
+dataref("real_elev_trim", "sim/cockpit2/controls/elevator_trim", "readonly")
+dataref("real_ail_trim",  "sim/cockpit2/controls/aileron_trim", "readonly")
+dataref("real_rud_trim",  "sim/cockpit2/controls/rudder_trim", "readonly")
+dataref("real_wind_dir_deg",
+    "sim/cockpit2/gauges/indicators/wind_heading_deg_mag", "readonly")
+dataref("real_wind_speed_kt",
+    "sim/cockpit2/gauges/indicators/wind_speed_kts", "readonly")
+dataref("real_heading_deg",
+    "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot", "readonly")
+
 -- Pilot input, for the handling curve.
 dataref("real_joy_pitch", "sim/joystick/joy_mapped_axis_value", "readonly", 1)
 dataref("real_joy_roll",  "sim/joystick/joy_mapped_axis_value", "readonly", 2)
@@ -172,6 +210,9 @@ real_gear    = dataref_table("sim/flightmodel2/gear/deploy_ratio")
 real_bus_v   = dataref_table("sim/cockpit2/electrical/bus_volts")
 real_gen_on  = dataref_table("sim/cockpit2/electrical/generator_on")
 real_battery = dataref_table("sim/cockpit2/electrical/battery_on")
+-- C750 tank order is 0 center, 1 left, 2 right (acf _tank_name), so the
+-- checklist's "Fuel Balance <200 lbs" compares [1] against [2]. Units are kg.
+real_fuel    = dataref_table("sim/cockpit2/fuel/fuel_quantity")
 
 -- ---------------------------------------------------------------- CALLOUTS ---
 local CALLOUT_FILES = {
@@ -194,6 +235,9 @@ local CALLOUT_FILES = {
     gear_down = "gear_down.wav",
     anti_ice  = "anti_ice.wav",
     cabin_alt = "cabin_alt.wav",
+    fuel_imb  = "fuel_imbalance.wav",
+    crosswind = "crosswind.wav",
+    overweight = "overweight.wav",
 }
 local callout_id  = {}
 local sound_bus   = "none"   -- "fmod" | "wav" | "none"
@@ -340,7 +384,41 @@ local S = {
     cc_engine_running = false,
     to_issue         = "",
     approach_note    = "-",
+    fuel_over_since  = nil,
+    fuel_warned      = false,
+    xwind_warned     = false,
+    weight_airborne  = false,
+    overweight_called = false,
 }
+
+-- --------------------------------------------------------------- HELPERS -----
+-- Citation X checklist units: fuel is loaded in lb, X-Plane stores kg.
+local LB_PER_KG = 2.2046226218
+local function kg_to_lb(kg) return (kg or 0.0) * LB_PER_KG end
+
+-- C750 tanks: 1 left wing, 2 right wing. The Before Taxi check requires the
+-- difference below 200 lb; X-Plane reports each tank in kg.
+local function fuel_imbalance_lb()
+    local left  = real_fuel[1] or 0.0
+    local right = real_fuel[2] or 0.0
+    return math.abs(left - right) * LB_PER_KG
+end
+
+-- The checklist's green band: flaps 5 -> -0.43..0, flaps 15 -> -0.21..0.42.
+-- Anything outside the two takeoff detents has no published takeoff band.
+local function takeoff_trim_band(flap)
+    if flap >= 0.45 and flap <= 0.60 then return -0.43, 0.00 end
+    if flap > 0.60 and flap <= 0.85 then return -0.21, 0.42 end
+    return nil
+end
+
+-- Crosswind component relative to the nose. During the takeoff roll and on
+-- short final the nose is aligned with the runway, so this is the component
+-- the POM's 10 kt demonstrated limit refers to.
+local function crosswind_kt()
+    local delta = math.rad((real_wind_dir_deg or 0.0) - (real_heading_deg or 0.0))
+    return math.abs((real_wind_speed_kt or 0.0) * math.sin(delta))
+end
 
 -- ---------------------------------------------------------------- HANDLING ---
 -- Two writers may never own the same joystick override: if the MasterSuite's
@@ -573,11 +651,31 @@ local function takeoff_config_tick(now)
     S.to_config_armed = false
 
     local issues = {}
+    local flap = real_flap_rat or 0.0
     if (real_park_brake or 0.0) > 0.1 then issues[#issues + 1] = "PARK BRAKE" end
     if (real_spoiler or 0.0) > 0.1 then issues[#issues + 1] = "SPEEDBRAKE" end
-    if (real_flap_rat or 0.0) > REAL_CONFIG.to_flap_max_ratio then
+    if flap < REAL_CONFIG.to_flap_min_ratio
+        or flap > REAL_CONFIG.to_flap_max_ratio then
         issues[#issues + 1] = "FLAPS"
     end
+
+    -- Stabilizer trim green band + lateral trim neutral, from the aircraft's
+    -- BEFORE TAXI checklist. Only meaningful when the flaps are at a takeoff
+    -- detent; a flap issue above already covers every other setting.
+    local tol = REAL_CONFIG.to_trim_tolerance
+    local tmin, tmax = takeoff_trim_band(flap)
+    if tmin and ((real_elev_trim or 0.0) < tmin - tol
+        or (real_elev_trim or 0.0) > tmax + tol) then
+        issues[#issues + 1] = "STAB TRIM"
+    end
+    if math.abs(real_ail_trim or 0.0) > tol
+        or math.abs(real_rud_trim or 0.0) > tol then
+        issues[#issues + 1] = "LATERAL TRIM"
+    end
+    if kg_to_lb(real_weight_kg) > REAL_CONFIG.mtow_lb then
+        issues[#issues + 1] = "WEIGHT"
+    end
+
     if REAL_CONFIG.control_check_enabled and not S.cc_done then
         issues[#issues + 1] = "CONTROL CHECK"
     end
@@ -761,6 +859,80 @@ local function brakes_tick(now)
     end
 end
 
+-- ------------------------------------------------------------- FUEL BALANCE --
+local function fuel_tick(now)
+    if not REAL_CONFIG.fuel_balance_enabled then return end
+    local lb = fuel_imbalance_lb()
+
+    -- Ignore the ground/refuel case until an engine is running: the Before
+    -- Taxi checklist item only matters once the aircraft is about to move.
+    local powered = (real_engine_rpm[0] or 0.0) > 50.0
+        or (real_engine_rpm[1] or 0.0) > 50.0
+    if real_on_ground == 1 and not powered then
+        S.fuel_over_since = nil
+        return
+    end
+
+    if lb > REAL_CONFIG.fuel_imbalance_lb then
+        if not S.fuel_over_since then S.fuel_over_since = now end
+        if not S.fuel_warned
+            and now - S.fuel_over_since >= REAL_CONFIG.fuel_imbalance_delay_s then
+            S.fuel_warned = true
+            callout("fuel_imb", "FUEL IMBALANCE")
+            notify(string.format("fuel imbalance %.0f lb (limit %.0f)",
+                lb, REAL_CONFIG.fuel_imbalance_lb),
+                string.format("FUEL IMBALANCE %.0f LB", lb))
+        end
+    else
+        S.fuel_over_since = nil
+        if S.fuel_warned and lb < REAL_CONFIG.fuel_rearm_lb then
+            S.fuel_warned = false
+        end
+    end
+end
+
+-- ----------------------------------------------------------------- WEIGHT ----
+local function weight_tick()
+    if not REAL_CONFIG.weight_enabled then return end
+    local on_ground = (real_on_ground == 1)
+    local lb = kg_to_lb(real_weight_kg)
+
+    if on_ground and S.weight_airborne and not S.overweight_called then
+        S.overweight_called = true
+        if lb > REAL_CONFIG.mlw_lb then
+            callout("overweight", "OVERWEIGHT")
+            notify(string.format("landed at %.0f lb, MLW %.0f lb", lb, REAL_CONFIG.mlw_lb),
+                string.format("OVERWEIGHT LANDING %.0f LB", lb))
+        end
+    end
+    if not on_ground then S.overweight_called = false end
+    S.weight_airborne = not on_ground
+end
+
+-- --------------------------------------------------------------- CROSSWIND ---
+local function crosswind_tick(agl_ft)
+    if not REAL_CONFIG.crosswind_enabled then return end
+    local ias = real_ias_kt or 0.0
+    local takeoff_roll = (real_on_ground == 1) and ias > 40.0
+    local short_final  = (real_on_ground == 0)
+        and agl_ft < 1200.0 and (real_vs_fpm or 0.0) < -100.0
+
+    if not (takeoff_roll or short_final) then
+        S.xwind_warned = false
+        return
+    end
+
+    local xw = crosswind_kt()
+    if xw > REAL_CONFIG.crosswind_limit_kt and not S.xwind_warned then
+        S.xwind_warned = true
+        callout("crosswind", "CROSSWIND")
+        notify(string.format("crosswind %.0f kt (demonstrated limit %.0f)",
+            xw, REAL_CONFIG.crosswind_limit_kt),
+            string.format("CROSSWIND %.0f KT (MAX DEMO %.0f)",
+                xw, REAL_CONFIG.crosswind_limit_kt))
+    end
+end
+
 -- -------------------------------------------------------------- OVERSPEED ----
 local function overspeed_tick(now)
     if not REAL_CONFIG.overspeed_enabled then return end
@@ -768,19 +940,27 @@ local function overspeed_tick(now)
     local flap = real_flap_rat or 0.0
     local gear = real_gear[0] or 0.0
 
-    local vfe = REAL_CONFIG.vfe_kt
-    if flap > 0.05 and flap <= REAL_CONFIG.flap_full_ratio then
-        vfe = REAL_CONFIG.flap15_vfe_kt
+    local vfe = nil
+    if flap > 0.05 then
+        if flap <= REAL_CONFIG.flap5_ratio_max then
+            vfe = REAL_CONFIG.flap5_vfe_kt
+        elseif flap <= REAL_CONFIG.flap15_ratio_max then
+            vfe = REAL_CONFIG.flap15_vfe_kt
+        else
+            vfe = REAL_CONFIG.vfe_kt
+        end
     end
 
-    if flap > 0.05 and ias > vfe + 3.0 then
+    if vfe and ias > vfe + 3.0 then
         if not S.flap_warned then
             S.flap_warned = true
             callout("flap_over", "FLAP OVERSPEED")
             notify(string.format("flap overspeed %.0f kt (limit %.0f)", ias, vfe),
                 string.format("FLAP OVERSPEED %.0f KT (MAX %.0f)", ias, vfe))
         end
-    elseif ias < vfe - 3.0 then
+    elseif vfe and ias < vfe - 3.0 then
+        S.flap_warned = false
+    elseif not vfe then
         S.flap_warned = false
     end
 
@@ -841,6 +1021,9 @@ function real_frame()
     electrical_tick(now)
     brakes_tick(now)
     overspeed_tick(now)
+    fuel_tick(now)
+    weight_tick()
+    crosswind_tick(agl_ft)
     icing_tick(now)
     anti_ice_tick(now)
     cabin_alt_tick(now)
@@ -872,6 +1055,15 @@ function real_status_report()
         tostring(REAL_CONFIG.vmo_enabled), tostring(REAL_CONFIG.to_config_enabled),
         tostring(REAL_CONFIG.stable_enabled), tostring(REAL_CONFIG.anti_ice_enabled),
         tostring(REAL_CONFIG.cabin_alt_enabled)))
+    logMsg(string.format("  weight=%s fuel_bal=%s crosswind=%s",
+        tostring(REAL_CONFIG.weight_enabled),
+        tostring(REAL_CONFIG.fuel_balance_enabled),
+        tostring(REAL_CONFIG.crosswind_enabled)))
+    logMsg(string.format("  weight=%.0f lb (MTOW %.0f, MLW %.0f), fuel imbalance=%.0f lb",
+        kg_to_lb(real_weight_kg), REAL_CONFIG.mtow_lb, REAL_CONFIG.mlw_lb,
+        fuel_imbalance_lb()))
+    logMsg(string.format("  stab trim=%.2f, crosswind=%.0f kt",
+        real_elev_trim or 0.0, crosswind_kt()))
     logMsg(string.format("  handling=%s (dz %.2f exp %.2f), control check=%s (%s)",
         tostring(REAL_CONFIG.handling_enabled), REAL_CONFIG.handling_deadzone,
         REAL_CONFIG.handling_exponent, tostring(REAL_CONFIG.control_check_enabled),
@@ -974,6 +1166,42 @@ local function hud_icing()
     return "CLEAR", REAL_STYLE.value
 end
 
+local function hud_trim()
+    local flap = real_flap_rat or 0.0
+    local trim = real_elev_trim or 0.0
+    local tol  = REAL_CONFIG.to_trim_tolerance
+    local tmin, tmax = takeoff_trim_band(flap)
+    if not tmin then
+        return string.format("%.2f  --", trim), REAL_STYLE.dim
+    end
+    local ok = trim >= tmin - tol and trim <= tmax + tol
+        and math.abs(real_ail_trim or 0.0) <= tol
+        and math.abs(real_rud_trim or 0.0) <= tol
+    return string.format("%.2f  %s", trim, ok and "GREEN" or "OUT"),
+        ok and REAL_STYLE.ok or REAL_STYLE.warn
+end
+
+local function hud_fuel()
+    local lb = fuel_imbalance_lb()
+    return string.format("%.0f LB", lb),
+        (lb > REAL_CONFIG.fuel_imbalance_lb) and REAL_STYLE.warn or REAL_STYLE.value
+end
+
+local function hud_weight()
+    local lb = kg_to_lb(real_weight_kg)
+    local airborne = (real_on_ground == 0)
+    local limit = airborne and REAL_CONFIG.mlw_lb or REAL_CONFIG.mtow_lb
+    local tag = airborne and "LDG" or "TO"
+    return string.format("%.1fK  %s", lb / 1000.0, tag),
+        (lb > limit) and REAL_STYLE.warn or REAL_STYLE.value
+end
+
+local function hud_xwind()
+    local xw = crosswind_kt()
+    return string.format("%.0f KT", xw),
+        (xw > REAL_CONFIG.crosswind_limit_kt) and REAL_STYLE.warn or REAL_STYLE.value
+end
+
 REAL_HUD_ROWS = {
     {
         label = "REALISM PACK",
@@ -1039,6 +1267,10 @@ REAL_HUD_ROWS = {
             return "OK", REAL_STYLE.ok
         end,
     },
+    { label = "TAKEOFF TRIM", value = hud_trim },
+    { label = "FUEL BAL", value = hud_fuel },
+    { label = "WEIGHT", value = hud_weight },
+    { label = "CROSSWIND", value = hud_xwind },
     {
         label = "APPROACH",
         value = function()

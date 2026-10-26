@@ -19,7 +19,7 @@ callouts audible, panel legible, handling curve felt, textures seen.
 | Realism UX | generator loss / load shed / hot brakes / overspeed / icing raise a 2 s toast via the new `citationx_toast()` |
 | Realism logic | GEAR UP no longer fires while the gear is still fully down |
 | Panels | all four suite panels default to hidden — the only thing drawn is the realism pack's own black panel |
-| Modules | every MasterSuite module defaults OFF **except the DS4 right-stick heading knob**; REALISM PACK is the only other active module at init |
+| Modules | every MasterSuite module defaults OFF **except the DS4 right-stick heading knob and the keyboard input layer**; REALISM PACK is the only drawing module active at init |
 | Stick HDG | right stick re-enabled, and its learned rest no longer latches X-Plane's `-0.01` pre-enumeration value (it never locked before) |
 | Controller | `JOY_BINDINGS` built at runtime from `sim/joystick/joystick_button_assignments`; only buttons X-Plane reports as unassigned are used |
 | Handling | pilot-input curve (deadzone/expo/smoothing) + flight-controls check, part of the realism pack |
@@ -56,11 +56,11 @@ panel geometry ................ PASSED (47 checks, incl. realism panel at 1280×
 2026-10-24 audio fix.** Reload Lua in X-Plane (*FlyWithLua → Reload all Lua script files*), then
 check `Log.txt` for `FlyWithLua Error:` and `Moved Bad Script`. Expected: neither appears,
 `All script files loaded successfully.` is the last loading line,
-`Citation X Realism: 19/19 callout sounds loaded (fmod bus)` and
+`Citation X Realism: 22/22 callout sounds loaded (fmod bus)` and
 `Citation X Realism: master bus volume=1.00 mute=0` are present, and a
 `REALISM PACK READY` toast appears. Then use the macro
 **Citation X Realism: test callout** — you must hear "ROTATE". The black realism panel should
-be at the top-left with all twelve rows; click `CALLOUTS` and `HANDLING CURVE` once to see them
+be at the top-left with all sixteen rows; click `CALLOUTS` and `HANDLING CURVE` once to see them
 turn OFF/ON, then click `HIDE HUD` and reopen it with the macro *realism panel*.
 
 Textures need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
@@ -641,7 +641,7 @@ Hiding the panels was not enough — the MasterSuite's background modules were s
 | `status_enabled` | true | **false** |
 | `log_enabled` (flight recorder CSV) | true | **false** |
 | `emergency_enabled` (random bleed/press warning) | true | **false** |
-| `input_map_enabled` (custom key/button bindings) | true | **false** |
+| `input_map_enabled` (custom key/button bindings) | true | **false** (re-enabled 2026-10-26: losing the keyboard layers on reload was a regression; the layer draws nothing) |
 | `stick_hdg_enabled` (DS4 right-stick heading bug) | true | **true** (the one exception, re-enabled 2026-10-24 on request) |
 | `axis_optimizer_enabled`, `axis_monitor`, `input_learn_mode` | false | false |
 
@@ -655,8 +655,10 @@ new macros flip the lot — `CitationX Suite: enable all modules` /
 `CitationX Suite: disable all modules` (`citationx_set_all()`, which skips the panel row so
 enabling everything does not paint the panel on top).
 
-Consequence to be aware of: the suite's custom button bindings (`input_map_enabled`) stay off
-until switched on. The DS4 heading knob is the deliberate exception and is on at load.
+Consequence to be aware of: the suite's custom **keyboard** bindings (`input_map_enabled`) are
+on at load again (2026-10-26) — they are a control layer and draw nothing, so "only realism on
+init" still holds for every drawing module. The DS4 heading knob is the other deliberate
+exception.
 
 ### More realism (2026-10-24, fourth request)
 
@@ -874,6 +876,56 @@ Verified against the old quarantined file (4 problems) and against the fixed tre
 Validation after the fix: `94 dataref binding(s), 0 load failure(s), 0 binding problem(s)`;
 realism smoke, MasterSuite stick/panel, EFB, panel geometry (47 checks) and
 `check_kpcrew_modules C750` all pass.
+
+## 23. More realism: takeoff trim, fuel balance, weight and crosswind (2026-10-26)
+
+Requested after the quarantine fix: *"lets improve on that"* → more realism. All four new
+monitors are sourced from the aircraft's own checklist/POM, not invented:
+
+| Monitor | Source | Trigger | Output |
+| --- | --- | --- | --- |
+| **Takeoff trim** | `clist.txt` BEFORE TAXI: flaps 5 → trim −0.43…0, flaps 15 → −0.21…+0.42; aileron/rudder neutral | thrust ≥ 0.70 with trim outside the band for the selected flap detent | `STAB TRIM` / `LATERAL TRIM` added to the existing `TAKEOFF CONFIG` call |
+| **Fuel balance** | `clist.txt` BEFORE TAXI: imbalance < 200 lb | left/right wing tank difference > 200 lb for 5 s with an engine running or airborne | `FUEL IMBALANCE` call + toast |
+| **Weight** | `clist.txt` limits: MTOW 36 100 lb, MLW 31 800 lb | weight > MTOW at takeoff thrust; weight > MLW at touchdown | `WEIGHT` in `TAKEOFF CONFIG`; `OVERWEIGHT` at landing |
+| **Crosswind** | POM Operating-Speeds: maximum demonstrated crosswind 10 kt | crosswind component > 10 kt during the takeoff roll (IAS > 40) or below 1 200 ft AGL on approach | `CROSSWIND` call + toast |
+
+Implementation notes:
+
+- `sim/cockpit2/fuel/fuel_quantity` is **kg[9]**, and the C750's `acf/_tank_name` order is
+  **0 center, 1 left, 2 right**. The checklist compares [1] and [2]; the script converts the
+  difference to lb (`×2.2046226`) before applying the 200 lb limit.
+- The trim bands use `sim/cockpit2/controls/elevator_trim` and the checklist's own ratios;
+  `aileron_trim` / `rudder_trim` must be within 0.02 of neutral.
+- Takeoff flaps must be in the 5°/15° range (0.45–0.80); clean or full flaps now raise
+  `FLAPS` in the takeoff-config warning, matching the checklist's "Flaps 5 or 15".
+- The weight monitor reads `sim/flightmodel/weight/m_total` (kg) and compares in lb.
+- Crosswind uses `wind_heading_deg_mag`, `wind_speed_kts` and the AHARS magnetic heading;
+  it is an advisory, because "demonstrated" is not a hard limitation.
+- **Vfe corrected**: the old code used 250 kt for the 15° detent and 180 kt for anything above
+  0.60. The checklist gives **250 kt at flaps 5, 210 kt at flaps 15, 180 kt at full flaps**, so
+  the overspeed monitor now selects by detent (`flap5_ratio_max` 0.60,
+  `flap15_ratio_max` 0.85).
+- Three new callout WAVs (`fuel_imbalance`, `crosswind`, `overweight`) were generated with
+  `say -v Samantha --data-format=LEI16@22050`; the pack now loads 22.
+- The realism panel grew from 12 to 16 rows (`TAKEOFF TRIM`, `FUEL BAL`, `WEIGHT`, `CROSSWIND`).
+  It still fits 1280×720 (`smoke_panel_geometry.lua`, 47 checks).
+
+Validation: `probe_load_order` → `101 dataref binding(s), 0 load failure(s), 0 binding
+problem(s)`; realism smoke (including the four new sections and the 210 kt flap-15 case),
+MasterSuite stick/panel, EFB, panel geometry and `check_kpcrew_modules C750` all pass.
+
+## 24. Keyboard layer restored at load (2026-10-26)
+
+Reported: *"and now all the keyboard bindings are gone"* — after the reload, none of the
+`Ctrl+Shift` / `Ctrl+Alt` C750 system layers responded. Root cause was the 2026-10-24
+"only realism at init" sweep: it set `CONFIG.input_map_enabled = false`, and
+`citationx_keystroke()` returns early when that flag is off.
+
+That was the wrong trade. The keyboard map is a **control layer**, not a drawing module — it
+adds no HUD and no panel. The default is now `input_map_enabled = true`; `status_enabled`,
+`log_enabled`, `emergency_enabled`, the axis optimizer, axis monitor and learn mode all stay
+off. Two modules are deliberately live at init: the DS4 heading knob and the keyboard layer.
+`tests/smoke_hud_toggles.lua` now asserts exactly `input + stick` are ON at load.
 
 ## Not yet verified in-sim
 
