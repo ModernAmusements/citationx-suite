@@ -129,6 +129,14 @@ CONFIG = {
     view_pan_force_3d       = true,  -- R3 switches to the 3-D cockpit if in 2-D
     view_pan_pitch_limit    = 80,    -- degrees, keeps the head inside the cockpit
 
+    -- Plain arrow keys tilt the cockpit view. X-Plane's own Up/Down binding is
+    -- momentary (it snaps back), so the script holds the offset and consumes
+    -- the keystroke. Held = keep tilting; the view stays where you leave it.
+    view_tilt_enabled       = true,
+    view_tilt_rate_dps      = 70,
+    view_tilt_limit_deg     = 80,
+    view_tilt_invert        = false,
+
     axis_monitor            = false,
 
     altitude_step_ft        = 100,
@@ -355,6 +363,8 @@ local joy_autobind_done = false
 local view_pan_axis_x   = -1
 local view_pan_axis_y   = -1
 local view_pan_was_held = false
+local view_tilt_up      = false
+local view_tilt_down    = false
 local view_pan_logged   = false
 local view_pan_wait_center = false
 
@@ -1156,6 +1166,20 @@ function citationx_keystroke()
             vkey, vkey, yn(CONTROL_KEY), yn(OPTION_KEY), yn(SHIFT_KEY),
             tostring(KEY_ACTION), CKEY or ""))
     end
+
+    -- Held arrow keys tilt the cockpit view. Capture press AND release, and
+    -- consume the key so X-Plane's own momentary hat binding cannot fight it.
+    if (vkey == 0x26 or vkey == 0x28)
+        and not (CONTROL_KEY or OPTION_KEY or SHIFT_KEY) then
+        if vkey == 0x26 then
+            view_tilt_up = (KEY_ACTION == "pressed")
+        else
+            view_tilt_down = (KEY_ACTION == "pressed")
+        end
+        RESUME_KEY = true
+        if KEY_ACTION ~= "pressed" then return end
+    end
+
     if KEY_ACTION ~= "pressed" or not CONFIG.input_map_enabled then return end
     local binding = find_binding(vkey)
     if binding then
@@ -1397,6 +1421,21 @@ function citationx_frame()
     -- R3 + right stick pans the 3-D cockpit. While it is held the same stick
     -- must not also drive the heading bug, so the knob block is skipped.
     local look_held = citationx_view_pan(dt)
+
+    -- Held arrow keys tilt the view. The offset is kept after release; the
+    -- default view key (W) or a reload recentres it.
+    if CONFIG.view_tilt_enabled and dt > 0.0
+        and (view_tilt_up or view_tilt_down) then
+        local dir = 0
+        if view_tilt_up   then dir = dir + 1 end
+        if view_tilt_down then dir = dir - 1 end
+        if CONFIG.view_tilt_invert then dir = -dir end
+        local the = (view_head_the or 0.0) + dir * CONFIG.view_tilt_rate_dps * dt
+        local lim = CONFIG.view_tilt_limit_deg
+        if the >  lim then the =  lim end
+        if the < -lim then the = -lim end
+        view_head_the = the
+    end
 
     -- Spring-centered stick axis -> rate-based heading bug. Deflection is
     -- measured against each axis' learned rest value, so a parked axis (idle
