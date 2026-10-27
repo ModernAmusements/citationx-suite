@@ -25,8 +25,12 @@ Axes: left stick = pitch/roll, right stick X = yaw, right stick Y = view left/ri
 | **Touchpad** | Landing lights |
 | **PS** | Quick look 0 |
 
-## D-pad (8-way hat)
+> **L2 / R2 are analog on the DS4.** The suite reads the trigger axes directly
+> (USB axes 4/5, Bluetooth 29/30) and steps the throttle while a trigger is
+> held, through `sim/engines/throttle_down` / `throttle_up`. The profile's
+> button 6/7 entries only cover the digital end-stop.
 
+## D-pad (8-way hat)
 | Direction | Action |
 | --- | --- |
 | Up | Altitude up |

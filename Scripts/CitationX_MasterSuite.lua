@@ -71,6 +71,16 @@ CONFIG = {
     heading_key_step_deg    = 5,
     heading_wheel_invert    = false,
 
+    -- Analog DS4 triggers -> throttle up/down. L2/R2 are axes, not buttons:
+    -- 25 axes per device slot, so USB = 4/5 and Bluetooth = 29/30. A button
+    -- assignment only fires at the end of travel, which is why the triggers
+    -- felt dead.
+    trigger_throttle_enabled = true,
+    trigger_l2_axes          = { 4, 29 },
+    trigger_r2_axes          = { 5, 30 },
+    trigger_threshold        = 0.35,
+    trigger_repeat_s         = 0.08,
+
     -- Spring-loaded heading-bug knob driven by the DS4 right stick.
     -- stick_hdg_axis = -1 auto-detects the raw axis: only spring-centered,
     -- still-unassigned axes are eligible (their learned rest must sit within
@@ -771,6 +781,9 @@ local learn_last_event = "(waiting for input)"
 local learn_events     = 0
 local prev_joy_buttons = {}
 local prev_raw_axes    = {}
+local trigger_next     = 0.0
+local trigger_l2_base  = nil
+local trigger_r2_base  = nil
 local status_rects     = {}
 local panel_footer_rect = nil
 local panel_header_rect = nil
@@ -1224,6 +1237,47 @@ function citationx_set_input_learn(on)
     end
 end
 
+-- Analog L2/R2 triggers. The DS4 reports them as axes 4/5 (USB) and 29/30
+-- (Bluetooth); X-Plane's button map only sees the digital end-stop. Read the
+-- analog deflection from its learned rest and issue throttle_down/up at a
+-- steady repeat rate instead.
+local function trigger_throttle_tick()
+    if not CONFIG.trigger_throttle_enabled then return end
+
+    local function axis_value(list)
+        local best = nil
+        for i = 1, #list do
+            local v = joy_raw_axes[list[i]]
+            if v ~= nil and (best == nil or v > best) then best = v end
+        end
+        return best
+    end
+
+    local l2 = axis_value(CONFIG.trigger_l2_axes)
+    local r2 = axis_value(CONFIG.trigger_r2_axes)
+    if l2 == nil and r2 == nil then return end
+
+    if l2 ~= nil and trigger_l2_base == nil then trigger_l2_base = l2 end
+    if r2 ~= nil and trigger_r2_base == nil then trigger_r2_base = r2 end
+
+    local now = citationx_sim_time or 0.0
+    if now < trigger_next then return end
+
+    local down = l2 ~= nil
+        and math.abs(l2 - trigger_l2_base) >= CONFIG.trigger_threshold
+    local up   = r2 ~= nil
+        and math.abs(r2 - trigger_r2_base) >= CONFIG.trigger_threshold
+
+    if down then
+        command_once("sim/engines/throttle_down")
+        trigger_next = now + CONFIG.trigger_repeat_s
+    end
+    if up then
+        command_once("sim/engines/throttle_up")
+        trigger_next = now + CONFIG.trigger_repeat_s
+    end
+end
+
 -- ------------------------------------------------------------- FRAME LOOP ---
 function citationx_frame()
     local now = citationx_sim_time or 0.0
@@ -1427,6 +1481,8 @@ function citationx_frame()
             end
         end
     end
+
+    trigger_throttle_tick()
 
     -- 6. raw axes: learn logging (find the physical index for a stick)
     if CONFIG.input_learn_mode then
