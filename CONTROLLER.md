@@ -66,18 +66,20 @@ sends. Assign each MX button to one of these combos:
 
 | MX control (recommended) | Send this | Action |
 | --- | --- | --- |
-| Middle click | `Ctrl+Shift+6` | AP master |
-| Thumb button back | `Ctrl+Shift+7` | AP heading hold |
-| Thumb button forward | `Ctrl+Shift+8` | Thrust reversers |
-| Gesture button | `Ctrl+Shift+9` | ALT SEL down (−1000 ft) |
-| Gesture button + Shift | `Ctrl+Shift+0` | ALT SEL up (+1000 ft) |
-| Thumb wheel left | `Ctrl+Shift+←` | HDG SEL left (5°) |
-| Thumb wheel right | `Ctrl+Shift+→` | HDG SEL right (5°) |
-| Mode-shift | `Ctrl+Opt+5` | External power |
+| Middle click | `Ctrl+Opt+6` | Avionics |
+| Thumb button back | `Ctrl+Opt+1` | Battery L |
+| Thumb button forward | `Ctrl+Opt+3` | Generator L |
+| Gesture button | `Ctrl+Opt+8` | APU master |
+| Thumb wheel left | `Ctrl+Shift+1` | NAV lights |
+| Thumb wheel right | `Ctrl+Shift+2` | Beacon lights |
+| Mode-shift | `Ctrl+Opt+M` | Master caution |
 
 These are only suggestions — every combo below is a valid target.
 
 ### Keyboard / MX layers (all live)
+
+Each layer owns what the pad cannot reach — no command is duplicated between the
+PS4 profile and the keyboard.
 
 ### Ctrl+Shift + digit / arrow
 
@@ -87,14 +89,7 @@ These are only suggestions — every combo below is a valid target.
 | `Ctrl+Shift+2` | Beacon lights |
 | `Ctrl+Shift+3` | Strobe lights |
 | `Ctrl+Shift+4` | Taxi lights |
-| `Ctrl+Shift+5` | Landing lights |
-| `Ctrl+Shift+6` | AP master |
 | `Ctrl+Shift+7` | AP heading hold |
-| `Ctrl+Shift+8` | Thrust reversers |
-| `Ctrl+Shift+9` | ALT SEL down |
-| `Ctrl+Shift+0` | ALT SEL up |
-| `Ctrl+Shift+←` | HDG SEL left |
-| `Ctrl+Shift+→` | HDG SEL right |
 
 ### Ctrl+Shift + letter
 
@@ -104,14 +99,11 @@ These are only suggestions — every combo below is a valid target.
 | `Ctrl+Shift+B` | AP half bank |
 | `Ctrl+Shift+C` | AP CWS |
 | `Ctrl+Shift+D` | AP ALT |
-| `Ctrl+Shift+G` | Gear toggle |
 | `Ctrl+Shift+H` | Heading sync |
 | `Ctrl+Shift+I` | Fuel transfer L |
 | `Ctrl+Shift+J` | Fuel transfer R |
 | `Ctrl+Shift+K` | Start engine L |
 | `Ctrl+Shift+L` | Start engine R |
-| `Ctrl+Shift+M` | AP APP |
-| `Ctrl+Shift+N` | AP NAV |
 | `Ctrl+Shift+O` | Ignition L |
 | `Ctrl+Shift+P` | Ignition R |
 | `Ctrl+Shift+Q` | Boost pump L |
@@ -171,12 +163,10 @@ These are only suggestions — every combo below is a valid target.
 
 ### Free inputs
 
-- **PS4 buttons:** every physical control is assigned — Cross/Triangle/Circle/Square, L1/R1, L2/R2, Share, Options, L3/R3, Touchpad, PS and all eight D-pad directions. Nothing is free.
-- **PS4 axes:** left stick (roll/pitch), right stick X (yaw), L2/R2 (throttle, read by the suite). The right stick Y (USB axis 3 / Bluetooth 28) is unassigned and free if you want a view axis there.
-- **Mouse wheel:** used for the heading bug. ALT SEL is free if you set `thumbwheel_altitude = true` (and turn `thumbwheel_heading` off).
-- **MX buttons:** FlyWithLua only receives keystrokes, so any MX button not mapped in Logi Options+ is free. Free keystroke slots: `Ctrl+Shift+E`, `Ctrl+Shift+F`, `Ctrl+Shift+↑/↓`, `Ctrl+Opt+E`, `Ctrl+Opt+F` and all `Ctrl+Opt` arrows. Plain keys belong to X-Plane.
-
-The full command list is `CITX_BINDINGS` in `Scripts/CitationX_MasterSuite.lua`.
+- **PS4 buttons:** every physical control is assigned.
+- **PS4 axes:** right stick Y (USB axis 3 / Bluetooth 28) is unassigned.
+- **Mouse wheel:** heading bug; ALT SEL is free if `thumbwheel_altitude = true`.
+- **Free keystrokes** (no duplicate of the pad): `Ctrl+Shift+5/6/8/9/0`, `Ctrl+Shift+↑/↓/←/→`, `Ctrl+Shift+E/F`, `Ctrl+Opt+E/F`, all `Ctrl+Opt` arrows, and any MX button not mapped in Logi Options+.
 
 ## If one control is wrong
 

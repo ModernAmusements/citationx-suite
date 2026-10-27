@@ -169,6 +169,11 @@ SUITE_STYLE = {
 }
 
 -- ----------------------------------------------------------- INPUT MAP ------
+-- Split of duties: the PS4 profile owns hands-on flying (stick, throttle,
+-- flaps, gear, brakes, trim, autopilot bug/modes, speed brakes, reversers).
+-- These keyboard layers own what the pad cannot reach: lights, fuel, engines,
+-- electrical, APU, ice, hydraulics, pressurisation and oxygen. Do not add a
+-- command here that is already on the pad.
 -- vkey is the XPLM virtual key code (XPLMDefs.h). ctrl / opt / shift are the
 -- modifiers seen by FlyWithLua. Remap MX buttons in Logi Options+ to these
 -- keystrokes, or use learn mode to discover what each control really sends.
@@ -177,14 +182,7 @@ INPUT_BINDINGS = {
     { vkey = 0x32, ctrl = true, shift = true, label = "Beacon lights",    command = "sim/lights/beacon_lights_toggle" },
     { vkey = 0x33, ctrl = true, shift = true, label = "Strobe lights",    command = "sim/lights/strobe_lights_toggle" },
     { vkey = 0x34, ctrl = true, shift = true, label = "Taxi lights",      command = "sim/lights/taxi_lights_toggle" },
-    { vkey = 0x35, ctrl = true, shift = true, label = "Landing lights",   command = "sim/lights/landing_lights_toggle" },
-    { vkey = 0x36, ctrl = true, shift = true, label = "AP master",        command = "sim/autopilot/servos_toggle" },
     { vkey = 0x37, ctrl = true, shift = true, label = "AP heading hold",  command = "sim/autopilot/heading_hold" },
-    { vkey = 0x38, ctrl = true, shift = true, label = "Thrust reversers", command = "sim/engines/thrust_reverse_toggle" },
-    { vkey = 0x39, ctrl = true, shift = true, label = "ALT SEL down",     action = function() citationx_altitude(-CONFIG.altitude_coarse_step_ft) end },
-    { vkey = 0x30, ctrl = true, shift = true, label = "ALT SEL up",       action = function() citationx_altitude( CONFIG.altitude_coarse_step_ft) end },
-    { vkey = 0x25, ctrl = true, shift = true, label = "HDG SEL left",     action = function() citationx_heading(-CONFIG.heading_key_step_deg) end },
-    { vkey = 0x27, ctrl = true, shift = true, label = "HDG SEL right",    action = function() citationx_heading( CONFIG.heading_key_step_deg) end },
 }
 
 -- JOY_BINDINGS maps controller button indices (discovered in learn mode) to
@@ -221,14 +219,11 @@ CITX_BINDINGS = {
     { vkey = 0x42, ctrl = true, shift = true, label = "AP half bank",     command = "laminar/CitX/autopilot/cmd_bank_mode" },
     { vkey = 0x43, ctrl = true, shift = true, label = "AP CWS",           command = "laminar/CitX/autopilot/cmd_cngovr_mode" },
     { vkey = 0x44, ctrl = true, shift = true, label = "AP ALT",           command = "laminar/CitX/autopilot/cmd_alt_mode" },
-    { vkey = 0x47, ctrl = true, shift = true, label = "Gear toggle",      command = "sim/flight_controls/landing_gear_toggle" },
     { vkey = 0x48, ctrl = true, shift = true, label = "Heading sync",     command = "sim/autopilot/heading_sync" },
     { vkey = 0x49, ctrl = true, shift = true, label = "Fuel transfer L",  command = "laminar/CitX/fuel/cmd_transfer_left_up" },
     { vkey = 0x4A, ctrl = true, shift = true, label = "Fuel transfer R",  command = "laminar/CitX/fuel/cmd_transfer_right_up" },
     { vkey = 0x4B, ctrl = true, shift = true, label = "Start engine L",   command = "laminar/CitX/engine/cmd_starter_left" },
     { vkey = 0x4C, ctrl = true, shift = true, label = "Start engine R",   command = "laminar/CitX/engine/cmd_starter_right" },
-    { vkey = 0x4D, ctrl = true, shift = true, label = "AP APP",           command = "laminar/CitX/autopilot/cmd_app_mode" },
-    { vkey = 0x4E, ctrl = true, shift = true, label = "AP NAV",           command = "laminar/CitX/autopilot/cmd_nav_mode" },
     { vkey = 0x4F, ctrl = true, shift = true, label = "Ignition L",       command = "laminar/CitX/engine/cmd_ignition_switch_left_up" },
     { vkey = 0x50, ctrl = true, shift = true, label = "Ignition R",       command = "laminar/CitX/engine/cmd_ignition_switch_right_up" },
     { vkey = 0x51, ctrl = true, shift = true, label = "Boost pump L",     command = "laminar/CitX/fuel/cmd_boost_left_up" },
