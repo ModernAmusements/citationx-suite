@@ -183,7 +183,10 @@ check("late-enumerating right stick still locks", d > 10, d)
 check("late lock logged", logged("locked to raw axis 27"))
 
 -- 8. auto-bind uses ONLY the buttons X-Plane reports as unassigned -------------
+-- The feature is off by default (it hijacked spare buttons in flight), so turn
+-- it on explicitly for this check.
 logs = {}
+CONFIG.joy_autobind_enabled = true
 for b = 8, 17 do button_assign[64 + b] = 500 end   -- second slot fully mapped
 citationx_autobind_joy()
 check("free button 8 bound in the free slot", JOY_BINDINGS[8] ~= nil)

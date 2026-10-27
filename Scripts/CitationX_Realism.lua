@@ -426,6 +426,8 @@ end
 local handling_active = false
 local smooth_pitch    = 0.0
 local smooth_roll     = 0.0
+local handling_lost_s = 0.0
+local handling_prev_t = 0.0
 
 local handling_refs = nil
 local function handling_datarefs()
@@ -472,9 +474,25 @@ local function handling_tick()
         release_handling()
         return
     end
-    if real_joy_pitch_avail ~= 1 or real_joy_roll_avail ~= 1 then
-        release_handling()
-        return
+
+    -- joy_mapped_axis_avail flaps while the DS4 re-enumerates (USB <-> BT).
+    -- Releasing on a single missing frame made the curve engage and release
+    -- every frame, which stuttered the controls. Hold the last output and only
+    -- release after a full second with no hardware.
+    local now = real_sim_time or 0.0
+    local dt  = now - handling_prev_t
+    if dt < 0.0 or dt > 1.0 then dt = 0.0 end
+    handling_prev_t = now
+
+    local avail = (real_joy_pitch_avail == 1 and real_joy_roll_avail == 1)
+    if not avail then
+        handling_lost_s = handling_lost_s + dt
+        if (not handling_active) or handling_lost_s >= 1.0 then
+            release_handling()
+            return
+        end
+    else
+        handling_lost_s = 0.0
     end
 
     local refs = handling_datarefs()
@@ -483,8 +501,16 @@ local function handling_tick()
         return
     end
 
-    local target_pitch = shaped_axis(real_joy_pitch)
-    local target_roll  = shaped_axis(real_joy_roll)
+    local target_pitch, target_roll
+    if avail then
+        target_pitch = shaped_axis(real_joy_pitch)
+        target_roll  = shaped_axis(real_joy_roll)
+    else
+        -- momentary gap: keep writing the last smoothed value rather than
+        -- freezing the override with a stale yoke position
+        target_pitch = smooth_pitch
+        target_roll  = smooth_roll
+    end
 
     if not handling_active then
         XPLMSetDatai(refs.ovr_pitch, 1)

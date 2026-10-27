@@ -58,8 +58,11 @@ CONFIG = {
     -- panel: it must stay on at init even though every drawing module starts
     -- off, otherwise Ctrl+Shift/Alt shortcuts silently stop working.
     input_map_enabled      = true,
-    joy_map_enabled        = true,   -- auto-bind only UNASSIGNED controller buttons
-    joy_autobind_enabled   = true,
+    joy_map_enabled        = true,   -- fires JOY_BINDINGS when it is not empty
+    -- OFF: the suite must never claim controller buttons. X-Plane's own
+    -- joystick mapping is the single source of truth, otherwise pressing a
+    -- spare button toggles panels/recorder instead of flying the aircraft.
+    joy_autobind_enabled   = false,
     input_learn_mode       = false,
     input_probe_to_desktop = true,
 
