@@ -93,7 +93,7 @@ CONFIG = {
     -- (stick_hdg_sticky) until the module is toggled or the scripts reload.
     -- Set stick_hdg_axis to a fixed RAW index (see the AXIS MONITOR panel) to
     -- pin it manually. Raw sim/joystick/joystick_axis_values is 0..1.
-    stick_hdg_enabled       = true,   -- the one MasterSuite module on at init
+    stick_hdg_enabled       = false,  -- heading is on the D-pad; right stick now trims ALT SEL
     stick_hdg_axis          = -1,
     stick_hdg_sticky        = true,
     stick_hdg_exclude_axes  = { },   -- extra RAW indices to veto, e.g. { 4, 5 }
@@ -135,6 +135,13 @@ CONFIG = {
     altitude_coarse_step_ft = 1000,
     altitude_wheel_invert   = false,
     thumbwheel_altitude     = false,
+
+    -- Spring-loaded ALT SEL on the free spring-centred axis (right stick Y,
+    -- USB raw 3 / Bluetooth raw 28). Heading is now only on the D-pad.
+    stick_alt_enabled       = true,
+    stick_alt_rate_fps      = 400,   -- feet per second at full deflection
+    stick_alt_deadzone      = 0.12,
+    stick_alt_invert        = false,
 }
 
 -- ----------------------------------------------------------- PANEL STYLE ----
@@ -447,6 +454,28 @@ local function detect_stick_hdg_axis()
     return best_idx
 end
 
+-- Spring-loaded ALT SEL on the same eligible axis (the DS4 right stick Y).
+-- No sticky lock: the value simply stops changing when the stick re-centres,
+-- and whichever interface is live (USB raw 3 / Bluetooth raw 28) wins because
+-- detect_stick_hdg_axis() returns the most-deflected eligible slot.
+local function stick_alt_tick(dt)
+    if not CONFIG.stick_alt_enabled or dt <= 0.0 then return end
+    local axis = detect_stick_hdg_axis()
+    if not axis then return end
+    local d = stick_axis_deflection(axis)
+    if CONFIG.stick_alt_invert then d = -d end
+    local mag = math.abs(d)
+    if mag <= CONFIG.stick_alt_deadzone then return end
+    local scaled = (mag - CONFIG.stick_alt_deadzone)
+                 / (1.0 - CONFIG.stick_alt_deadzone)
+    local target = (alt_sel_ft or 0.0)
+        + (d > 0 and 1 or -1) * scaled * CONFIG.stick_alt_rate_fps * dt
+    if target < 0.0 then target = 0.0 end
+    if target > 60000.0 then target = 60000.0 end
+    alt_sel_ft    = target
+    alt_legacy_ft = target
+end
+
 -- ---------------------------------------------------------- COCKPIT LOOK ----
 -- The DS4 right stick is a pair of adjacent spring-centred axes. Detection
 -- runs only while R3 is held and the stick is actually pushed, so the left
@@ -652,11 +681,11 @@ SUITE_MODULES = {
         end,
     },
     {
-        key = "stick", label = "STICK HDG KNOB", macro = "stick heading knob",
-        get = function() return CONFIG.stick_hdg_enabled end,
-        set = function(on) citationx_set_stick_hdg(on) end,
+        key = "stick", label = "STICK ALT KNOB", macro = "stick altitude knob",
+        get = function() return CONFIG.stick_alt_enabled end,
+        set = function(on) citationx_set_stick_alt(on) end,
         state = function()
-            if CONFIG.stick_hdg_enabled then return "ON" end
+            if CONFIG.stick_alt_enabled then return "ON" end
             return "OFF"
         end,
     },
@@ -943,6 +972,15 @@ function citationx_set_stick_hdg(on)
         stick_hdg_hold_s    = 0.0
     end
     toast_state("STICK HDG KNOB", CONFIG.stick_hdg_enabled)
+end
+
+function citationx_set_stick_alt(on)
+    CONFIG.stick_alt_enabled = (on == true)
+    if not CONFIG.stick_alt_enabled then
+        stick_base_raw  = {}
+        stick_dead_axis = {}
+    end
+    toast_state("STICK ALT KNOB", CONFIG.stick_alt_enabled)
 end
 
 function citationx_set_axis_monitor(on)
@@ -1468,8 +1506,10 @@ function citationx_frame()
             end
         end
     end
-    if (CONFIG.stick_hdg_enabled or CONFIG.view_pan_enabled) and dt > 0.0 then
+    if (CONFIG.stick_hdg_enabled or CONFIG.view_pan_enabled
+        or CONFIG.stick_alt_enabled) and dt > 0.0 then
         stick_baseline_update()
+        stick_alt_tick(dt)
     end
 
     -- 3. + 4. once-per-second tasks

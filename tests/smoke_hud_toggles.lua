@@ -176,10 +176,10 @@ for _, key in ipairs(expected) do pcall(citationx_toggle_module, key) end
 
 -- ---------- everything can be switched back on ----------
 citationx_set_all(true)
-check(CONFIG.log_enabled and CONFIG.emergency_enabled and CONFIG.stick_hdg_enabled
+check(CONFIG.log_enabled and CONFIG.emergency_enabled and CONFIG.stick_alt_enabled
   and CONFIG.input_map_enabled, "enable all modules arms the hidden modules")
 citationx_set_all(false)
-check(not (CONFIG.log_enabled or CONFIG.emergency_enabled or CONFIG.stick_hdg_enabled
+check(not (CONFIG.log_enabled or CONFIG.emergency_enabled or CONFIG.stick_alt_enabled
   or CONFIG.input_map_enabled), "disable all modules turns them off again")
 
 -- ---------- the control panel is the only thing drawn ----------

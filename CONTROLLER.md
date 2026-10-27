@@ -4,7 +4,7 @@ X-Plane profile: `Output/preferences/control profiles/citX - Joysticks.prf`
 Device: DUALSHOCK 4 Wireless Controller (VID 054c, PID 09cc) — the same map is written
 into **both** device slots, so it behaves identically over USB and Bluetooth.
 
-Axes: left stick = pitch/roll, right stick X = yaw, right stick Y = view left/right.
+Axes: left stick = pitch/roll, right stick X = yaw, right stick Y = ALT SEL.
 
 ## Buttons (PS4 notation)
 
@@ -44,7 +44,7 @@ Axes: left stick = pitch/roll, right stick X = yaw, right stick Y = view left/ri
 
 ## Suite additions (not part of the X-Plane profile)
 
-- Right stick (spring-centred, unassigned axis) drives the heading bug — L2/R2 never do.
+- Right stick Y (spring-centred, unassigned axis) drives ALT SEL — L2/R2 never do. Heading is on D-pad ←/→.
 - D-pad and face buttons are never touched by the suite; X-Plane owns them.
 - Keyboard layer: `Ctrl+Shift` / `Ctrl+Opt` combinations (see `README.md`).
 
@@ -52,12 +52,11 @@ Axes: left stick = pitch/roll, right stick X = yaw, right stick Y = view left/ri
 
 Two separate things:
 
-### 1. In-sim mouse wheel (always active)
+### 1. In-sim mouse wheel
 
-Hovering over the 3-D cockpit, the **mouse wheel** drives the heading bug by
-`CONFIG.heading_step_deg` (default 1°) per click. Set `thumbwheel_altitude = true`
-to make it drive ALT SEL instead (100 ft per click). This is the suite's
-`do_on_mouse_wheel` handler, not a Logi assignment.
+| Control | Action |
+| --- | --- |
+| Wheel | View zoom in/out (X-Plane native; the suite does not consume it) |
 
 ### 2. Logitech MX buttons (Logi Options+)
 
@@ -167,7 +166,7 @@ PS4 profile and the keyboard.
 ### Free inputs
 
 - **PS4 buttons:** every physical control is assigned.
-- **PS4 axes:** none — right stick Y drives the heading bug.
+- **PS4 axes:** none — right stick Y drives ALT SEL.
 - **Mouse wheel:** X-Plane view zoom — deliberately not used by the suite.
 - **Free keystrokes** (no duplicate of the pad): `Ctrl+Shift+6`, `Ctrl+Shift+8`, `Ctrl+Shift+↑/↓/←/→`, `Ctrl+Shift+E/F`, `Ctrl+Opt+E/F`, all `Ctrl+Opt` arrows, and any MX button not mapped in Logi Options+.
 
@@ -181,7 +180,8 @@ PS4 profile and the keyboard.
 | **Wheel click** | Both landing lights |
 | **Gesture button** | Both landing lights |
 | **Thumb back / forward** | ALT SEL down / up (100 ft) |
-| **Right stick** | Yaw, not view |
+| **Right stick ←/→** | Yaw |
+| **Right stick ↑/↓** | ALT SEL |
 
 If you want a mouse button to tilt, map it in Logi Options+ to send **↑** or **↓** —
 those keys now drive the view.
