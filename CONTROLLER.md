@@ -79,13 +79,102 @@ These are only suggestions — every combo below is a valid target.
 
 ### Keyboard / MX layers (all live)
 
-| Layer | Keys | Covers |
-| --- | --- | --- |
-| Lights | `Ctrl+Shift 1–5` | nav, beacon, strobe, taxi, landing |
-| Autopilot | `Ctrl+Shift 6–8`, `9/0`, `←/→` | master, heading hold, reversers, ALT down/up, heading |
-| Flight ops | `Ctrl+Shift A–Z` | AP modes, gear, ignition, starters, fuel transfer/boost/crossfeed, windshield air, yaw damper |
-| Electrical / APU | `Ctrl+Opt 1–0` | batteries, generators, external power, avionics, EICAS, APU master/start/gen |
-| Ice / hyd / lights / O2 | `Ctrl+Opt A–Z` | engine + surface ice, pitot/stab heat, cabin dump, iso valve, master caution, hydraulic pumps, antiskid, gravity flow, FLC, ground idle, tail/recognition/cabin lights, passenger O2 |
+### Ctrl+Shift + digit / arrow
+
+| Keys | Action |
+| --- | --- |
+| `Ctrl+Shift+1` | NAV lights |
+| `Ctrl+Shift+2` | Beacon lights |
+| `Ctrl+Shift+3` | Strobe lights |
+| `Ctrl+Shift+4` | Taxi lights |
+| `Ctrl+Shift+5` | Landing lights |
+| `Ctrl+Shift+6` | AP master |
+| `Ctrl+Shift+7` | AP heading hold |
+| `Ctrl+Shift+8` | Thrust reversers |
+| `Ctrl+Shift+9` | ALT SEL down |
+| `Ctrl+Shift+0` | ALT SEL up |
+| `Ctrl+Shift+←` | HDG SEL left |
+| `Ctrl+Shift+→` | HDG SEL right |
+
+### Ctrl+Shift + letter
+
+| Keys | Action |
+| --- | --- |
+| `Ctrl+Shift+A` | AP toggle |
+| `Ctrl+Shift+B` | AP half bank |
+| `Ctrl+Shift+C` | AP CWS |
+| `Ctrl+Shift+D` | AP ALT |
+| `Ctrl+Shift+G` | Gear toggle |
+| `Ctrl+Shift+H` | Heading sync |
+| `Ctrl+Shift+I` | Fuel transfer L |
+| `Ctrl+Shift+J` | Fuel transfer R |
+| `Ctrl+Shift+K` | Start engine L |
+| `Ctrl+Shift+L` | Start engine R |
+| `Ctrl+Shift+M` | AP APP |
+| `Ctrl+Shift+N` | AP NAV |
+| `Ctrl+Shift+O` | Ignition L |
+| `Ctrl+Shift+P` | Ignition R |
+| `Ctrl+Shift+Q` | Boost pump L |
+| `Ctrl+Shift+R` | Boost pump R |
+| `Ctrl+Shift+S` | AP VS |
+| `Ctrl+Shift+T` | Starter stop |
+| `Ctrl+Shift+U` | Engine sync |
+| `Ctrl+Shift+V` | AP VNAV |
+| `Ctrl+Shift+W` | Windshield air |
+| `Ctrl+Shift+X` | Crossfeed L |
+| `Ctrl+Shift+Y` | Yaw damper |
+| `Ctrl+Shift+Z` | Crossfeed R |
+
+### Ctrl+Opt + digit
+
+| Keys | Action |
+| --- | --- |
+| `Ctrl+Opt+1` | Battery L |
+| `Ctrl+Opt+2` | Battery R |
+| `Ctrl+Opt+3` | Generator L |
+| `Ctrl+Opt+4` | Generator R |
+| `Ctrl+Opt+5` | External power |
+| `Ctrl+Opt+6` | Avionics |
+| `Ctrl+Opt+7` | Avionics EICAS |
+| `Ctrl+Opt+8` | APU master |
+| `Ctrl+Opt+9` | APU start |
+| `Ctrl+Opt+0` | APU generator |
+
+### Ctrl+Opt + letter
+
+| Keys | Action |
+| --- | --- |
+| `Ctrl+Opt+A` | Ice engine L |
+| `Ctrl+Opt+B` | Ice engine R |
+| `Ctrl+Opt+C` | Wing ice light |
+| `Ctrl+Opt+D` | Slat heat |
+| `Ctrl+Opt+G` | Stab heat L |
+| `Ctrl+Opt+H` | Stab heat R |
+| `Ctrl+Opt+I` | Pitot heat L |
+| `Ctrl+Opt+J` | Pitot heat R |
+| `Ctrl+Opt+K` | Cabin dump |
+| `Ctrl+Opt+L` | Iso valve |
+| `Ctrl+Opt+M` | Master caution |
+| `Ctrl+Opt+N` | Aux hyd pump |
+| `Ctrl+Opt+O` | Unload pump A |
+| `Ctrl+Opt+P` | Unload pump B |
+| `Ctrl+Opt+Q` | Antiskid |
+| `Ctrl+Opt+R` | Gravity flow |
+| `Ctrl+Opt+S` | AP FLC |
+| `Ctrl+Opt+T` | Ground idle |
+| `Ctrl+Opt+U` | Tail flood light |
+| `Ctrl+Opt+V` | Recognition lights |
+| `Ctrl+Opt+W` | Cabin master light |
+| `Ctrl+Opt+X` | Landing light L |
+| `Ctrl+Opt+Y` | Landing light R |
+| `Ctrl+Opt+Z` | Passenger O2 |
+
+### Free inputs
+
+- **PS4 buttons:** every physical control is assigned — Cross/Triangle/Circle/Square, L1/R1, L2/R2, Share, Options, L3/R3, Touchpad, PS and all eight D-pad directions. Nothing is free.
+- **PS4 axes:** left stick (roll/pitch), right stick X (yaw), L2/R2 (throttle, read by the suite). The right stick Y (USB axis 3 / Bluetooth 28) is unassigned and free if you want a view axis there.
+- **Mouse wheel:** used for the heading bug. ALT SEL is free if you set `thumbwheel_altitude = true` (and turn `thumbwheel_heading` off).
+- **MX buttons:** FlyWithLua only receives keystrokes, so any MX button not mapped in Logi Options+ is free. Free keystroke slots: `Ctrl+Shift+E`, `Ctrl+Shift+F`, `Ctrl+Shift+↑/↓`, `Ctrl+Opt+E`, `Ctrl+Opt+F` and all `Ctrl+Opt` arrows. Plain keys belong to X-Plane.
 
 The full command list is `CITX_BINDINGS` in `Scripts/CitationX_MasterSuite.lua`.
 
