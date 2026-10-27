@@ -164,8 +164,8 @@ PS4 profile and the keyboard.
 ### Free inputs
 
 - **PS4 buttons:** every physical control is assigned.
-- **PS4 axes:** right stick Y (USB axis 3 / Bluetooth 28) is unassigned.
-- **Mouse wheel:** heading bug; ALT SEL is free if `thumbwheel_altitude = true`.
+- **PS4 axes:** none — right stick Y drives the heading bug.
+- **Mouse wheel:** X-Plane view zoom — deliberately not used by the suite.
 - **Free keystrokes** (no duplicate of the pad): `Ctrl+Shift+5/6/8/9/0`, `Ctrl+Shift+↑/↓/←/→`, `Ctrl+Shift+E/F`, `Ctrl+Opt+E/F`, all `Ctrl+Opt` arrows, and any MX button not mapped in Logi Options+.
 
 ## View
@@ -174,7 +174,7 @@ PS4 profile and the keyboard.
 | --- | --- |
 | **↑ / ↓ arrow keys** | Tilt the view up / down (`sim/general/hat_switch_up/down` in `X-Plane Keys.prf`) |
 | **Right-click + drag** | Free look, X-Plane native — the only smooth mouse-look; FlyWithLua gets clicks/wheel only, not motion |
-| **Mouse wheel** | Heading bug (not view) |
+| **Mouse wheel** | View zoom in/out |
 | **Right stick** | Yaw, not view |
 
 If you want a mouse button to tilt, map it in Logi Options+ to send **↑** or **↓** —

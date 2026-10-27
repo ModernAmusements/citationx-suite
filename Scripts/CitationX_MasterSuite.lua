@@ -66,7 +66,9 @@ CONFIG = {
     input_learn_mode       = false,
     input_probe_to_desktop = true,
 
-    thumbwheel_heading      = true,
+    -- The mouse wheel is left to X-Plane: it zooms the view in/out. Heading is
+    -- on the DS4 right stick Y (below) and the D-pad left/right.
+    thumbwheel_heading      = false,
     heading_step_deg        = 1,
     heading_key_step_deg    = 5,
     heading_wheel_invert    = false,
