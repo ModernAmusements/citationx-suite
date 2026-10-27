@@ -106,10 +106,10 @@ for i = 1, #SUITE_MODULES do
   if m.state() == "ON" then on_at_load[#on_at_load + 1] = m.key end
 end
 table.sort(on_at_load)
-check(#on_at_load == 4
-    and on_at_load[1] == "input" and on_at_load[2] == "look"
-    and on_at_load[3] == "status" and on_at_load[4] == "stick",
-  "only the keyboard layer, look, hub and heading knob start ON",
+check(#on_at_load == 3
+    and on_at_load[1] == "input" and on_at_load[2] == "status"
+    and on_at_load[3] == "stick",
+  "only the keyboard layer, hub and heading knob start ON",
   table.concat(on_at_load, ","))
 
 -- ---------- the duplicate cockpit readouts must not come back ----------

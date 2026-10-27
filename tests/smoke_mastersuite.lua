@@ -201,6 +201,8 @@ check("bound action actually runs", CONFIG.status_enabled ~= panel_before)
 CONFIG.status_enabled = panel_before
 
 -- 9. R3 + right stick looks around the 3-D cockpit ----------------------------
+-- The feature is off by default now, so enable it explicitly for this check.
+CONFIG.view_pan_enabled = true
 -- By now the right stick is locked to axis 27 (heading knob). Holding R3 must
 -- take it over: same stick pans the head, the heading bug stays put.
 axis_values[27], axis_values[28] = 0.5, 0.5

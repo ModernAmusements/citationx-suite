@@ -101,7 +101,12 @@ CONFIG = {
     -- same stick does not move the bug at the same time. view_pan_axis_* = -1
     -- auto-detects the right stick as the first *moved* spring-centred axis
     -- pair (DS4: raw 2/3). Pin them to fixed RAW indices to override.
-    view_pan_enabled        = true,
+    --
+    -- OFF by default: it writes sim/graphics/view/pilots_head_psi/the itself
+    -- and its button (11) is this pad's throttle-up, so it fought both the
+    -- camera and the throttle. X-Plane's own cockpit look (mouse / right
+    -- stick) works without a script.
+    view_pan_enabled        = false,
     view_pan_button         = 11,    -- 0-based physical button in a 64-button device slot (R3)
     view_pan_axis_x         = -1,
     view_pan_axis_y         = -1,
@@ -938,6 +943,11 @@ function citationx_set_view_pan(on)
         view_pan_was_held = false
         view_pan_wait_center = false
         view_pan_axis_x, view_pan_axis_y = -1, -1
+        -- Hand the camera back to X-Plane looking straight ahead, otherwise a
+        -- pan that was active when the feature was switched off leaves the
+        -- pilot's head parked at the old offset.
+        view_head_psi = 0.0
+        view_head_the = 0.0
     end
     toast_state("COCKPIT LOOK", CONFIG.view_pan_enabled)
 end
@@ -1639,6 +1649,12 @@ function citationx_init()
     math.randomseed(os.time())
     ovr_joystick_pitch = 0
     ovr_joystick_roll  = 0
+
+    -- Clear any head offset left by the old R3 cockpit-look feature.
+    if not CONFIG.view_pan_enabled then
+        view_head_psi = 0.0
+        view_head_the = 0.0
+    end
 
     if CONFIG.log_enabled then
         arm_recorder()
