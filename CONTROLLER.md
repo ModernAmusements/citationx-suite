@@ -69,9 +69,12 @@ sends. Assign each MX button to one of these combos:
 | Gesture button | `Ctrl+Shift+5` | Both landing lights |
 | Thumb button back | `Ctrl+Shift+9` | ALT SEL down (100 ft) |
 | Thumb button forward | `Ctrl+Shift+0` | ALT SEL up (100 ft) |
+| `Ctrl+Shift+,` | Pitch trim down (keyboard knob) |
+| `Ctrl+Shift+.` | Pitch trim up (keyboard knob) |
 | Thumb wheel left | `Ctrl+Shift+1` | NAV lights |
 | Thumb wheel right | `Ctrl+Shift+2` | Beacon lights |
 | Mode-shift | `Ctrl+Opt+M` | Master caution |
+| Keyboard rotary knob ← / → | `Ctrl+Shift+,` / `Ctrl+Shift+.` | Pitch trim down / up |
 
 These are only suggestions — every combo below is a valid target.
 
@@ -91,6 +94,8 @@ PS4 profile and the keyboard.
 | `Ctrl+Shift+5` | Both landing lights |
 | `Ctrl+Shift+9` | ALT SEL down (100 ft) |
 | `Ctrl+Shift+0` | ALT SEL up (100 ft) |
+| `Ctrl+Shift+,` | Pitch trim down (keyboard knob) |
+| `Ctrl+Shift+.` | Pitch trim up (keyboard knob) |
 | `Ctrl+Shift+7` | AP heading hold |
 
 ### Ctrl+Shift + letter

@@ -194,6 +194,9 @@ INPUT_BINDINGS = {
     { vkey = 0x35, ctrl = true, shift = true, label = "Landing lights (both)", action = function() citationx_toggle_landing_lights() end },
     { vkey = 0x39, ctrl = true, shift = true, label = "ALT SEL down (fine)", action = function() citationx_altitude(-CONFIG.altitude_step_ft) end },
     { vkey = 0x30, ctrl = true, shift = true, label = "ALT SEL up (fine)",   action = function() citationx_altitude( CONFIG.altitude_step_ft) end },
+    -- Keyboard rotary knob (Logi Options+ maps the two directions here).
+    { vkey = 0x2C, ctrl = true, shift = true, label = "Pitch trim down (knob)", command = "sim/flight_controls/pitch_trim_down" },
+    { vkey = 0x2E, ctrl = true, shift = true, label = "Pitch trim up (knob)",   command = "sim/flight_controls/pitch_trim_up" },
     { vkey = 0x37, ctrl = true, shift = true, label = "AP heading hold",  command = "sim/autopilot/heading_hold" },
 }
 
