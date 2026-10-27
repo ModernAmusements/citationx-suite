@@ -184,6 +184,9 @@ INPUT_BINDINGS = {
     { vkey = 0x32, ctrl = true, shift = true, label = "Beacon lights",    command = "sim/lights/beacon_lights_toggle" },
     { vkey = 0x33, ctrl = true, shift = true, label = "Strobe lights",    command = "sim/lights/strobe_lights_toggle" },
     { vkey = 0x34, ctrl = true, shift = true, label = "Taxi lights",      command = "sim/lights/taxi_lights_toggle" },
+    { vkey = 0x35, ctrl = true, shift = true, label = "Landing lights (both)", action = function() citationx_toggle_landing_lights() end },
+    { vkey = 0x39, ctrl = true, shift = true, label = "ALT SEL down (fine)", action = function() citationx_altitude(-CONFIG.altitude_step_ft) end },
+    { vkey = 0x30, ctrl = true, shift = true, label = "ALT SEL up (fine)",   action = function() citationx_altitude( CONFIG.altitude_step_ft) end },
     { vkey = 0x37, ctrl = true, shift = true, label = "AP heading hold",  command = "sim/autopilot/heading_hold" },
 }
 
@@ -1194,6 +1197,32 @@ function citationx_heading(delta_deg)
     local target = ((hdg_sel_deg or 0.0) + delta_deg) % 360.0
     hdg_sel_deg = target
     toast(string.format("HDG SEL  %03.0f", target))
+end
+
+-- Both landing lights on one input (mouse wheel click / gesture button).
+-- The C750 has two independent switches, so read them and drive both to the
+-- same target instead of firing two blind toggles that can drift apart.
+local landing_refs = nil
+function citationx_toggle_landing_lights()
+    if not landing_refs then
+        landing_refs = {
+            left  = XPLMFindDataRef("laminar/CitX/lights/landing_left"),
+            right = XPLMFindDataRef("laminar/CitX/lights/landing_right"),
+        }
+    end
+    local l = landing_refs.left  and XPLMGetDatai(landing_refs.left)  or nil
+    local r = landing_refs.right and XPLMGetDatai(landing_refs.right) or nil
+
+    if l ~= nil and r ~= nil then
+        local target = (l == 1 and r == 1) and 0 or 1
+        if l ~= target then command_once("laminar/CitX/lights/cmd_landing_left_toggle") end
+        if r ~= target then command_once("laminar/CitX/lights/cmd_landing_right_toggle") end
+        citationx_toast(target == 1 and "LANDING LIGHTS ON" or "LANDING LIGHTS OFF")
+    else
+        command_once("laminar/CitX/lights/cmd_landing_left_toggle")
+        command_once("laminar/CitX/lights/cmd_landing_right_toggle")
+        citationx_toast("LANDING LIGHTS")
+    end
 end
 
 function citationx_mouse_wheel()

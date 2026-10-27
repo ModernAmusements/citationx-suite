@@ -66,10 +66,10 @@ sends. Assign each MX button to one of these combos:
 
 | MX control (recommended) | Send this | Action |
 | --- | --- | --- |
-| Middle click | `Ctrl+Opt+6` | Avionics |
-| Thumb button back | `Ctrl+Opt+1` | Battery L |
-| Thumb button forward | `Ctrl+Opt+3` | Generator L |
-| Gesture button | `Ctrl+Opt+8` | APU master |
+| Wheel click | `Ctrl+Shift+5` | Both landing lights |
+| Gesture button | `Ctrl+Shift+5` | Both landing lights |
+| Thumb button back | `Ctrl+Shift+9` | ALT SEL down (100 ft) |
+| Thumb button forward | `Ctrl+Shift+0` | ALT SEL up (100 ft) |
 | Thumb wheel left | `Ctrl+Shift+1` | NAV lights |
 | Thumb wheel right | `Ctrl+Shift+2` | Beacon lights |
 | Mode-shift | `Ctrl+Opt+M` | Master caution |
@@ -89,6 +89,9 @@ PS4 profile and the keyboard.
 | `Ctrl+Shift+2` | Beacon lights |
 | `Ctrl+Shift+3` | Strobe lights |
 | `Ctrl+Shift+4` | Taxi lights |
+| `Ctrl+Shift+5` | Both landing lights |
+| `Ctrl+Shift+9` | ALT SEL down (100 ft) |
+| `Ctrl+Shift+0` | ALT SEL up (100 ft) |
 | `Ctrl+Shift+7` | AP heading hold |
 
 ### Ctrl+Shift + letter
@@ -166,7 +169,7 @@ PS4 profile and the keyboard.
 - **PS4 buttons:** every physical control is assigned.
 - **PS4 axes:** none — right stick Y drives the heading bug.
 - **Mouse wheel:** X-Plane view zoom — deliberately not used by the suite.
-- **Free keystrokes** (no duplicate of the pad): `Ctrl+Shift+5/6/8/9/0`, `Ctrl+Shift+↑/↓/←/→`, `Ctrl+Shift+E/F`, `Ctrl+Opt+E/F`, all `Ctrl+Opt` arrows, and any MX button not mapped in Logi Options+.
+- **Free keystrokes** (no duplicate of the pad): `Ctrl+Shift+6`, `Ctrl+Shift+8`, `Ctrl+Shift+↑/↓/←/→`, `Ctrl+Shift+E/F`, `Ctrl+Opt+E/F`, all `Ctrl+Opt` arrows, and any MX button not mapped in Logi Options+.
 
 ## View
 
@@ -175,6 +178,9 @@ PS4 profile and the keyboard.
 | **↑ / ↓ arrow keys** | Tilt the view up / down (`sim/general/hat_switch_up/down` in `X-Plane Keys.prf`) |
 | **Right-click + drag** | Free look, X-Plane native — the only smooth mouse-look; FlyWithLua gets clicks/wheel only, not motion |
 | **Mouse wheel** | View zoom in/out |
+| **Wheel click** | Both landing lights |
+| **Gesture button** | Both landing lights |
+| **Thumb back / forward** | ALT SEL down / up (100 ft) |
 | **Right stick** | Yaw, not view |
 
 If you want a mouse button to tilt, map it in Logi Options+ to send **↑** or **↓** —
