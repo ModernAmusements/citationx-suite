@@ -1,8 +1,14 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-10-24
+Last updated: 2026-10-29
 
 ## Session handoff — read this first
+
+**2026-10-29 — input reset.** The suite no longer intercepts the pilot's controls. Every
+Lua-side input layer defaults OFF (keyboard/button mapper, analog L2/R2 throttle, arrow-key view
+tilt, stick ALT SEL, axis optimizer, R3 cockpit look, and the realism pack's handling curve).
+The ONE input kept is the heading bug on the DS4 **Axis 3** (right stick up/down), pinned to raw
+axes 3/28 so it works over USB and Bluetooth. See §30.
 
 Last completed session (2026-10-24) turned the realism pack into the suite's only active script:
 audible FMOD callouts, six new flight-phase monitors, a pilot-input handling curve, a
@@ -19,7 +25,7 @@ callouts audible, panel legible, handling curve felt, textures seen.
 | Realism UX | generator loss / load shed / hot brakes / overspeed / icing raise a 2 s toast via the new `citationx_toast()` |
 | Realism logic | GEAR UP no longer fires while the gear is still fully down |
 | Panels | all four suite panels default to hidden — the only thing drawn is the realism pack's own black panel |
-| Modules | every MasterSuite module defaults OFF **except the DS4 right-stick heading knob and the keyboard input layer**; REALISM PACK is the only drawing module active at init |
+| Modules | every MasterSuite input layer defaults OFF; only the DS4 Axis-3 heading knob and the REALISM PACK stay active at init |
 | Stick HDG | right stick re-enabled, and its learned rest no longer latches X-Plane's `-0.01` pre-enumeration value (it never locked before) |
 | Controller | `JOY_BINDINGS` built at runtime from `sim/joystick/joystick_button_assignments`; only buttons X-Plane reports as unassigned are used |
 | Handling | pilot-input curve (deadzone/expo/smoothing) + flight-controls check, part of the realism pack |
@@ -65,15 +71,18 @@ turn OFF/ON, then click `HIDE HUD` and reopen it with the macro *realism panel*.
 
 Textures need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
 
-## Current runtime state (2026-10-24)
+## Current runtime state (2026-10-29)
 - **Suite scripts (tracked):** `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
   `CitationX_CabinOps.lua`, `CitationX_EFB.lua`, `CitationX_Realism.lua` plus
   `CitationX_Callouts/*.wav` (19 files). All load clean; no `FlyWithLua Error:` lines.
-- **At load only the realism pack and the DS4 right-stick heading knob are active.** Every other
-  MasterSuite module (`status`, `log`, `emerg`, `input`, `axis`, `learn`, `axmon`) is OFF, the
-  four suite panels are hidden, `LandingPerformance` is in `LA_DISPLAY_NONE`, and the only thing
-  drawn is the realism panel. Re-enable things with the macros (`CitationX Suite: <row>`,
-  `enable all modules`) or by clicking the realism panel rows that belong to the pack.
+- **The suite reads exactly one pilot input: the heading bug knob on DS4 Axis 3.** Every other
+  input layer is OFF at load — no keyboard map, no joystick-button map, no analog-trigger
+  throttle, no arrow-key view tilt, no stick ALT SEL, no axis optimizer, no R3 cockpit look, no
+  realism handling curve. X-Plane's own `citX` profile is the single source of truth for the
+  pad, the keyboard and the mouse. Re-enable any layer from the control panel, the macro menu
+  (`CitationX Suite: <row>`, `enable all modules`) or `CitationXSuite/toggle_<key>`.
+- **Panels:** the realism panel and the MasterSuite hub (`status`) are the only two drawn at
+  load; CabinOps, QRH, EFB and LandingPerformance start hidden.
 - **Mission Generator: deleted 2026-10-21** at the user's request, together with
   `tests/smoke_mission.lua`. The `MissionGen/*` commands, the briefing panel and the cruise
   time warp no longer exist. Do not resurrect it without being asked.
@@ -1102,6 +1111,51 @@ three interior atlases were darkened to match it.
   consider TeamAvitab 1.1.0 (signature change; back up 0.7.1 first).
 - **Unrelated to the screen:** the dark pass did not touch `-PANELS-/Panel.png`, `Ipad.png` or
   `xPad_arm.dds`.
+
+## 30. Input reset: only the heading knob (2026-10-29)
+
+*"RESET ALL YOUR LUA INPUT OVERWRITE I ONLY WANT TO BE ABLE TO CHANGE THE HEADING WITH AXIS 3
+UP AND DOWN"* — the user's PS4 profile already maps every control in X-Plane, and the suite's
+parallel layers were fighting it.
+
+| Input layer | Flag | Was | Now |
+| --- | --- | --- | --- |
+| Keyboard / MX layers | `CONFIG.input_map_enabled` | true | **false** |
+| Joystick-button map | `CONFIG.joy_map_enabled` | true | **false** |
+| Analog L2/R2 throttle | `CONFIG.trigger_throttle_enabled` | true | **false** |
+| Arrow-key view tilt | `CONFIG.view_tilt_enabled` | true | **false** |
+| Stick ALT SEL | `CONFIG.stick_alt_enabled` | true | **false** |
+| Axis optimizer | `CONFIG.axis_optimizer_enabled` | false | false |
+| R3 cockpit look | `CONFIG.view_pan_enabled` | false | false |
+| Realism handling curve | `REAL_CONFIG.handling_enabled` | true | **false** |
+
+- **The one input kept:** the heading bug on **DS4 Axis 3** (right stick up/down). X-Plane's
+  profile leaves Axis 3 unassigned, which is why it is the free spring-centred axis.
+- **Both device slots are pinned:** `CONFIG.stick_hdg_axes = { 3, 28 }`. The pad enumerates
+  twice, so Axis 3 is raw 3 in the first slot and raw 28 in the second (USB vs Bluetooth).
+  `stick_hdg_axes` selects the most-deflected listed axis each frame; an axis must have been
+  seen centred at least once (`stick_base_raw`), so a dead interface parked at raw 0 never
+  turns the bug. The 6 s extreme watchdog still applies and vetoes a stuck slot.
+- **Arrow keys are no longer consumed.** `citationx_keystroke` used to set `RESUME_KEY` for the
+  view-tilt handler even with the input map off; the tilt block is now gated on
+  `CONFIG.view_tilt_enabled` too, so the keys pass through to X-Plane.
+- **ALT SEL moved off the stick:** one axis must never drive two bugs. `stick_alt_tick` stays
+  in the file (config + `citationx_set_stick_alt`) but has no panel row; the `stick` row is now
+  **STICK HDG KNOB** wired to `citationx_set_stick_hdg`.
+- **Pinned look-pair bug fixed in passing:** on R3 release the "wait for the stick to centre"
+  guard read the auto-detected axis locals, which stay `-1` when `view_pan_axis_x/y` are pinned.
+  It now calls `view_pan_pair()`, so a pinned pair also suppresses the heading knob until the
+  stick re-centres (`smoke_mastersuite.lua` covers it).
+
+Verification (2026-10-29): `luac -p` clean; `check_datarefs.lua` 0 problems across 5 scripts;
+`check_kpcrew_modules.lua C750` 0 missing; `probe_load_order.lua` 104 bindings, 0 failures;
+`smoke_mastersuite` (Axis 3/28 drive the bug, triggers/yaw/dead-slot never do, watchdog,
+late-enumeration, R3 hand-off), `smoke_hud_toggles` (only `status` + `stick` ON at load),
+`smoke_realism` (handling OFF at load), `smoke_efb` and `smoke_panel_geometry` (65 checks) all
+pass. **In-sim check pending:** reload Lua, confirm the log has no `axis optimizer
+engaged/released` lines, then push the right stick up/down — HDG SEL turns; yaw, triggers,
+arrow keys and the D-pad do nothing in the suite. If the direction feels inverted, set
+`CONFIG.stick_hdg_invert = true`.
 
 ## Not yet verified in-sim
 

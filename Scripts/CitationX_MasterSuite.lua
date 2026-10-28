@@ -28,10 +28,11 @@
 
 -- ------------------------------------------------------------------ CONFIG --
 CONFIG = {
-    -- Everything starts disabled except the DS4 right-stick heading knob and
-    -- the keyboard input layer (the one thing the user flies with). Every
-    -- module here can be switched on from the control panel (once shown) or
-    -- the FlyWithLua macro menu / CitationXSuite/toggle_<key> commands.
+    -- Clean slate: the suite does not touch the pilot's input map. X-Plane's
+    -- own joystick/key profile is the single source of truth; the only input
+    -- the suite keeps is the heading-bug knob on the DS4 right stick (Axis 3,
+    -- see stick_hdg_* below). Every module can still be switched on from the
+    -- control panel or the FlyWithLua macro menu / CitationXSuite commands.
     log_enabled            = false,
     log_to_desktop         = true,
 
@@ -54,11 +55,12 @@ CONFIG = {
     emergency_alt_ft       = 15000,
     emergency_mach         = 0.85,
 
-    -- Keyboard layers for the C750 systems. This is a control surface, not a
-    -- panel: it must stay on at init even though every drawing module starts
-    -- off, otherwise Ctrl+Shift/Alt shortcuts silently stop working.
-    input_map_enabled      = true,
-    joy_map_enabled        = true,   -- fires JOY_BINDINGS when it is not empty
+    -- Keyboard/button layers for the C750 systems. OFF: the suite must not
+    -- consume keystrokes or claim controller buttons, otherwise the pilot's
+    -- own X-Plane profile and the script fight over the same control. Switch
+    -- on only if you want the Ctrl+Shift / Ctrl+Opt shortcuts back.
+    input_map_enabled      = false,
+    joy_map_enabled        = false,  -- fires JOY_BINDINGS when it is not empty
     -- OFF: the suite must never claim controller buttons. X-Plane's own
     -- joystick mapping is the single source of truth, otherwise pressing a
     -- spare button toggles panels/recorder instead of flying the aircraft.
@@ -73,27 +75,29 @@ CONFIG = {
     heading_key_step_deg    = 5,
     heading_wheel_invert    = false,
 
-    -- Analog DS4 triggers -> throttle up/down. L2/R2 are axes, not buttons:
-    -- 25 axes per device slot, so USB = 4/5 and Bluetooth = 29/30. A button
-    -- assignment only fires at the end of travel, which is why the triggers
-    -- felt dead.
-    trigger_throttle_enabled = true,
+    -- Analog DS4 triggers -> throttle up/down. OFF: L2/R2 are already on the
+    -- pilot's X-Plane profile (button 6/7 plus the analog end-stop), so the
+    -- script must not issue throttle commands on the same axes.
+    -- 25 axes per device slot: USB = 4/5 and Bluetooth = 29/30.
+    trigger_throttle_enabled = false,
     trigger_l2_axes          = { 4, 29 },
     trigger_r2_axes          = { 5, 30 },
     trigger_threshold        = 0.35,
     trigger_repeat_s         = 0.08,
 
-    -- Spring-loaded heading-bug knob driven by the DS4 right stick.
-    -- stick_hdg_axis = -1 auto-detects the raw axis: only spring-centered,
-    -- still-unassigned axes are eligible (their learned rest must sit within
-    -- stick_hdg_center_tol of stick_hdg_center). Analog triggers such as
-    -- L2/R2 rest at an extreme, so squeezing them can never grab or move the
-    -- heading bug - it stays on the right stick whether the pad enumerates
-    -- over USB or Bluetooth. Once a stick axis is found it stays locked
-    -- (stick_hdg_sticky) until the module is toggled or the scripts reload.
-    -- Set stick_hdg_axis to a fixed RAW index (see the AXIS MONITOR panel) to
-    -- pin it manually. Raw sim/joystick/joystick_axis_values is 0..1.
-    stick_hdg_enabled       = false,  -- heading is on the D-pad; right stick now trims ALT SEL
+    -- Spring-loaded heading-bug knob on the DS4 right stick. This is the ONE
+    -- input the suite keeps: X-Plane profile "Axis 3" (right stick up/down,
+    -- unassigned there), push up/down to turn the bug.
+    -- The pad enumerates twice, so the raw index depends on the slot X-Plane
+    -- gives it: 3 when it is the first device, 28 when it is the second
+    -- (USB vs Bluetooth). stick_hdg_axes lists both; only those axes may move
+    -- the bug, and an axis must have been seen centred at least once (a dead
+    -- interface parked at 0 never qualifies).
+    -- Leave stick_hdg_axes empty to fall back to the legacy single-axis pin
+    -- (stick_hdg_axis >= 0) or to auto-detection (stick_hdg_axis = -1).
+    -- Raw sim/joystick/joystick_axis_values is 0..1.
+    stick_hdg_enabled       = true,
+    stick_hdg_axes          = { 3, 28 },
     stick_hdg_axis          = -1,
     stick_hdg_sticky        = true,
     stick_hdg_exclude_axes  = { },   -- extra RAW indices to veto, e.g. { 4, 5 }
@@ -129,10 +133,10 @@ CONFIG = {
     view_pan_force_3d       = true,  -- R3 switches to the 3-D cockpit if in 2-D
     view_pan_pitch_limit    = 80,    -- degrees, keeps the head inside the cockpit
 
-    -- Plain arrow keys tilt the cockpit view. X-Plane's own Up/Down binding is
-    -- momentary (it snaps back), so the script holds the offset and consumes
-    -- the keystroke. Held = keep tilting; the view stays where you leave it.
-    view_tilt_enabled       = true,
+    -- Plain arrow keys tilt the cockpit view. OFF: the keys belong to
+    -- X-Plane, and consuming them here would override the pilot's own
+    -- keyboard map (the script only holds the tilt while this is on).
+    view_tilt_enabled       = false,
     view_tilt_rate_dps      = 70,
     view_tilt_limit_deg     = 80,
     view_tilt_invert        = false,
@@ -144,9 +148,10 @@ CONFIG = {
     altitude_wheel_invert   = false,
     thumbwheel_altitude     = false,
 
-    -- Spring-loaded ALT SEL on the free spring-centred axis (right stick Y,
-    -- USB raw 3 / Bluetooth raw 28). Heading is now only on the D-pad.
-    stick_alt_enabled       = true,
+    -- Spring-loaded ALT SEL on the free spring-centred axis. OFF: that axis
+    -- (right stick Y, "Axis 3") is the heading knob now; one axis must never
+    -- drive two bugs.
+    stick_alt_enabled       = false,
     stick_alt_rate_fps      = 400,   -- feet per second at full deflection
     stick_alt_deadzone      = 0.12,
     stick_alt_invert        = false,
@@ -564,7 +569,8 @@ local function citationx_view_pan(dt)
             view_pan_wait_center = true
         end
         if view_pan_wait_center then
-            local ax, ay = view_pan_axis_x, view_pan_axis_y
+            -- Use the resolved pair (this also honours pinned view_pan_axis_*).
+            local ax, ay = view_pan_pair()
             if ax >= 0 and ay >= 0 then
                 local dz = CONFIG.view_pan_deadzone
                 if math.abs(stick_axis_deflection(ax)) > dz
@@ -694,11 +700,11 @@ SUITE_MODULES = {
         end,
     },
     {
-        key = "stick", label = "STICK ALT KNOB", macro = "stick altitude knob",
-        get = function() return CONFIG.stick_alt_enabled end,
-        set = function(on) citationx_set_stick_alt(on) end,
+        key = "stick", label = "STICK HDG KNOB", macro = "stick heading knob",
+        get = function() return CONFIG.stick_hdg_enabled end,
+        set = function(on) citationx_set_stick_hdg(on) end,
         state = function()
-            if CONFIG.stick_alt_enabled then return "ON" end
+            if CONFIG.stick_hdg_enabled then return "ON" end
             return "OFF"
         end,
     },
@@ -1169,7 +1175,10 @@ function citationx_keystroke()
 
     -- Held arrow keys tilt the cockpit view. Capture press AND release, and
     -- consume the key so X-Plane's own momentary hat binding cannot fight it.
-    if (vkey == 0x26 or vkey == 0x28)
+    -- Only while the tilt feature is switched on: otherwise the keys pass
+    -- straight through to X-Plane's own keyboard map.
+    if CONFIG.view_tilt_enabled
+        and (vkey == 0x26 or vkey == 0x28)
         and not (CONTROL_KEY or OPTION_KEY or SHIFT_KEY) then
         if vkey == 0x26 then
             view_tilt_up = (KEY_ACTION == "pressed")
@@ -1462,7 +1471,23 @@ function citationx_frame()
         end
 
         local axis = CONFIG.stick_hdg_axis
-        if axis < 0 then
+        local candidates = CONFIG.stick_hdg_axes
+        local use_list = (type(candidates) == "table" and #candidates > 0)
+        if use_list then
+            -- Deterministic: ONLY the listed raw axes may move the bug. The
+            -- most-deflected one wins, so whichever device slot X-Plane is
+            -- actually reading (USB 3 / Bluetooth 28) drives the knob. The
+            -- learned-rest guard keeps a dead interface parked at raw 0 out.
+            axis = nil
+            local best_mag = CONFIG.stick_hdg_deadzone
+            for k = 1, #candidates do
+                local idx = candidates[k]
+                if stick_base_raw[idx] ~= nil and not stick_dead_axis[idx] then
+                    local mag = math.abs(stick_axis_deflection(idx))
+                    if mag > best_mag then axis, best_mag = idx, mag end
+                end
+            end
+        elseif axis < 0 then
             -- Drop a pinned axis whose slot went silent (the pad switched from
             -- USB to Bluetooth, was unplugged) so detection can start over.
             if stick_hdg_live_axis >= 0
@@ -1516,11 +1541,11 @@ function citationx_frame()
 
             -- A slot pinned at a hard extreme for a long time is usually the
             -- pad's *other* interface (USB vs Bluetooth) going silent, not a
-            -- held stick. Veto it so the bug cannot free-run; detection then
-            -- picks up the interface that is actually alive.
+            -- held stick. Veto it so the bug cannot free-run; the next live
+            -- interface then takes over.
             if mag >= 0.9 and (raw <= 0.02 or raw >= 0.98) then
                 stick_hdg_hold_s = stick_hdg_hold_s + dt
-                if CONFIG.stick_hdg_axis < 0
+                if (use_list or CONFIG.stick_hdg_axis < 0)
                     and stick_hdg_hold_s >= CONFIG.stick_hdg_stale_hold_s then
                     stick_dead_axis[axis] = true
                     stick_hdg_live_axis   = -1
@@ -1538,7 +1563,7 @@ function citationx_frame()
                                  / (1.0 - CONFIG.stick_hdg_deadzone)
                     citationx_heading(sign * scaled
                         * CONFIG.stick_hdg_rate_dps * dt)
-                elseif CONFIG.stick_hdg_axis < 0
+                elseif not use_list and CONFIG.stick_hdg_axis < 0
                     and not CONFIG.stick_hdg_sticky then
                     -- Non-sticky auto mode: forget the axis when it is back at
                     -- rest so the next push re-detects. In sticky (default)

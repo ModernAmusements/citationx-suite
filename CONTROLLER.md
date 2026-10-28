@@ -4,7 +4,9 @@ X-Plane profile: `Output/preferences/control profiles/citX - Joysticks.prf`
 Device: DUALSHOCK 4 Wireless Controller (VID 054c, PID 09cc) — the same map is written
 into **both** device slots, so it behaves identically over USB and Bluetooth.
 
-Axes: left stick = pitch/roll, right stick X = yaw, right stick Y = ALT SEL.
+Axes: left stick = pitch/roll, right stick X = yaw, right stick Y = heading bug.
+X-Plane lists the right stick Y as **Axis 3** and leaves it unassigned; the suite reads it
+(the only input it reads).
 
 ## Buttons (PS4 notation)
 
@@ -44,9 +46,15 @@ Axes: left stick = pitch/roll, right stick X = yaw, right stick Y = ALT SEL.
 
 ## Suite additions (not part of the X-Plane profile)
 
-- Right stick Y (spring-centred, unassigned axis) drives ALT SEL — L2/R2 never do. Heading is on D-pad ←/→.
+- **One input only:** right stick Y (**Axis 3**, spring-centred and unassigned in the profile)
+  turns the heading bug. Push up/down to change HDG SEL; it is rate-based, 30°/s at full
+  deflection. Raw axis 3 or 28 depending on which device slot X-Plane gives the pad, so both
+  are pinned.
+- **Everything else is OFF at load**, so this profile is the only input map: keyboard layers,
+  L2/R2 analog throttle, stick ALT SEL, arrow-key view tilt, R3 cockpit look, axis optimizer
+  and the realism handling curve. Switch a layer on from the MasterSuite `CONTROL PANEL` row
+  (or the macro menu) if you want it back — it will compete with the profile again.
 - D-pad and face buttons are never touched by the suite; X-Plane owns them.
-- Keyboard layer: `Ctrl+Shift` / `Ctrl+Opt` combinations (see `README.md`).
 
 ## Mouse
 
@@ -78,10 +86,11 @@ sends. Assign each MX button to one of these combos:
 
 These are only suggestions — every combo below is a valid target.
 
-### Keyboard / MX layers (all live)
+### Keyboard / MX layers (available, OFF at load)
 
-Each layer owns what the pad cannot reach — no command is duplicated between the
-PS4 profile and the keyboard.
+These layers belong to the suite, not to X-Plane. They are **off at load** (the `INPUT MAPPER`
+row switches them on); while they are off, the keys pass straight to X-Plane. Each layer owns
+what the pad cannot reach — no command is duplicated between the PS4 profile and the keyboard.
 
 ### Ctrl+Shift + digit / arrow
 
@@ -171,7 +180,8 @@ PS4 profile and the keyboard.
 ### Free inputs
 
 - **PS4 buttons:** every physical control is assigned.
-- **PS4 axes:** none — right stick Y drives ALT SEL.
+- **PS4 axes:** right stick Y drives the heading bug (the only input the suite reads); every
+  other axis belongs to the profile.
 - **Mouse wheel:** X-Plane view zoom — deliberately not used by the suite.
 - **Free keystrokes** (no duplicate of the pad): `Ctrl+Shift+6`, `Ctrl+Shift+8`, `Ctrl+Shift+↑/↓/←/→`, `Ctrl+Shift+E/F`, `Ctrl+Opt+E/F`, all `Ctrl+Opt` arrows, and any MX button not mapped in Logi Options+.
 
@@ -186,7 +196,7 @@ PS4 profile and the keyboard.
 | **Gesture button** | Both landing lights |
 | **Thumb back / forward** | ALT SEL down / up (100 ft) |
 | **Right stick ←/→** | Yaw |
-| **Right stick ↑/↓** | ALT SEL |
+| **Right stick ↑/↓** | Heading bug (suite, Axis 3) |
 
 If you want a mouse button to tilt, map it in Logi Options+ to send **↑** or **↓** —
 those keys now drive the view.

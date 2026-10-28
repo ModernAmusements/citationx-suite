@@ -253,6 +253,10 @@ check(has("CALLOUT ANTI ICE"), "anti-ice-off callout while icing conditions exis
 real_anti_ice = 1
 
 -- ---------- handling curve ----------
+-- OFF at load: the suite must never take the pilot's pitch/roll over by
+-- itself. Switch it on explicitly before checking the curve.
+check(REAL_CONFIG.handling_enabled == false, "handling curve starts OFF")
+real_set_handling(true)
 real_joy_pitch_avail = 1
 real_joy_roll_avail  = 1
 real_joy_pitch = 0.50

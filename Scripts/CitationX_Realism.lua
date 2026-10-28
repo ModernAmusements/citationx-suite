@@ -146,7 +146,10 @@ REAL_CONFIG = {
     -- Does NOT touch the flight model. It reshapes the pitch/roll axes that go
     -- into X-Plane (deadzone, expo, smoothing), which is what makes a short-
     -- throw gamepad flyable with a jet's precision. Turn off for raw axes.
-    handling_enabled    = true,
+    -- Pilot-input handling curve. OFF: it takes pitch/roll over through the
+    -- joystick overrides, which is exactly the kind of input rewrite the suite
+    -- must not do behind the pilot's back. Switch on for the soft response.
+    handling_enabled    = false,
     handling_deadzone   = 0.02,
     handling_exponent   = 1.35,
     handling_smoothing  = 0.55,

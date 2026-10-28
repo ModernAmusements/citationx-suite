@@ -17,9 +17,11 @@ standalone landing-performance scorer.
 ## Control panel
 
 **Two panels are on screen at load: the black realism panel and the Master Suite hub.**
-The keyboard input layer, the DS4 right-stick heading knob and the R3 cockpit-look modifier
-stay ON because they are the controls the user flies with and draw nothing. Every other panel
-starts hidden and is opened from a hub row, the FlyWithLua macro menu or the commands below.
+The suite does not touch the pilot's input map — X-Plane's own `citX` joystick/key profile owns
+every control. The one exception is the DS4 right-stick **STICK HDG KNOB** (X-Plane "Axis 3"),
+which turns the heading bug and draws nothing. The keyboard mapper, the R3 cockpit look, the
+axis optimizer and the realism handling curve all start OFF. Every other panel starts hidden
+and is opened from a hub row, the FlyWithLua macro menu or the commands below.
 Two macros flip the whole suite: `CitationX Suite: enable all modules` /
 `disable all modules`.
 
@@ -96,8 +98,9 @@ stays untracked via `.gitignore`.
 - `CitationX_MasterSuite.lua` — `CONFIG` table: flight recorder, axis optimizer,
   emergency generator, input mapper, `joy_autobind_enabled` / `joy_map_enabled` (the
   free-controller-button map), the right-stick heading knob
-  (`stick_hdg_*`, including `stick_hdg_exclude_axes` and a fixed `stick_hdg_axis` pin) and
-  the 3-D cockpit look (`view_pan_*`: button, axis pair, rate, inversion, 3-D switch).
+  (`stick_hdg_*`: `stick_hdg_axes = { 3, 28 }` pins DS4 Axis 3 over USB/Bluetooth,
+  `stick_hdg_exclude_axes` adds vetoes) and the 3-D cockpit look (`view_pan_*`: button, axis
+  pair, rate, inversion, 3-D switch).
   Panel layout lives in `SUITE_STYLE` (`row_h`, `header_h`, `footer_h`, `pad`, `x`/`top`).
 - `CitationX_CabinOps.lua` — `CAB_CONFIG` (`row_h` controls row spacing).
 - `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG` (`row_h` controls row spacing).

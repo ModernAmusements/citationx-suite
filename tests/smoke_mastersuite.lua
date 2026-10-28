@@ -1,7 +1,8 @@
--- Mock-FlyWithLua smoke test for the CitationX_MasterSuite stick-heading fix.
--- Verifies: L2/R2 trigger axes can never grab the heading bug, the right-stick
--- axis locks (sticky), and a dead USB/Bluetooth slot is vetoed after 6 s so it
--- cannot free-run the bug.
+-- Mock-FlyWithLua smoke test for the CitationX_MasterSuite stick-heading knob.
+-- Verifies: the knob only ever reads the DS4 "Axis 3" raw axes (USB 3 /
+-- Bluetooth 28), the L2/R2 triggers can never move the bug, a dead interface
+-- parked at a hard extreme is vetoed after 6 s, and the R3 look mode still
+-- borrows the stick without the bug drifting.
 
 local TMP = os.getenv("TMPDIR") or "/tmp/"
 SCRIPT_DIRECTORY = TMP
@@ -61,8 +62,8 @@ function XPLMGetDataf() return 0 end
 local SCRIPT = arg[1] or "CitationX_MasterSuite.lua"
 dofile(SCRIPT)
 
--- The suite now loads with the heading knob (like every other module) off;
--- this harness is about the stick logic itself, so switch it on explicitly.
+-- The heading knob is the one input the suite keeps, so it is already ON; set
+-- it explicitly anyway so this harness is about the stick logic itself.
 CONFIG.stick_hdg_enabled = true
 
 local function frame(t)
@@ -85,104 +86,139 @@ local function check(name, cond, detail)
     end
 end
 
--- controller layout: left stick assigned, right stick + triggers unassigned
-axis_assign[0], axis_assign[1], axis_assign[2] = 2, 1, 3
-axis_values[0], axis_values[1], axis_values[2], axis_values[3] = 0.5, 0.5, 0.5, 0.5
-axis_values[4], axis_values[5] = 0.0, 0.0          -- L2/R2 at rest
-axis_values[27], axis_values[28] = 0.5, 0.5        -- right stick (unassigned)
+-- Real DS4 layout. Slot 0 (first device, USB): 0 roll, 1 pitch, 2 yaw,
+-- 3 right-stick Y (free = the heading knob), 4/5 L2/R2. Slot 1 (second
+-- device, Bluetooth): the same layout offset by 25, so 28 is Axis 3 there.
+local function publish_pad(y3, y28)
+    axis_assign[0], axis_assign[1], axis_assign[2] = 2, 1, 3
+    axis_assign[25], axis_assign[26], axis_assign[27] = 2, 1, 3
+    for _, i in ipairs({ 0, 1, 2, 3, 25, 26, 27 }) do axis_values[i] = 0.5 end
+    axis_values[3], axis_values[28] = y3, y28
+    axis_values[4], axis_values[5] = 0.0, 0.0          -- L2/R2 at rest
+    axis_values[29], axis_values[30] = 0.0, 0.0
+end
 
+publish_pad(0.5, 0.5)
 frame(0)   -- baseline frame (dt = 0)
 frame(1)   -- learn rests
 
 -- 1. triggers must never grab the heading bug --------------------------------
 local h0 = hdg_sel_deg
 axis_values[4], axis_values[5] = 1.0, 1.0          -- squeeze both triggers
+axis_values[29], axis_values[30] = 1.0, 1.0
 frame(2)
 check("L2/R2 do not move heading", hdg_sel_deg == h0, delta(hdg_sel_deg, h0))
 axis_values[4], axis_values[5] = 0.0, 0.0
+axis_values[29], axis_values[30] = 0.0, 0.0
 frame(3)
 
--- 2. right stick takes the knob once ... -------------------------------------
+-- 2. Axis 3 (first device slot) drives the knob -------------------------------
 local before = hdg_sel_deg
-axis_values[27] = 0.9
+axis_values[3] = 0.9
 frame(4)
 local d = delta(hdg_sel_deg, before)
-check("right stick drives heading", d > 10, d)
-check("lock logged", logged("locked to raw axis 27"))
-
--- 3. ... and stays sticky when the stick is released -------------------------
-axis_values[27] = 0.5
-before = hdg_sel_deg
+check("Axis 3 drives heading", d > 10, d)
+axis_values[3] = 0.5
 frame(5)
-check("heading steady at rest", hdg_sel_deg == before, delta(hdg_sel_deg, before))
 
-axis_values[28] = 0.9                              -- nudge the other axis
+-- 3. Axis 3 of the second device slot does the same (USB <-> Bluetooth) -------
 before = hdg_sel_deg
+axis_values[28] = 0.9
 frame(6)
-check("sticky: second axis ignored", hdg_sel_deg == before,
-    delta(hdg_sel_deg, before))
+d = delta(hdg_sel_deg, before)
+check("Axis 3 (second slot, raw 28) drives heading", d > 10, d)
 axis_values[28] = 0.5
 frame(7)
 
-axis_values[27] = 0.1                              -- push the locked axis again
+-- 4. every other stick axis is ignored ---------------------------------------
+axis_values[2] = 0.9                               -- right stick X (yaw)
 before = hdg_sel_deg
 frame(8)
-d = delta(hdg_sel_deg, before)
-check("locked axis re-engages", d < -10, d)
+check("yaw axis does not move heading", hdg_sel_deg == before,
+    delta(hdg_sel_deg, before))
+axis_values[2] = 0.5
+axis_values[27] = 0.9                              -- yaw, second slot
+before = hdg_sel_deg
+frame(9)
+check("second-slot yaw axis does not move heading", hdg_sel_deg == before,
+    delta(hdg_sel_deg, before))
+axis_values[27] = 0.5
+frame(10)
 
--- 4. dead slot (USB unplugged: raw reads 0) must be vetoed -------------------
-axis_values[27] = 0.0                              -- slot gone silent
-for t = 9, 15 do frame(t) end                      -- 7 s > 6 s threshold
-local settled = hdg_sel_deg
+-- 5. a dead interface parked at 0 from the start never qualifies --------------
+-- Reload with the USB slot reading 0 (unplugged) and Bluetooth live at centre.
+logs = {}
+dofile(SCRIPT)
+CONFIG.stick_hdg_enabled = true
+publish_pad(0.0, 0.5)                              -- raw 3 dead, raw 28 alive
+frame(11)
+frame(12)
+before = hdg_sel_deg
+frame(13)
+check("dead slot at raw 0 cannot turn the bug", hdg_sel_deg == before,
+    delta(hdg_sel_deg, before))
+axis_values[28] = 0.9                              -- live slot still works
+before = hdg_sel_deg
+frame(14)
+check("live slot still drives heading", delta(hdg_sel_deg, before) > 10,
+    delta(hdg_sel_deg, before))
+axis_values[28] = 0.5
+frame(15)
+
+-- 6. a slot stuck at a hard extreme is vetoed after the 6 s watchdog ----------
+axis_values[3] = 0.5                               -- pad reports Axis 3: learn rest
 frame(16)
-frame(17)
-check("dead slot stops the bug", hdg_sel_deg == settled,
+axis_values[3] = 1.0                               -- then hold it at the hard stop
+for t = 17, 24 do frame(t) end                     -- 8 s > 6 s threshold
+local settled = hdg_sel_deg
+frame(25)
+frame(26)
+check("stuck slot stops the bug", hdg_sel_deg == settled,
     delta(hdg_sel_deg, settled))
 
--- 5. the slot coming back to center revives it -------------------------------
-axis_values[27] = 0.5
-frame(18)                                          -- dead flag clears
-axis_values[27] = 0.9
+-- 7. the slot coming back to centre revives it -------------------------------
+axis_values[3] = 0.5
+frame(27)                                          -- dead flag clears
+axis_values[3] = 0.9
 before = hdg_sel_deg
-frame(19)
+frame(28)
 d = delta(hdg_sel_deg, before)
-check("revived slot locks again", d > 10, d)
+check("revived slot drives heading again", d > 10, d)
+axis_values[3] = 0.5
+frame(29)
 
--- 6. module toggle re-arms cleanly -------------------------------------------
+-- 8. module toggle re-arms cleanly -------------------------------------------
 citationx_set_stick_hdg(false)
 citationx_set_stick_hdg(true)
-axis_values[27] = 0.5
-frame(20)
-axis_values[27] = 0.1
+frame(30)                                          -- re-learn the rest
+axis_values[3] = 0.9
 before = hdg_sel_deg
-frame(21)
-d = delta(hdg_sel_deg, before)
-check("works after toggle", d < -5, d)
+frame(31)
+check("works after toggle", delta(hdg_sel_deg, before) > 10,
+    delta(hdg_sel_deg, before))
+axis_values[3] = 0.5
+frame(32)
 
--- 7. regression: X-Plane reports -0.01 before the pad enumerates --------------
+-- 9. regression: X-Plane reports -0.01 before the pad enumerates --------------
 -- The 2026-10-24 log showed every axis with a learned rest of -0.01, so the
--- knob never locked. Reload the script with the right stick "not live yet".
+-- knob never locked. Reload the script with Axis 3 "not live yet".
 logs = {}
 dofile(SCRIPT)
 CONFIG.stick_hdg_enabled = true
 
--- the mocks hand out fresh tables on reload, so re-publish the device state
-axis_assign[0], axis_assign[1], axis_assign[2] = 2, 1, 3
-axis_values[0], axis_values[1], axis_values[2], axis_values[3] = 0.5, 0.5, 0.5, 0.5
-axis_values[4], axis_values[5] = 0.0, 0.0
-axis_values[27], axis_values[28] = -0.01, -0.01
-
-frame(30)                                          -- must NOT latch -0.01
-axis_values[27], axis_values[28] = 0.5, 0.5        -- pad enumerates, centred
-frame(31)
-axis_values[27] = 0.9
+publish_pad(-0.01, -0.01)                          -- must NOT latch -0.01
+frame(33)
+publish_pad(0.5, 0.5)                              -- pad enumerates, centred
+frame(34)
+axis_values[3] = 0.9
 before = hdg_sel_deg
-frame(32)
+frame(35)
 d = delta(hdg_sel_deg, before)
-check("late-enumerating right stick still locks", d > 10, d)
-check("late lock logged", logged("locked to raw axis 27"))
+check("late-enumerating Axis 3 still drives heading", d > 10, d)
+axis_values[3] = 0.5
+frame(36)
 
--- 8. auto-bind uses ONLY the buttons X-Plane reports as unassigned -------------
+-- 10. auto-bind uses ONLY the buttons X-Plane reports as unassigned -----------
 -- The feature is off by default (it hijacked spare buttons in flight), so turn
 -- it on explicitly for this check.
 logs = {}
@@ -200,24 +236,27 @@ JOY_BINDINGS[8].action()
 check("bound action actually runs", CONFIG.status_enabled ~= panel_before)
 CONFIG.status_enabled = panel_before
 
--- 9. R3 + right stick looks around the 3-D cockpit ----------------------------
--- The feature is off by default now, so enable it explicitly for this check.
-CONFIG.view_pan_enabled = true
--- By now the right stick is locked to axis 27 (heading knob). Holding R3 must
--- take it over: same stick pans the head, the heading bug stays put.
-axis_values[27], axis_values[28] = 0.5, 0.5
+-- 11. R3 + right stick looks around the 3-D cockpit ---------------------------
+-- The feature is off by default now, so enable it explicitly for this check and
+-- pin the look pair to Axis 3 (yaw) + its neighbour so the test does not depend
+-- on auto-detection. Holding R3 must take the stick over: same stick pans the
+-- head, the heading bug stays put.
+CONFIG.view_pan_enabled  = true
+CONFIG.view_pan_axis_x   = 3
+CONFIG.view_pan_axis_y   = 28
+axis_values[3], axis_values[28] = 0.5, 0.5
 frame(40)
 local hdg_before_look = hdg_sel_deg
 local psi0, the0 = view_head_psi, view_head_the
 button_values[11] = 1
-axis_values[27] = 0.9
+axis_values[3] = 0.9
 frame(41)
 check("R3 + stick yaws the 3-D cockpit view", view_head_psi ~= psi0,
     view_head_psi)
 check("R3 suppresses the heading knob", hdg_sel_deg == hdg_before_look,
     delta(hdg_sel_deg, hdg_before_look))
 
-axis_values[27] = 0.5
+axis_values[3] = 0.5
 axis_values[28] = 0.1                              -- stick pushed up
 frame(42)
 check("R3 + stick up pitches the view up", view_head_the > the0, view_head_the)
@@ -225,7 +264,7 @@ check("R3 + stick up pitches the view up", view_head_the > the0, view_head_the)
 axis_values[28] = 0.5
 button_values[11] = 0
 frame(43)
-axis_values[27] = 0.9
+axis_values[3] = 0.9
 local hdg_after_look = hdg_sel_deg
 frame(44)
 check("heading knob resumes after R3 is released",
@@ -234,7 +273,7 @@ check("heading knob resumes after R3 is released",
 
 -- centring the stick while R3 is held must not drift the view
 button_values[11] = 1
-axis_values[27], axis_values[28] = 0.5, 0.5
+axis_values[3], axis_values[28] = 0.5, 0.5
 frame(45)
 local psi_hold, the_hold = view_head_psi, view_head_the
 frame(46)
@@ -246,18 +285,18 @@ frame(47)
 -- releasing R3 while the stick is still deflected must not hand the stick back
 -- to the heading bug until it re-centres
 button_values[11] = 1
-axis_values[27], axis_values[28] = 0.5, 0.5
+axis_values[3], axis_values[28] = 0.5, 0.5
 frame(48)
-axis_values[27] = 0.9
+axis_values[3] = 0.9
 frame(49)
 local hdg_latched = hdg_sel_deg
 button_values[11] = 0
 frame(50)
 check("heading knob waits for the stick to centre after R3",
     hdg_sel_deg == hdg_latched, delta(hdg_sel_deg, hdg_latched))
-axis_values[27] = 0.5
+axis_values[3] = 0.5
 frame(51)
-axis_values[27] = 0.9
+axis_values[3] = 0.9
 local hdg_recentre = hdg_sel_deg
 frame(52)
 check("heading knob resumes after the stick re-centres",
@@ -268,12 +307,12 @@ check("heading knob resumes after the stick re-centres",
 -- 3-D cockpit first; the pan starts on a later frame)
 view_panel_type = 0
 button_values[11] = 1
-axis_values[27], axis_values[28] = 0.9, 0.5
+axis_values[3], axis_values[28] = 0.9, 0.5
 local psi_2d = view_head_psi
 frame(53)
 check("2-D view: no head-offset writes", view_head_psi == psi_2d, view_head_psi)
 button_values[11] = 0
-axis_values[27] = 0.5
+axis_values[3] = 0.5
 view_panel_type = 2
 frame(54)
 

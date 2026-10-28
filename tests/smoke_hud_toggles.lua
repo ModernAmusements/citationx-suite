@@ -99,17 +99,16 @@ check(CONFIG.status_enabled == true, "control panel is visible at load")
 check(CONFIG.axis_monitor == false, "axis monitor starts hidden")
 check(CONFIG.input_learn_mode == false, "learn mode starts hidden")
 
--- ---------- and nothing runs except the keyboard layer, heading knob and look ----------
+-- ---------- and nothing runs except the heading knob ------------------------
 local on_at_load = {}
 for i = 1, #SUITE_MODULES do
   local m = SUITE_MODULES[i]
   if m.state() == "ON" then on_at_load[#on_at_load + 1] = m.key end
 end
 table.sort(on_at_load)
-check(#on_at_load == 3
-    and on_at_load[1] == "input" and on_at_load[2] == "status"
-    and on_at_load[3] == "stick",
-  "only the keyboard layer, hub and heading knob start ON",
+check(#on_at_load == 2
+    and on_at_load[1] == "status" and on_at_load[2] == "stick",
+  "only the hub and the heading knob start ON",
   table.concat(on_at_load, ","))
 
 -- ---------- the duplicate cockpit readouts must not come back ----------
@@ -176,11 +175,12 @@ for _, key in ipairs(expected) do pcall(citationx_toggle_module, key) end
 
 -- ---------- everything can be switched back on ----------
 citationx_set_all(true)
-check(CONFIG.log_enabled and CONFIG.emergency_enabled and CONFIG.stick_alt_enabled
+check(CONFIG.log_enabled and CONFIG.emergency_enabled and CONFIG.axis_optimizer_enabled
   and CONFIG.input_map_enabled, "enable all modules arms the hidden modules")
 citationx_set_all(false)
-check(not (CONFIG.log_enabled or CONFIG.emergency_enabled or CONFIG.stick_alt_enabled
-  or CONFIG.input_map_enabled), "disable all modules turns them off again")
+check(not (CONFIG.log_enabled or CONFIG.emergency_enabled or CONFIG.axis_optimizer_enabled
+  or CONFIG.input_map_enabled or CONFIG.stick_hdg_enabled),
+  "disable all modules turns them off again")
 
 -- ---------- the control panel is the only thing drawn ----------
 CONFIG.status_enabled     = false
