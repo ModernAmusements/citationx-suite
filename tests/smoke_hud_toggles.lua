@@ -182,6 +182,28 @@ check(not (CONFIG.log_enabled or CONFIG.emergency_enabled or CONFIG.axis_optimiz
   or CONFIG.input_map_enabled or CONFIG.stick_hdg_enabled),
   "disable all modules turns them off again")
 
+-- ---------- mouse thumb buttons stay mapped to ALT SEL ----------------------
+-- Logi Options+ sends Ctrl+Shift+9 (back) / Ctrl+Shift+0 (forward) from the
+-- mouse. The input mapper is OFF, but these two keys must still step ALT SEL.
+CONFIG.input_map_enabled = false
+alt_sel_ft, alt_legacy_ft = 10000, 10000
+CONTROL_KEY, SHIFT_KEY, OPTION_KEY = true, true, false
+KEY_ACTION = "pressed"
+VKEY = 0x30                                     -- forward
+RESUME_KEY = false
+citationx_keystroke()
+check(alt_sel_ft == 10100 and alt_legacy_ft == 10100,
+  "Ctrl+Shift+0 raises ALT SEL one step", alt_sel_ft)
+check(RESUME_KEY == true, "the altitude key is consumed")
+VKEY = 0x39                                     -- back
+citationx_keystroke()
+check(alt_sel_ft == 10000, "Ctrl+Shift+9 lowers ALT SEL one step", alt_sel_ft)
+-- every other combo still belongs to X-Plane while the mapper is off
+VKEY = 0x31                                     -- Ctrl+Shift+1 (NAV lights)
+RESUME_KEY = false
+citationx_keystroke()
+check(RESUME_KEY == false, "other Ctrl+Shift keys are not consumed")
+
 -- ---------- the control panel is the only thing drawn ----------
 CONFIG.status_enabled     = false
 CONFIG.axis_monitor       = false

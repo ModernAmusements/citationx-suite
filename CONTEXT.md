@@ -7,8 +7,9 @@ Last updated: 2026-10-29
 **2026-10-29 — input reset.** The suite no longer intercepts the pilot's controls. Every
 Lua-side input layer defaults OFF (keyboard/button mapper, analog L2/R2 throttle, arrow-key view
 tilt, stick ALT SEL, axis optimizer, R3 cockpit look, and the realism pack's handling curve).
-The ONE input kept is the heading bug on the DS4 **Axis 3** (right stick up/down), pinned to raw
-axes 3/28 so it works over USB and Bluetooth. See §30.
+The only inputs kept are the heading bug on the DS4 **Axis 3** (right stick up/down), pinned to
+raw axes 3/28 so it works over USB and Bluetooth, and the mouse **thumb buttons** back/forward
+(`Ctrl+Shift+9` / `Ctrl+Shift+0`) for ALT SEL. The mouse wheel is untouched. See §30.
 
 Last completed session (2026-10-24) turned the realism pack into the suite's only active script:
 audible FMOD callouts, six new flight-phase monitors, a pilot-input handling curve, a
@@ -1131,6 +1132,12 @@ parallel layers were fighting it.
 
 - **The one input kept:** the heading bug on **DS4 Axis 3** (right stick up/down). X-Plane's
   profile leaves Axis 3 unassigned, which is why it is the free spring-centred axis.
+- **Mouse thumb buttons (added later the same day, on request):** the Logitech MX
+  back/forward buttons are the only other live control. Logi Options+ sends `Ctrl+Shift+9` /
+  `Ctrl+Shift+0`; `citationx_keystroke` handles exactly those two combos
+  (`CONFIG.alt_keys_enabled = true`) even while `input_map_enabled` is false: back = ALT SEL
+  down, forward = up, 100 ft per press. Every other combo still passes through to X-Plane. The
+  mouse **wheel** is not consumed — `thumbwheel_altitude` stays false, so view zoom is intact.
 - **Both device slots are pinned:** `CONFIG.stick_hdg_axes = { 3, 28 }`. The pad enumerates
   twice, so Axis 3 is raw 3 in the first slot and raw 28 in the second (USB vs Bluetooth).
   `stick_hdg_axes` selects the most-deflected listed axis each frame; an axis must have been
@@ -1150,7 +1157,8 @@ parallel layers were fighting it.
 Verification (2026-10-29): `luac -p` clean; `check_datarefs.lua` 0 problems across 5 scripts;
 `check_kpcrew_modules.lua C750` 0 missing; `probe_load_order.lua` 104 bindings, 0 failures;
 `smoke_mastersuite` (Axis 3/28 drive the bug, triggers/yaw/dead-slot never do, watchdog,
-late-enumeration, R3 hand-off), `smoke_hud_toggles` (only `status` + `stick` ON at load),
+late-enumeration, R3 hand-off), `smoke_hud_toggles` (only `status` + `stick` ON at load; `Ctrl+Shift+9/0` still steps ALT SEL
+with the mapper off and other combos pass through),
 `smoke_realism` (handling OFF at load), `smoke_efb` and `smoke_panel_geometry` (65 checks) all
 pass. **In-sim check pending:** reload Lua, confirm the log has no `axis optimizer
 engaged/released` lines, then push the right stick up/down — HDG SEL turns; yaw, triggers,

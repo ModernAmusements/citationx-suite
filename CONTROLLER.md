@@ -46,14 +46,18 @@ X-Plane lists the right stick Y as **Axis 3** and leaves it unassigned; the suit
 
 ## Suite additions (not part of the X-Plane profile)
 
-- **One input only:** right stick Y (**Axis 3**, spring-centred and unassigned in the profile)
-  turns the heading bug. Push up/down to change HDG SEL; it is rate-based, 30°/s at full
-  deflection. Raw axis 3 or 28 depending on which device slot X-Plane gives the pad, so both
-  are pinned.
-- **Everything else is OFF at load**, so this profile is the only input map: keyboard layers,
-  L2/R2 analog throttle, stick ALT SEL, arrow-key view tilt, R3 cockpit look, axis optimizer
-  and the realism handling curve. Switch a layer on from the MasterSuite `CONTROL PANEL` row
-  (or the macro menu) if you want it back — it will compete with the profile again.
+- **Two inputs only:**
+  - right stick Y (**Axis 3**, spring-centred and unassigned in the profile) turns the heading
+    bug. Push up/down to change HDG SEL; it is rate-based, 30°/s at full deflection. Raw axis 3
+    or 28 depending on which device slot X-Plane gives the pad, so both are pinned.
+  - the mouse **thumb buttons back/forward** step ALT SEL. They arrive as `Ctrl+Shift+9` /
+    `Ctrl+Shift+0` from Logi Options+, and the suite handles only those two keystrokes even
+    with the input mapper off.
+- **Everything else is OFF at load**, so this profile is the only input map: the rest of the
+  keyboard layers, L2/R2 analog throttle, stick ALT SEL, arrow-key view tilt, R3 cockpit look,
+  axis optimizer and the realism handling curve. Switch a layer on from the MasterSuite
+  `CONTROL PANEL` row (or the macro menu) if you want it back — it will compete with the
+  profile again.
 - D-pad and face buttons are never touched by the suite; X-Plane owns them.
 
 ## Mouse
@@ -69,28 +73,30 @@ Two separate things:
 ### 2. Logitech MX buttons (Logi Options+)
 
 FlyWithLua never sees the mouse button itself — only the keystroke Logi Options+
-sends. Assign each MX button to one of these combos:
+sends. **The two thumb buttons are live by default:** the suite handles
+`Ctrl+Shift+9` / `Ctrl+Shift+0` even with the input mapper off. Every other row
+below needs the MasterSuite **INPUT MAPPER** switched on.
 
-| MX control (recommended) | Send this | Action |
-| --- | --- | --- |
-| Wheel click | `Ctrl+Shift+5` | Both landing lights |
-| Gesture button | `Ctrl+Shift+5` | Both landing lights |
-| Thumb button back | `Ctrl+Shift+9` | ALT SEL down (100 ft) |
-| Thumb button forward | `Ctrl+Shift+0` | ALT SEL up (100 ft) |
-| `Ctrl+Shift+,` | Pitch trim down (keyboard knob) |
-| `Ctrl+Shift+.` | Pitch trim up (keyboard knob) |
-| Thumb wheel left | `Ctrl+Shift+1` | NAV lights |
-| Thumb wheel right | `Ctrl+Shift+2` | Beacon lights |
-| Mode-shift | `Ctrl+Opt+M` | Master caution |
-| Keyboard rotary knob ← / → | `Ctrl+Shift+,` / `Ctrl+Shift+.` | Pitch trim down / up |
+| MX control (recommended) | Send this | Action | Live at load |
+| --- | --- | --- | --- |
+| Thumb button back | `Ctrl+Shift+9` | ALT SEL down (100 ft) | **yes** |
+| Thumb button forward | `Ctrl+Shift+0` | ALT SEL up (100 ft) | **yes** |
+| Wheel click | `Ctrl+Shift+5` | Both landing lights | no |
+| Gesture button | `Ctrl+Shift+5` | Both landing lights | no |
+| Thumb wheel left | `Ctrl+Shift+1` | NAV lights | no |
+| Thumb wheel right | `Ctrl+Shift+2` | Beacon lights | no |
+| Mode-shift | `Ctrl+Opt+M` | Master caution | no |
+| Keyboard rotary knob ← / → | `Ctrl+Shift+,` / `Ctrl+Shift+.` | Pitch trim down / up | no |
 
 These are only suggestions — every combo below is a valid target.
 
 ### Keyboard / MX layers (available, OFF at load)
 
 These layers belong to the suite, not to X-Plane. They are **off at load** (the `INPUT MAPPER`
-row switches them on); while they are off, the keys pass straight to X-Plane. Each layer owns
-what the pad cannot reach — no command is duplicated between the PS4 profile and the keyboard.
+row switches them on); while they are off, the keys pass straight to X-Plane. The two
+exceptions are `Ctrl+Shift+9` / `Ctrl+Shift+0` (ALT SEL down/up), which stay live because they
+are what the mouse thumb buttons send. Each layer owns what the pad cannot reach — no command
+is duplicated between the PS4 profile and the keyboard.
 
 ### Ctrl+Shift + digit / arrow
 
