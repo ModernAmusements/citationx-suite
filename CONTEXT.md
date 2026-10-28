@@ -11,12 +11,20 @@ The only inputs kept are the heading bug on the DS4 **Axis 3** (right stick up/d
 raw axes 3/28 so it works over USB and Bluetooth, and the mouse **thumb buttons** back/forward
 (`Ctrl+Shift+9` / `Ctrl+Shift+0`) for ALT SEL. The mouse wheel is untouched. See §30.
 
-Last completed session (2026-10-24) turned the realism pack into the suite's only active script:
-audible FMOD callouts, six new flight-phase monitors, a pilot-input handling curve, a
-pre-takeoff control check, and one black Helvetica panel with every realism control and its
-live state. Every other suite module now defaults OFF and every panel defaults hidden. See §21.
-Everything passed offline harnesses. **The open item is a single in-sim confirmation run**:
-callouts audible, panel legible, handling curve felt, textures seen.
+**Session ended 2026-10-29.** Two small steps are implemented, validated offline and pushed
+(`450367e` input reset, `1ce6b6c` mouse ALT SEL). Neither has been verified in X-Plane yet.
+
+1. **Input reset.** The suite reads exactly two pilot inputs now: the DS4 **Axis 3** heading bug
+   (raw 3/28, USB + Bluetooth) and the mouse **thumb buttons** for ALT SEL (`Ctrl+Shift+9`
+   back = down, `Ctrl+Shift+0` forward = up, 100 ft per press). Everything else defaults OFF:
+   keyboard and joystick-button mappers, L2/R2 analog throttle, arrow-key view tilt, stick
+   ALT SEL, axis optimizer, R3 cockpit look and the realism handling curve. The **mouse wheel
+   is not consumed** — it stays X-Plane's view zoom.
+2. **Next session starts with one in-sim check** (see "Open item" below), then we continue in
+   small steps.
+
+Historical note: the 2026-10-24 session turned the realism pack into the suite's only active
+script (callouts, monitors, one black panel). See §21.
 
 ### What changed 2026-10-24
 
@@ -42,45 +50,47 @@ callouts audible, panel legible, handling curve felt, textures seen.
 | Textures | Cockpit panel: 8K dark Cascade 3 PNG + 8K DDS; cockpit overall/cabin 8K, seat 4K; `plain white` fuselage sharpened |
 | Tests | `smoke_realism.lua` added; control-panel and geometry harnesses updated |
 
-### Verification status
+### Verification status (2026-10-29)
 
 ```
 syntax ........................ ok
 runtime load (LuaJIT, shared) .. 104 bindings, 0 failures, 0 problems
 dataref bindings .............. ok (5 suite scripts)
 kpcrew require graph (C750) ... 0 missing
-mastersuite smoke ............. PASSED (incl. R3 look)
-control panel smoke ........... PASSED (14 rows)
-realism smoke ................. PASSED (callouts, phases, handling, HUD draw/click)
-realism audio ................. PASSED (FMOD preferred, legacy fallback, toasts wired)
+mastersuite smoke ............. PASSED (Axis 3/28, triggers/yaw rejected, watchdog, R3 hand-off)
+control panel smoke ........... PASSED (14 rows; Ctrl+Shift+9/0 with the mapper off)
+realism smoke ................. PASSED (handling OFF at load, curve on demand)
 efb smoke ..................... PASSED
 panel geometry ................ PASSED (65 checks, incl. drag and active QRH)
 ```
 
-### The one open item
+### Open item — verify the two inputs in-sim
 
-**No in-sim run has happened since the HUD removal, the realism pack, the texture pass and the
-2026-10-24 audio fix.** Reload Lua in X-Plane (*FlyWithLua → Reload all Lua script files*), then
-check `Log.txt` for `FlyWithLua Error:` and `Moved Bad Script`. Expected: neither appears,
-`All script files loaded successfully.` is the last loading line,
-`Citation X Realism: 22/22 callout sounds loaded (fmod bus)` and
-`Citation X Realism: master bus volume=1.00 mute=0` are present, and a
-`REALISM PACK READY` toast appears. Then use the macro
-**Citation X Realism: test callout** — you must hear "ROTATE". The black realism panel should
-be at the top-left with all sixteen rows; click `CALLOUTS` and `HANDLING CURVE` once to see them
-turn OFF/ON, then click `HIDE HUD` and reopen it with the macro *realism panel*.
+**No in-sim run has happened since the 2026-10-29 input reset.** Reload Lua in X-Plane
+(*FlyWithLua → Reload all Lua script files*), then:
 
-Textures need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
+1. `Log.txt`: no `FlyWithLua Error:`, no `Moved Bad Script`, and **no**
+   `Citation X Suite: axis optimizer engaged/released` lines.
+2. Push the DS4 right stick **up/down** → HDG SEL turns. If the direction is backwards, set
+   `CONFIG.stick_hdg_invert = true`; if it is too fast/slow, `CONFIG.stick_hdg_rate_dps` (30).
+3. Press the mouse **thumb back / forward** → ALT SEL steps ∓100 ft with a toast. If nothing
+   happens, check what Logi Options+ actually sends and change the two `vkey`s in
+   `citationx_keystroke` (currently `0x39` back / `0x30` forward).
+4. Roll the **mouse wheel** → the view must still zoom (the suite must not consume it).
+5. Confirm yaw, triggers, pitch/roll, the D-pad and the arrow keys do nothing in the suite.
+
+Textures still need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
 
 ## Current runtime state (2026-10-29)
 - **Suite scripts (tracked):** `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
   `CitationX_CabinOps.lua`, `CitationX_EFB.lua`, `CitationX_Realism.lua` plus
   `CitationX_Callouts/*.wav` (19 files). All load clean; no `FlyWithLua Error:` lines.
-- **The suite reads exactly one pilot input: the heading bug knob on DS4 Axis 3.** Every other
-  input layer is OFF at load — no keyboard map, no joystick-button map, no analog-trigger
-  throttle, no arrow-key view tilt, no stick ALT SEL, no axis optimizer, no R3 cockpit look, no
-  realism handling curve. X-Plane's own `citX` profile is the single source of truth for the
-  pad, the keyboard and the mouse. Re-enable any layer from the control panel, the macro menu
+- **The suite reads exactly two pilot inputs: the heading bug on DS4 Axis 3 and the mouse thumb
+  buttons (ALT SEL).** Every other input layer is OFF at load — no keyboard map beyond
+  `Ctrl+Shift+9/0`, no joystick-button map, no analog-trigger throttle, no arrow-key view tilt,
+  no stick ALT SEL, no axis optimizer, no R3 cockpit look, no realism handling curve. X-Plane's
+  own `citX` profile is the single source of truth for the pad, the keyboard and the mouse
+  wheel. Re-enable any layer from the control panel, the macro menu
   (`CitationX Suite: <row>`, `enable all modules`) or `CitationXSuite/toggle_<key>`.
 - **Panels:** the realism panel and the MasterSuite hub (`status`) are the only two drawn at
   load; CabinOps, QRH, EFB and LandingPerformance start hidden.
@@ -1160,10 +1170,10 @@ Verification (2026-10-29): `luac -p` clean; `check_datarefs.lua` 0 problems acro
 late-enumeration, R3 hand-off), `smoke_hud_toggles` (only `status` + `stick` ON at load; `Ctrl+Shift+9/0` still steps ALT SEL
 with the mapper off and other combos pass through),
 `smoke_realism` (handling OFF at load), `smoke_efb` and `smoke_panel_geometry` (65 checks) all
-pass. **In-sim check pending:** reload Lua, confirm the log has no `axis optimizer
-engaged/released` lines, then push the right stick up/down — HDG SEL turns; yaw, triggers,
-arrow keys and the D-pad do nothing in the suite. If the direction feels inverted, set
-`CONFIG.stick_hdg_invert = true`.
+pass. **In-sim check pending:** reload Lua, confirm the log has no `axis optimizer engaged/released`
+lines, then push the right stick up/down — HDG SEL turns; yaw, triggers, arrow keys and the D-pad
+do nothing in the suite. Thumb back/forward must step ALT SEL 100 ft; the wheel must still zoom.
+If the heading direction feels inverted, set `CONFIG.stick_hdg_invert = true`.
 
 ## Not yet verified in-sim
 
