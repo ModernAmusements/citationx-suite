@@ -67,6 +67,36 @@ DEFAULT_AIRCRAFT_GLOB = os.path.expanduser(
     "~/X-Plane 12/Aircraft/*/Cessna_CitationX.acf")
 
 BUTTON_RE = re.compile(r"^_joy_BUTN_use(\d+) (\S+)$")
+
+# X-Plane 12 keeps one "control profile" per aircraft under
+# Output/preferences/control profiles/, and Miscellaneous.prf maps the aircraft
+# folder to its profile. Editing X-Plane Joystick Settings.prf alone has no
+# effect on an aircraft that has a profile of its own -- that is why the pad
+# kept its old mapping.
+PREFS_DIR = os.path.dirname(DEFAULT_PRF)
+MISC_PRF = os.path.join(PREFS_DIR, "Miscellaneous.prf")
+PROFILE_DIR = os.path.join(PREFS_DIR, "control profiles")
+AIRCRAFT_DIR = os.path.expanduser("~/X-Plane 12/Aircraft")
+
+
+def default_profile():
+    """The control profile X-Plane actually loads for the Citation X."""
+    try:
+        with open(MISC_PRF, "r", encoding="utf-8", errors="ignore") as fd:
+            lines = fd.read().splitlines()
+    except OSError:
+        return DEFAULT_PRF
+    for line in lines:
+        parts = line.split(" ", 3)
+        if len(parts) != 4 or parts[0] != "P" or parts[1] != "acf_profile":
+            continue
+        folder = parts[2].replace("___", " ").strip()
+        if not os.path.isdir(os.path.join(AIRCRAFT_DIR, folder)):
+            continue
+        path = os.path.join(PROFILE_DIR, parts[3] + " - Joysticks.prf")
+        if os.path.exists(path):
+            return path
+    return DEFAULT_PRF
 CREATE_RE = re.compile(r'create_command\(\s*"([^"]+)"\s*(?:,\s*"([^"]*)")?')
 
 # sim/joystick/joystick_axis_assignments enum, copied from the suite
@@ -282,7 +312,7 @@ def print_device(lines, entries, dev, only_slot=None):
 def main():
     ap = argparse.ArgumentParser(
         description="Offline mapper for X-Plane joystick profiles.")
-    ap.add_argument("--prf", default=DEFAULT_PRF, help="joystick profile")
+    ap.add_argument("--prf", default=default_profile(), help="joystick profile")
     ap.add_argument("--log", default=DEFAULT_LOG, help="X-Plane Log.txt")
     ap.add_argument("--commands", default=DEFAULT_COMMANDS, help="Commands.txt")
     ap.add_argument("--aircraft", default=None,

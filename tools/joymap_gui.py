@@ -917,7 +917,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"error": "not found"})
 
 
-CURRENT_PRF = joymap.DEFAULT_PRF
+CURRENT_PRF = joymap.default_profile()
 
 
 def serve(port, open_browser):
@@ -974,7 +974,7 @@ def self_test():
 def main():
     global CURRENT_PRF
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    ap.add_argument("--prf", default=joymap.DEFAULT_PRF)
+    ap.add_argument("--prf", default=joymap.default_profile())
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--self-test", action="store_true")
