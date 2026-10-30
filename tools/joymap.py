@@ -293,7 +293,8 @@ def main():
     ap.add_argument("--core", action="store_true", help="commands: only core sim/")
     ap.add_argument("--bound", action="store_true", help="commands: only bound ones")
     ap.add_argument("--unbound", action="store_true", help="commands: only unbound ones")
-    ap.add_argument("command", choices=["list", "show", "set", "clear", "axes",
+    ap.add_argument("command", nargs="?", default="list",
+                    choices=["list", "show", "set", "clear", "axes",
                                         "commands", "lua", "check", "log",
                                         "backup", "restore"])
     ap.add_argument("args", nargs="*")
