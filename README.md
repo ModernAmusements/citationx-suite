@@ -158,6 +158,27 @@ If X-Plane is available, load a flight and check `Log.txt` for `FlyWithLua Error
 
 See `CONTEXT.md` for the engineering history and `AGENTS.md` for contribution rules.
 
+## Offline joystick mapper
+
+`tools/joymap.py` reads and writes the saved X-Plane joystick profile, so a controller can be
+re-mapped **with X-Plane closed** — the in-sim LEARN MODE can only record while the sim runs.
+
+```sh
+python3 tools/joymap.py list                       # devices + every assignment
+python3 tools/joymap.py show 0                     # one device
+python3 tools/joymap.py set 0 hat_up sim/general/hat_switch_up
+python3 tools/joymap.py clear 0 btn13
+python3 tools/joymap.py check                      # every binding exists in Commands.txt
+python3 tools/joymap.py log                        # hardware X-Plane last enumerated
+python3 tools/joymap.py restore                    # undo the last write (repeatable)
+```
+
+Inputs are `hat_up`, `hat_up_right`, `hat_right`, `hat_down_right`, `hat_down`,
+`hat_down_left`, `hat_left`, `hat_up_left`, `btn0`..`btn31`, or a raw `slotN`. Each device owns
+160 slots: `0..7` is the 8-position hat, `8..39` the physical buttons. The tool refuses to write
+while X-Plane is running (the sim rewrites the profile on exit) and takes a timestamped `.bak-*`
+copy first.
+
 ## Repository
 
 Private: <https://github.com/ModernAmusements/citationx-suite>

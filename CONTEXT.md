@@ -1175,6 +1175,54 @@ lines, then push the right stick up/down — HDG SEL turns; yaw, triggers, arrow
 do nothing in the suite. Thumb back/forward must step ALT SEL 100 ft; the wheel must still zoom.
 If the heading direction feels inverted, set `CONFIG.stick_hdg_invert = true`.
 
+## 31. D-pad is a HID hat; 160-slot device stride (2026-10-30)
+
+The PS4 D-pad never appeared in learn mode because it is not a button. X-Plane enumerates the
+DS4 as 6 axes + 1 hat switch (8 positions) + 14 buttons (`Log.txt`, HID lines) and stores the
+hat in the same `_joy_BUTN_use` range as the buttons:
+
+```
+device base = dev * 160
+base +  0..7     hat, clockwise from up (up, up_right, right, ... up_left)
+base +  8..39    physical buttons
+base + 40..159   unused
+```
+
+Two consequences:
+
+- **The suite's device stride was wrong.** It read `slot * 64 + b`, but the profile, the
+  dataref (`sim/joystick/joystick_button_values` int[3200] = 20 devices x 160) and
+  `initial_assignments.txt` (`(dev*160)+btn`) all use 160. Fixed in `view_pan_button_held()`,
+  `citationx_autobind_joy()` and both frame scans; learn mode now logs buttons 0..319 and raw
+  axes 0..31 instead of 0..127 / 0..15 (the DS4's axes arrive at 25..30).
+- **The two DS4 profile blocks had diverged.** USB (device 0) had hat up/right/down/left on
+  flaps/gear and only the diagonals on the view; Bluetooth (device 1) had the full 8-way hat
+  view but no trim, brakes or reversers. X-Plane binds the connected pad to the lowest free
+  slot, so the Bluetooth pad ran on the USB block: D-pad up retracted flaps (hence the
+  `FLAP OVERSPEED 253 kt` callout during the input sweep) and never moved the view.
+
+Fixed on 2026-10-30 with X-Plane closed, by rewriting both blocks of
+`Output/preferences/X-Plane Joystick Settings.prf` identically:
+
+| Input | Binding |
+| --- | --- |
+| D-pad (8 positions) | `sim/general/hat_switch_*` — native cockpit look |
+| btn0 | `sim/flight_controls/flaps_up` |
+| btn9 | `sim/flight_controls/flaps_down` |
+| btn12 | `sim/flight_controls/landing_gear_toggle` |
+| btn1 / btn3 | throttle down / up (unchanged) |
+| btn2 | speed brakes (unchanged) |
+| btn4..7 | aileron trim (unchanged) |
+| btn8 / btn10 / btn11 | 3-D cockpit / spot view / reversers (unchanged) |
+
+Backup: `X-Plane Joystick Settings.prf.bak-before-dpad-view-2026-10-30` next to the profile.
+`tools/joymap.py` performs the same edits from the command line, refuses to run while the sim
+is open and backs up before every write.
+
+**In-sim check pending:** the D-pad must tilt/pan the 3-D cockpit, and the physical labels of
+btn0 / btn9 / btn12 must be confirmed — they were the only unassigned buttons, and labels
+cannot be recorded without the sim.
+
 ## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not

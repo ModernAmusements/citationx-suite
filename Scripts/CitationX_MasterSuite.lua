@@ -561,7 +561,7 @@ end
 local function view_pan_button_held()
     local b = CONFIG.view_pan_button
     for slot = 0, 1 do
-        if (joy_buttons[slot * 64 + b] or 0) == 1 then return true end
+        if (joy_buttons[slot * 160 + b] or 0) == 1 then return true end
     end
     return false
 end
@@ -1070,6 +1070,9 @@ end
 -- and 18+ are not physical. Both device slots are scanned because the pad
 -- enumerates twice (USB + Bluetooth), so the same action lands on both and
 -- survives a reconnect. Nothing already mapped by the pilot is overwritten.
+-- Each device owns 160 slots (sim/joystick/joystick_button_values is int[3200]
+-- = 20 devices x 160, and initial_assignments.txt uses the same (dev*160)+btn
+-- numbering), so slot * 160 is the device base.
 function citationx_autobind_joy()
     if not CONFIG.joy_autobind_enabled then return end
     JOY_BINDINGS = {}
@@ -1077,7 +1080,7 @@ function citationx_autobind_joy()
     local free = {}
     for slot = 0, 1 do
         for b = 8, 17 do
-            local idx = slot * 64 + b
+            local idx = slot * 160 + b
             if b ~= CONFIG.view_pan_button and (joy_btn_assign[idx] or 0) == 0 then
                 free[b] = free[b] or {}
                 free[b][#free[b] + 1] = idx
@@ -1416,7 +1419,7 @@ function citationx_frame()
     if not joy_autobind_done then
         local ready = (now >= 5.0)
         if not ready then
-            for i = 0, 127 do
+            for i = 0, 319 do
                 if (joy_btn_assign[i] or 0) ~= 0 then
                     ready = true
                     break
@@ -1621,11 +1624,11 @@ function citationx_frame()
     end
 
     -- 5. joystick buttons: learn logging + mapped actions.
-    -- Buttons are 64 per device (sim/joystick/joystick_button_values is
-    -- int[3200] = 50 devices x 64). The DS4 enumerates twice, USB and
-    -- Bluetooth, so scan both slots or the pad goes dead when it reconnects
-    -- on the other interface.
-    for i = 0, 127 do
+    -- 160 slots per device (sim/joystick/joystick_button_values is int[3200]
+    -- = 20 devices x 160). The DS4 enumerates twice, USB and Bluetooth, so
+    -- scan both device blocks (0..319) or the pad goes silent when it
+    -- reconnects on the other interface.
+    for i = 0, 319 do
         local value = joy_buttons[i] or 0
         if value ~= (prev_joy_buttons[i] or 0) then
             prev_joy_buttons[i] = value
@@ -1641,9 +1644,11 @@ function citationx_frame()
 
     trigger_throttle_tick()
 
-    -- 6. raw axes: learn logging (find the physical index for a stick)
+    -- 6. raw axes: learn logging (find the physical index for a stick).
+    -- The DS4's six axes arrive at raw 25..30 (left stick 25/26, yaw 27,
+    -- right stick 28, triggers 29/30), so scan past the first two devices.
     if CONFIG.input_learn_mode then
-        for i = 0, 15 do
+        for i = 0, 31 do
             local v = joy_raw_axes[i] or 0.0
             if math.abs(v - (prev_raw_axes[i] or 0.0)) > 0.05 then
                 prev_raw_axes[i] = v

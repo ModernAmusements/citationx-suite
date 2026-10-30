@@ -27,3 +27,8 @@
 !/tests/
 /tests/*
 !/tests/*.lua
+
+# Offline joystick profile mapper (works with X-Plane closed)
+!/tools/
+/tools/*
+!/tools/*.py
