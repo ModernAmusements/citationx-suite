@@ -1207,13 +1207,17 @@ Fixed on 2026-10-30 with X-Plane closed, by rewriting both blocks of
 | Input | Binding |
 | --- | --- |
 | D-pad (8 positions) | `sim/general/hat_switch_*` — native cockpit look |
-| btn0 | `sim/flight_controls/flaps_up` |
-| btn9 | `sim/flight_controls/flaps_down` |
-| btn12 | `sim/flight_controls/landing_gear_toggle` |
-| btn1 / btn3 | throttle down / up (unchanged) |
-| btn2 | speed brakes (unchanged) |
-| btn4..7 | aileron trim (unchanged) |
-| btn8 / btn10 / btn11 | 3-D cockpit / spot view / reversers (unchanged) |
+| L1 | `sim/flight_controls/pitch_trim_down` |
+| R1 | `sim/flight_controls/pitch_trim_up` |
+| L2 / R2 | `sim/engines/throttle_down` / `throttle_up` |
+| □ / ○ | `sim/flight_controls/aileron_trim_left` / `_right` |
+| △ / ✕ | `sim/flight_controls/flaps_up` / `flaps_down` |
+| Options | `sim/flight_controls/speed_brakes_toggle` |
+| PS | `sim/flight_controls/landing_gear_toggle` |
+| Share / L3 / R3 | 3-D cockpit look / spot view / reversers |
+
+The button labels follow the order X-Plane gives this pad (shoulders first: L1, L2, R1, R2 =
+buttons 0..3, face buttons 4..7), which is what makes L2/R2 the throttle in the live profile.
 
 Backup: `X-Plane Joystick Settings.prf.bak-before-dpad-view-2026-10-30` next to the profile.
 `tools/joymap.py` performs the same edits from the command line, refuses to run while the sim
