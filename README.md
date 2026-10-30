@@ -162,22 +162,32 @@ See `CONTEXT.md` for the engineering history and `AGENTS.md` for contribution ru
 
 `tools/joymap.py` reads and writes the saved X-Plane joystick profile, so a controller can be
 re-mapped **with X-Plane closed** — the in-sim LEARN MODE can only record while the sim runs.
+It also knows every control of the aircraft: the 220 `laminar/CitX/...` commands the Citation X
+registers from its xlua scripts, plus the core `sim/...` commands from `Commands.txt`.
 
 ```sh
 python3 tools/joymap.py list                       # devices + every assignment
 python3 tools/joymap.py show 0                     # one device
 python3 tools/joymap.py set 0 hat_up sim/general/hat_switch_up
+python3 tools/joymap.py set 0 btn13 laminar/CitX/lights/cmd_taxi_toggle
+python3 tools/joymap.py commands                   # the 220 Citation X controls
+python3 tools/joymap.py commands lights            # search names + descriptions
+python3 tools/joymap.py commands --unbound         # what is still free
+python3 tools/joymap.py commands gear --core       # core sim/ commands
+python3 tools/joymap.py axes                       # axis assignments
 python3 tools/joymap.py clear 0 btn13
-python3 tools/joymap.py check                      # every binding exists in Commands.txt
+python3 tools/joymap.py check                      # every binding exists in the catalog
 python3 tools/joymap.py log                        # hardware X-Plane last enumerated
 python3 tools/joymap.py restore                    # undo the last write (repeatable)
 ```
 
-Inputs are `hat_up`, `hat_up_right`, `hat_right`, `hat_down_right`, `hat_down`,
-`hat_down_left`, `hat_left`, `hat_up_left`, `btn0`..`btn31`, or a raw `slotN`. Each device owns
-160 slots: `0..7` is the 8-position hat, `8..39` the physical buttons. The tool refuses to write
-while X-Plane is running (the sim rewrites the profile on exit) and takes a timestamped `.bak-*`
-copy first.
+A `*` in the `commands` listing marks a command that is already bound. Inputs are `hat_up`,
+`hat_up_right`, `hat_right`, `hat_down_right`, `hat_down`, `hat_down_left`, `hat_left`,
+`hat_up_left`, `btn0`..`btn31`, or a raw `slotN`. Each device owns 160 slots: `0..7` is the
+8-position hat, `8..39` the physical buttons. The tool refuses to write while X-Plane is
+running (the sim rewrites the profile on exit) and takes a timestamped `.bak-*` copy first.
+The aircraft folder is auto-detected from `Aircraft/*/Cessna_CitationX.acf`; override it with
+`--aircraft PATH`.
 
 ## Repository
 

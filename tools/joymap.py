@@ -22,8 +22,12 @@ Commands:
     show DEV [INPUT]           one device (optionally one input)
     set DEV INPUT COMMAND      write one binding
     clear DEV INPUT            unassign one input
+    axes                       axis assignments from the profile
+    commands [PATTERN]         every control: core sim/ commands + Citation X
+                               xlua commands, marked when already bound
+                               (--citx / --core filter, --bound / --unbound)
     lua DEV                    print FlyWithLua set_button_assignment lines
-    check                      every assigned command exists in Commands.txt
+    check                      every bound command exists in the catalog
     log                        hardware X-Plane last saw (from Log.txt)
     backup                     timestamped copy of the profile
     restore                    newest backup back over the profile
@@ -34,7 +38,8 @@ INPUT names: hat_up hat_up_right hat_right hat_down_right hat_down
 Examples:
     python3 tools/joymap.py list
     python3 tools/joymap.py set 0 hat_up sim/general/hat_switch_up
-    python3 tools/joymap.py set 0 btn0 sim/flight_controls/flaps_up
+    python3 tools/joymap.py commands --unbound
+    python3 tools/joymap.py set 0 btn0 laminar/CitX/lights/cmd_taxi_toggle
 """
 
 import argparse
@@ -58,8 +63,23 @@ DEFAULT_PRF = os.path.expanduser(
 DEFAULT_LOG = os.path.expanduser("~/X-Plane 12/Log.txt")
 DEFAULT_COMMANDS = os.path.join(ROOT, "..", "Commands.txt")
 DEFAULT_DATAREFS = os.path.join(ROOT, "..", "DataRefs.txt")
+DEFAULT_AIRCRAFT_GLOB = os.path.expanduser(
+    "~/X-Plane 12/Aircraft/*/Cessna_CitationX.acf")
 
 BUTTON_RE = re.compile(r"^_joy_BUTN_use(\d+) (\S+)$")
+CREATE_RE = re.compile(r'create_command\(\s*"([^"]+)"\s*(?:,\s*"([^"]*)")?')
+
+# sim/joystick/joystick_axis_assignments enum, copied from the suite
+# (CitationX_MasterSuite.lua: AXIS_FUNCS).
+AXIS_FUNCS = [
+    "none", "pitch", "roll", "yaw", "throttle", "collective", "l toe brake",
+    "r toe brake", "prop", "mixture", "carb heat", "flaps", "thrust vec",
+    "wing sweep", "speedbrakes", "displacement", "reverse", "elev trim",
+    "ail trim", "rud trim", "throttle 1", "throttle 2", "throttle 3",
+    "throttle 4", "prop 1", "prop 2", "prop 3", "prop 4", "mixture 1",
+    "mixture 2", "mixture 3", "mixture 4", "reverse 1", "reverse 2",
+    "reverse 3", "reverse 4", "gear", "tiller", "bak throttle", "cowl flaps",
+]
 
 
 # --------------------------------------------------------------- profile ---
@@ -147,17 +167,65 @@ def make_backup(prf):
 
 
 # --------------------------------------------------------------- commands ---
-def known_commands(path):
-    names = set()
+def core_commands(path):
+    """Every core command X-Plane ships, with its one-line description."""
+    out = {}
     try:
         with open(path, "r", encoding="utf-8", errors="ignore") as fd:
             for line in fd:
                 line = line.strip()
-                if line and not line.startswith("#"):
-                    names.add(line.split()[0])
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split(None, 1)
+                out[parts[0]] = parts[1].strip() if len(parts) > 1 else ""
     except FileNotFoundError:
         pass
-    return names
+    return out
+
+
+def find_aircraft(path=None):
+    if path:
+        return os.path.abspath(os.path.expanduser(path))
+    hits = sorted(glob.glob(DEFAULT_AIRCRAFT_GLOB))
+    return os.path.dirname(hits[0]) if hits else None
+
+
+def citix_commands(acf):
+    """The commands the Citation X xlua plugin registers at runtime."""
+    out = {}
+    if not acf:
+        return out
+    root = os.path.join(acf, "plugins", "xlua", "scripts")
+    for dirpath, _, files in os.walk(root):
+        for name in sorted(files):
+            if not name.endswith(".lua"):
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as fd:
+                    text = fd.read()
+            except OSError:
+                continue
+            for match in CREATE_RE.finditer(text):
+                out[match.group(1)] = match.group(2) or ""
+    return out
+
+
+def catalog(ns):
+    """(core, aircraft, aircraft_path) -- the full set of bindable commands."""
+    acf = find_aircraft(ns.aircraft)
+    return core_commands(ns.commands), citix_commands(acf), acf
+
+
+def known_names(ns):
+    core, air, _ = catalog(ns)
+    return set(core) | set(air)
+
+
+def axis_name(value):
+    if 0 <= value < len(AXIS_FUNCS):
+        return AXIS_FUNCS[value]
+    return "?"
 
 
 # --------------------------------------------------------------- hardware ---
@@ -217,10 +285,17 @@ def main():
     ap.add_argument("--prf", default=DEFAULT_PRF, help="joystick profile")
     ap.add_argument("--log", default=DEFAULT_LOG, help="X-Plane Log.txt")
     ap.add_argument("--commands", default=DEFAULT_COMMANDS, help="Commands.txt")
+    ap.add_argument("--aircraft", default=None,
+                    help="Citation X folder (default: auto-detect the .acf)")
     ap.add_argument("--force", action="store_true",
                     help="write even if X-Plane is running or the command is unknown")
-    ap.add_argument("command", choices=["list", "show", "set", "clear", "lua",
-                                        "check", "log", "backup", "restore"])
+    ap.add_argument("--citx", action="store_true", help="commands: only Citation X")
+    ap.add_argument("--core", action="store_true", help="commands: only core sim/")
+    ap.add_argument("--bound", action="store_true", help="commands: only bound ones")
+    ap.add_argument("--unbound", action="store_true", help="commands: only unbound ones")
+    ap.add_argument("command", choices=["list", "show", "set", "clear", "axes",
+                                        "commands", "lua", "check", "log",
+                                        "backup", "restore"])
     ap.add_argument("args", nargs="*")
     ns = ap.parse_args()
 
@@ -242,6 +317,56 @@ def main():
         print_device(lines, entries, dev, slot)
         return 0
 
+    if ns.command == "axes":
+        shown = 0
+        for i in range(500):
+            raw = scalar(lines, "_joy_AXIS_use%d" % i).strip()
+            if not raw:
+                continue
+            try:
+                use = int(raw)
+            except ValueError:
+                continue
+            if use <= 0:
+                continue
+            center = scalar(lines, "_joy_center%d" % i).strip() or "-"
+            null = scalar(lines, "_joy_null%d" % i).strip() or "-"
+            print("axis %-3d %-14s center %-10s null %s"
+                  % (i, axis_name(use), center, null))
+            shown += 1
+        if not shown:
+            print("no axes assigned")
+        return 0
+
+    if ns.command == "commands":
+        core, air, acf = catalog(ns)
+        if not air:
+            print("warning: no Citation X commands found (%s)"
+                  % (acf or "aircraft not found -- use --aircraft"), file=sys.stderr)
+        bound = {value for (_, value) in entries.values()}
+        pattern = ns.args[0].lower() if ns.args else ""
+        only_core = ns.core and not ns.citx
+        rows = []
+        if not only_core:
+            rows += [(n, d, "citx", n in bound) for n, d in air.items()]
+        if ns.core:
+            rows += [(n, d, "core", n in bound) for n, d in core.items()]
+        shown = 0
+        for name, desc, tag, is_bound in sorted(rows):
+            if pattern and pattern not in name.lower() and pattern not in desc.lower():
+                continue
+            if ns.bound and not is_bound:
+                continue
+            if ns.unbound and is_bound:
+                continue
+            print("%s %-5s %-54s %s" % ("*" if is_bound else " ", tag, name, desc))
+            shown += 1
+        print("%d shown | %d Citation X command(s), %d core command(s)"
+              % (shown, len(air), len(core)))
+        if not ns.core and air:
+            print("tip: --core lists the sim/ commands, '*' marks a bound command")
+        return 0
+
     if ns.command == "log":
         boxes = hardware(ns.log)
         if not boxes:
@@ -258,7 +383,7 @@ def main():
         return 0
 
     if ns.command == "check":
-        known = known_commands(ns.commands)
+        known = known_names(ns)
         bad = 0
         assigned = 0
         for key in sorted(entries):
@@ -321,10 +446,10 @@ def main():
         if len(ns.args) < 3:
             raise SystemExit("usage: set DEV INPUT COMMAND")
         value = ns.args[2]
-        known = known_commands(ns.commands)
+        known = known_names(ns)
         if known and value not in known and value != NONE and not ns.force:
-            raise SystemExit("%s is not in %s (--force to write anyway)"
-                             % (value, ns.commands))
+            raise SystemExit("%s is neither a core command nor a Citation X command"
+                             " (--force to write anyway)" % value)
 
     if is_running() and not ns.force:
         raise SystemExit("X-Plane is running -- it rewrites this file on exit.\n"

@@ -1219,6 +1219,12 @@ Backup: `X-Plane Joystick Settings.prf.bak-before-dpad-view-2026-10-30` next to 
 `tools/joymap.py` performs the same edits from the command line, refuses to run while the sim
 is open and backs up before every write.
 
+The tool also carries the full control catalog: it parses `create_command("laminar/CitX/...")`
+out of `Aircraft/Cessna Citation X_mods/plugins/xlua/scripts/**/*.lua` (220 commands) and merges
+it with `Resources/plugins/Commands.txt` (3144 core commands), so `commands --unbound` shows
+what is still free on the pad and `set` validates against both. The gear has **no** CitX
+commands — its lever is dataref-driven — so gear stays on `sim/flight_controls/landing_gear_*`.
+
 **In-sim check pending:** the D-pad must tilt/pan the 3-D cockpit, and the physical labels of
 btn0 / btn9 / btn12 must be confirmed — they were the only unassigned buttons, and labels
 cannot be recorded without the sim.
