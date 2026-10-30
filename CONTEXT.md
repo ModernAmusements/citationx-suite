@@ -1270,6 +1270,13 @@ confirmed. X-Plane numbers this pad with the shoulders first — L1, L2, R1, R2 
 down/up in the live profile, which only fits that order. If a label is off in the cockpit, it
 is one table in `tools/joymap_gui.py` (`CONTROLS`).
 
+**Reverted the same evening (pilot's request).** All of the bindings above are gone again: the two
+X-Plane files were restored from `X-Plane Joystick Settings.prf.bak-before-dpad-view-2026-10-30`
+and `control profiles/PS4-CitationX - Joysticks.prf.bak-2026-10-30-233044`, the Logi profile from
+`settings.db.bak-2026-10-30-231926`, and `MOUSE_KEY_ACTIONS` was removed from the script. Only the
+suite itself (realism pack, panels, heading knob) stays as it was. The tooling
+(`tools/joymap.py`, `tools/joymap_gui.py`) and the 160-slot scan fix are kept.
+
 ## Not yet verified in-sim
 
 Everything below passed offline harnesses but has **never been seen in X-Plane**. Do not

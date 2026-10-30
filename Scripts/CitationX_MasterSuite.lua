@@ -83,13 +83,6 @@ CONFIG = {
     -- press. No other keystroke is read while input_map_enabled is false.
     alt_keys_enabled        = true,
 
-    -- Always-on layer for the MX mouse keys (Logi Options+ sends them for the
-    -- mouse's own X-Plane profile): Ctrl+Shift+8 = gesture button, Ctrl+Shift+6
-    -- = thumb wheel. They work with the input mapper OFF, like the thumb
-    -- buttons above.
-    mouse_keys_enabled      = true,
-    mouse_key_repeat_s      = 0.40,
-
     -- Analog DS4 triggers -> throttle up/down. OFF: L2/R2 are already on the
     -- pilot's X-Plane profile (button 6/7 plus the analog end-stop), so the
     -- script must not issue throttle commands on the same axes.
@@ -1183,19 +1176,6 @@ local function yn(value)
     return "0"
 end
 
--- MX mouse keys that X-Plane cannot see as buttons: Logi Options+ turns the
--- gesture button and the thumb wheel into keystrokes in its X-Plane profile.
--- These stay live with the input mapper OFF, like the thumb buttons.
-local MOUSE_KEY_ACTIONS = {
-    [0x38] = { key = "Ctrl+Shift+8", label = "LANDING LIGHTS",
-               command = "sim/lights/landing_lights_toggle" },  -- gesture button
-    [0x36] = { key = "Ctrl+Shift+6", label = "TAXI LIGHT",
-               command = "sim/lights/taxi_lights_toggle" },     -- thumb wheel
-}
--- The thumb wheel sends its key once per detent, in both directions, so a
--- flick otherwise toggles twice. Ignore repeats inside this window.
-local mouse_key_last = {}
-
 function citationx_keystroke()
     local vkey = (VKEY or 0) % 256
     if CONFIG.input_learn_mode then
@@ -1232,21 +1212,6 @@ function citationx_keystroke()
         if KEY_ACTION == "pressed" then
             citationx_altitude(vkey == 0x30
                 and CONFIG.altitude_step_ft or -CONFIG.altitude_step_ft)
-        end
-        return
-    end
-
-    -- MX mouse gesture button (Ctrl+Shift+8) and thumb wheel (Ctrl+Shift+6).
-    local mouse_action = CONFIG.mouse_keys_enabled and MOUSE_KEY_ACTIONS[vkey]
-    if mouse_action and CONTROL_KEY and SHIFT_KEY and not OPTION_KEY then
-        RESUME_KEY = true
-        if KEY_ACTION == "pressed" then
-            local stamp = citationx_sim_time or 0.0
-            if stamp - (mouse_key_last[vkey] or -10.0) > CONFIG.mouse_key_repeat_s then
-                mouse_key_last[vkey] = stamp
-                command_once(mouse_action.command)
-                toast(mouse_action.label)
-            end
         end
         return
     end
