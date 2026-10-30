@@ -72,6 +72,48 @@ BIND_RE = re.compile(
     r'\{ vkey = (0x[0-9A-Fa-f]+|\d+), ctrl = (true|false),\s*shift = (true|false),'
     r'\s*label = "([^"]+)",\s*(?:command = "([^"]+)"|action = )')
 
+# Colour code for the map: what a binding actually does.
+CATEGORIES = {
+    "view":     ("Blick",      "#4aa3ff"),
+    "flight":   ("Steuerung",  "#3ddc84"),
+    "engine":   ("Triebwerk",  "#ff9f1c"),
+    "ap":       ("Autopilot",  "#b17bff"),
+    "lights":   ("Licht",      "#ffd93d"),
+    "avionics": ("Avionik",    "#2ee6d6"),
+    "systems":  ("Systeme",    "#ff6ba8"),
+    "other":    ("Sonstiges",  "#9aa0a6"),
+    "none":     ("frei",       "#3a3a40"),
+    "native":   ("nativ",      "#9aa0a6"),
+    "suite":    ("Suite",      "#ff6ba8"),
+}
+
+
+def category(command):
+    if not command or command == joymap.NONE:
+        return "none"
+    if command.startswith(("sim/view/", "sim/general/hat_switch", "sim/general/rot_")):
+        return "view"
+    if command.startswith("sim/flight_controls/"):
+        return "flight"
+    if command.startswith("sim/engines/"):
+        return "engine"
+    if command.startswith("sim/autopilot/"):
+        return "ap"
+    if command.startswith("sim/lights/") or "/lights/" in command:
+        return "lights"
+    if command.startswith(("sim/instruments/", "sim/GPS/")):
+        return "avionics"
+    if command.startswith("laminar/CitX/"):
+        low = command.lower()
+        if "lights" in low:
+            return "lights"
+        if "primus" in low or "fmc" in low or "efis" in low:
+            return "avionics"
+        return "systems"
+    if command.startswith("sim/"):
+        return "other"
+    return "other"
+
 
 # ---------------------------------------------------------------- catalog ---
 class Opts:
@@ -159,6 +201,7 @@ def state(device=0):
     for slot, ident, label, group in CONTROLS:
         key = device * joymap.BLOCK + slot
         command = entries[key][1] if key in entries else joymap.NONE
+        cat = category(command)
         controls.append({
             "slot": slot,
             "id": ident,
@@ -167,6 +210,9 @@ def state(device=0):
             "command": command,
             "short": short(command),
             "description": describe(command, core, air),
+            "cat": cat,
+            "cat_label": CATEGORIES[cat][0],
+            "cat_color": CATEGORIES[cat][1],
         })
 
     axes = []
@@ -188,7 +234,14 @@ def state(device=0):
         "devices": devices,
         "controls": controls,
         "axes": axes,
-        "mouse": [{"id": i, "label": l, "description": d} for i, l, d in MOUSE_ROLES],
+        "mouse": [{
+            "id": i,
+            "label": l,
+            "description": d,
+            "cat": "suite" if i in ("back", "forward") else "native",
+            "cat_label": CATEGORIES["suite" if i in ("back", "forward") else "native"][0],
+            "cat_color": CATEGORIES["suite" if i in ("back", "forward") else "native"][1],
+        } for i, l, d in MOUSE_ROLES],
         "suite": suite_bindings(),
     }
 
@@ -291,7 +344,8 @@ HTML = r"""<!doctype html>
          cursor:pointer; }
   .row:hover { background:#1d1d21; }
   .row.sel { background:#221c0d; outline:1px solid var(--amber); }
-  .row .name { flex:0 0 84px; color:var(--dim); font-size:11px; }
+  .row .name { flex:0 0 100px; color:var(--dim); font-size:11px; display:flex;
+               align-items:center; gap:4px; }
   .row .cmd { flex:1 1 auto; font-family:ui-monospace, Menlo, monospace; font-size:11px;
               color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .row .cmd.none { color:#5a5a62; }
@@ -391,11 +445,7 @@ HTML = r"""<!doctype html>
         <text x="330" y="430" class="lbl" style="fill:#8a8a90" id="axleft"></text>
         <text x="440" y="430" class="lbl" style="fill:#8a8a90" id="axright"></text>
       </svg>
-      <div class="legend">
-        <span><i class="dot" style="background:#3ddc84"></i>belegt</span>
-        <span><i class="dot" style="background:#3a3a40"></i>frei</span>
-        <span><i class="dot" style="background:#ffb020"></i>ausgewählt</span>
-      </div>
+      <div class="legend" id="legend"></div>
     </div>
 
     <div class="card mousecard">
@@ -453,6 +503,11 @@ HTML = r"""<!doctype html>
 <script>
 let STATE = null, SELECTED = null, SELECTED_MOUSE = null, DEVICE = 0;
 
+function rgba(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
 function toast(msg, ms=2600) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.add('show');
@@ -498,6 +553,11 @@ function render() {
       if (FIXED.includes(t.textContent)) return;
       t.textContent = bound ? c.short : '';
     });
+    el.querySelectorAll('.body').forEach(b => {
+      b.style.stroke = SELECTED === c.id ? '#ffb020' : c.cat_color;
+      b.style.strokeWidth = SELECTED === c.id ? '3' : '2';
+      b.style.fill = bound ? rgba(c.cat_color, 0.22) : '#1c1c1f';
+    });
     // click + hover tooltip with the full command
     let tip = null;
     for (const child of el.children) if (child.tagName === 'title') tip = child;
@@ -517,12 +577,23 @@ function render() {
   rows.innerHTML = STATE.controls.map(c => {
     const bound = c.command && c.command !== 'sim/none/none';
     return `<div class="row ${SELECTED === c.id ? 'sel' : ''}" data-id="${c.id}">
-      <span class="name">${c.label}</span>
+      <span class="name"><i class="dot" style="background:${c.cat_color}"></i>${c.label}</span>
       <span class="cmd ${bound ? '' : 'none'}">${bound ? c.command : 'frei'}</span>
+      <span class="tag" style="color:${bound ? c.cat_color : '#5a5a62'}">${bound ? c.cat_label : ''}</span>
     </div>`;
   }).join('');
   rows.querySelectorAll('.row').forEach(r =>
     r.onclick = () => select(r.dataset.id, false));
+
+  const counts = {};
+  for (const c of STATE.controls) counts[c.cat] = (counts[c.cat] || 0) + 1;
+  const legend = Object.entries(counts).filter(([k]) => k !== 'none')
+    .sort((a, b) => b[1] - a[1]).map(([k, n]) => {
+      const found = STATE.controls.find(x => x.cat === k);
+      return `<span><i class="dot" style="background:${found.cat_color}"></i>${found.cat_label} (${n})</span>`;
+    });
+  if (counts.none) legend.push(`<span><i class="dot" style="background:#3a3a40"></i>frei (${counts.none})</span>`);
+  document.getElementById('legend').innerHTML = legend.join('');
 
   document.getElementById('axesbox').innerHTML = STATE.axes.length
     ? 'Achsen: ' + STATE.axes.map(a => `<span>A${a.index} ${a.name}</span>`).join('')
@@ -530,8 +601,9 @@ function render() {
 
   document.getElementById('mouserows').innerHTML = STATE.mouse.map(m =>
     `<div class="row ${SELECTED_MOUSE === m.id ? 'sel' : ''}" data-mouse="${m.id}">
-       <span class="name">${m.label}</span>
-       <span class="cmd">${m.description}</span></div>`).join('');
+       <span class="name"><i class="dot" style="background:${m.cat_color}"></i>${m.label}</span>
+       <span class="cmd">${m.description}</span>
+       <span class="tag" style="color:${m.cat_color}">${m.cat_label}</span></div>`).join('');
   document.querySelectorAll('#mouserows .row').forEach(r =>
     r.onclick = () => selectMouse(r.dataset.mouse));
 
@@ -541,8 +613,15 @@ function render() {
 
 function paintMouse() {
   for (const g of document.querySelectorAll('#mouse .ctl')) {
+    const m = STATE.mouse.find(x => x.id === g.dataset.id);
     g.classList.add('bound');
     g.classList.toggle('selected', SELECTED_MOUSE === g.dataset.id);
+    if (!m) continue;
+    g.querySelectorAll('.body').forEach(b => {
+      b.style.stroke = SELECTED_MOUSE === m.id ? '#ffb020' : m.cat_color;
+      b.style.strokeWidth = SELECTED_MOUSE === m.id ? '3' : '2';
+      b.style.fill = rgba(m.cat_color, 0.22);
+    });
   }
 }
 
@@ -553,7 +632,8 @@ function selectMouse(id) {
   const m = STATE.mouse.find(x => x.id === id);
   if (!m) return;
   document.getElementById('selname').innerHTML =
-    `<b>${m.label}</b><br>${m.description}` +
+    `<b>${m.label}</b> &nbsp;<span style="color:${m.cat_color}">${m.cat_label}</span><br>` +
+    `${m.description}` +
     `<div style="margin-top:6px">Nativ bzw. über die Suite — liegt nicht im Joystick-Profil.</div>`;
   document.getElementById('q').value = '';
   document.getElementById('results').innerHTML =
@@ -575,7 +655,8 @@ function select(id, scroll=true) {
   const c = STATE.controls.find(x => x.id === id);
   if (!c) return;
   document.getElementById('selname').innerHTML =
-    `<b>${c.label}</b> &nbsp;Slot ${c.slot}<br>` +
+    `<b>${c.label}</b> &nbsp;Slot ${c.slot} &nbsp;` +
+    `<span style="color:${c.cat_color}">${c.cat_label}</span><br>` +
     `<span style="font-family:ui-monospace,Menlo,monospace">${c.command}</span>` +
     (c.description ? `<br>${c.description}` : '');
   const q = document.getElementById('q');
@@ -742,8 +823,11 @@ def self_test():
     assert rows and any(r["tag"] == "citx" for r in rows), rows[:2]
 
     bound = [c for c in st["controls"] if c["command"] != joymap.NONE]
-    print("self-test: html ok, %d controls, %d bound, %d devices, %d search hits"
-          % (len(st["controls"]), len(bound), len(st["devices"]), len(rows)))
+    cats = sorted({c["cat"] for c in st["controls"]})
+    assert all(c["cat_color"].startswith("#") for c in st["controls"]), "no colours"
+    print("self-test: html ok, %d controls, %d bound, %d devices, %d search hits, cats %s"
+          % (len(st["controls"]), len(bound), len(st["devices"]), len(rows),
+             ",".join(cats)))
     server.shutdown()
     return 0
 
