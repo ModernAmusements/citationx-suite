@@ -21,6 +21,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import sys
 import threading
 import urllib.parse
@@ -60,13 +61,22 @@ CONTROLS = [
     (21, "btn13", "Touchpad", "misc"),
 ]
 
-MOUSE_ROLES = [
-    ("left", "Linke Taste", "Cockpit bedienen, Menüs (X-Plane nativ)"),
-    ("right", "Rechte Taste", "Blick / Kontext (X-Plane nativ)"),
-    ("wheel", "Mausrad", "Kamera-Zoom (X-Plane nativ)"),
-    ("back", "Daumentaste zurück", "ALT SEL −100 ft  (Ctrl+Shift+9, Suite)"),
-    ("forward", "Daumentaste vor", "ALT SEL +100 ft  (Ctrl+Shift+0, Suite)"),
-]
+MOUSE_ROLES = []  # superseded by mouse_state(); kept for older imports
+
+# Logi Options+ keeps its device profiles in ~/Library/.../settings.db; the
+# X-Plane profile is keyed by bundle id. Slot suffixes: c195 gesture,
+# c196 mode shift, c82 thumb button, c83 back, c86 forward.
+LOGI_SETTINGS = os.path.expanduser(
+    "~/Library/Application Support/LogiOptionsPlus/settings.db")
+LOGI_BUNDLE = "com.laminar-research.X-Plane"
+LOGI_SLOTS = {
+    "c195": "gesture",
+    "c196": "mode",
+    "c82": "thumb_btn",
+    "c83": "back",
+    "c86": "forward",
+    "thumb_wheel_adapter": "thumbwheel",
+}
 
 BIND_RE = re.compile(
     r'\{ vkey = (0x[0-9A-Fa-f]+|\d+), ctrl = (true|false),\s*shift = (true|false),'
@@ -85,6 +95,7 @@ CATEGORIES = {
     "none":     ("frei",       "#3a3a40"),
     "native":   ("nativ",      "#9aa0a6"),
     "suite":    ("Suite",      "#ff6ba8"),
+    "logi":     ("Logi",       "#ffb020"),
 }
 
 
@@ -186,6 +197,99 @@ def suite_bindings():
     return out
 
 
+def logi_profile():
+    """The MX mouse assignments Logi Options+ holds for X-Plane."""
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % LOGI_SETTINGS, uri=True)
+        row = con.execute(
+            "SELECT file FROM data ORDER BY _id DESC LIMIT 1").fetchone()
+        con.close()
+    except Exception:
+        return {}
+    if not row:
+        return {}
+    blob = row[0]
+    if isinstance(blob, memoryview):
+        blob = blob.tobytes()
+    try:
+        data = json.loads(blob.decode("utf-8", "replace"))
+    except Exception:
+        return {}
+    app_id = None
+    for app in data.get("applications", {}).get("applications", []):
+        if app.get("bundleId") == LOGI_BUNDLE:
+            app_id = app.get("applicationId")
+            break
+    if not app_id:
+        return {}
+    out = {}
+    for a in data.get("profile-%s" % app_id, {}).get("assignments", []):
+        slot_id = a.get("slotId", "")
+        ident = None
+        for key in sorted(LOGI_SLOTS, key=len, reverse=True):
+            if slot_id.endswith(key):
+                ident = LOGI_SLOTS[key]
+                break
+        if not ident:
+            continue
+        card = a.get("card", {})
+        macro = card.get("macro") or {}
+        combo = macro.get("actionName") if macro.get("type") == "KEYSTROKE" else None
+        if macro.get("type") == "DO_NOTHING":
+            label = "Do Nothing"
+        elif combo:
+            label = combo
+        else:
+            label = card.get("name", "").replace("ASSIGNMENT_NAME_", "")
+        out[ident] = {"label": label, "combo": combo}
+    return out
+
+
+def mouse_state():
+    logi = logi_profile()
+    suite = {}
+    for b in suite_bindings():
+        parts = []
+        if b["ctrl"]:
+            parts.append("Ctrl")
+        if b["shift"]:
+            parts.append("Shift")
+        parts.append(b["key"])
+        suite[" + ".join(parts)] = b["label"]
+
+    def entry(ident, label, native=None, slot=None):
+        info = logi.get(slot) if slot else None
+        combo = info["combo"] if info else None
+        if native:
+            desc, cat = native, "native"
+        elif not info:
+            desc, cat = "kein Logi-Profil gefunden", "logi"
+        elif slot == "thumbwheel":
+            desc, cat = "horizontales Scrollen", "logi"
+        elif combo and combo in suite:
+            note = "" if suite[combo].startswith("ALT SEL") else "  (INPUT MAPPER nötig)"
+            desc, cat = "%s  →  Suite: %s%s" % (combo, suite[combo], note), "suite"
+        elif combo:
+            desc, cat = "%s  →  in X-Plane nicht belegt" % combo, "logi"
+        else:
+            desc, cat = info["label"] or "—", "logi"
+        return {"id": ident, "label": label, "description": desc, "cat": cat,
+                "cat_label": CATEGORIES[cat][0], "cat_color": CATEGORIES[cat][1]}
+
+    return [
+        entry("left", "Linke Taste", "X-Plane: Cockpit bedienen, Menüs"),
+        entry("right", "Rechte Taste", "X-Plane: Blick / Kontextmenü"),
+        entry("wheel", "Mausrad", "X-Plane: Zoom"),
+        entry("wheel_click", "Rad-Klick", "X-Plane: mittlere Maustaste"),
+        entry("thumbwheel", "Daumenrad", None, "thumbwheel"),
+        entry("gesture", "Gesten-Taste", None, "gesture"),
+        entry("thumb_btn", "Daumentaste unten", None, "thumb_btn"),
+        entry("mode", "Modus-Taste", None, "mode"),
+        entry("back", "Daumentaste zurück", None, "back"),
+        entry("forward", "Daumentaste vor", None, "forward"),
+    ]
+
+
 def state(device=0):
     lines, entries = joymap.read_prf(CURRENT_PRF)
     core, air = load_catalog()
@@ -236,14 +340,7 @@ def state(device=0):
         "devices": devices,
         "controls": controls,
         "axes": axes,
-        "mouse": [{
-            "id": i,
-            "label": l,
-            "description": d,
-            "cat": "suite" if i in ("back", "forward") else "native",
-            "cat_label": CATEGORIES["suite" if i in ("back", "forward") else "native"][0],
-            "cat_color": CATEGORIES["suite" if i in ("back", "forward") else "native"][1],
-        } for i, l, d in MOUSE_ROLES],
+        "mouse": mouse_state(),
         "suite": suite_bindings(),
     }
 
@@ -452,7 +549,7 @@ HTML = r"""<!doctype html>
 
     <div class="card mousecard">
       <h2>Maus</h2>
-      <svg viewBox="0 0 300 220" id="mouse">
+      <svg viewBox="0 0 300 230" id="mouse">
         <path class="hull" d="M150 22 C 92 22 74 74 74 118 C 74 168 100 200 150 200
                               C 200 200 226 168 226 118 C 226 74 208 22 150 22 Z"/>
         <g class="ctl" data-id="left"><path class="body" d="M148 26 C 106 26 88 66 86 104 L 148 104 Z"/>
@@ -461,10 +558,16 @@ HTML = r"""<!doctype html>
           <path class="hit" d="M152 26 C 194 26 212 66 214 104 L 152 104 Z"/><text class="lbl" x="188" y="86">rechts</text></g>
         <g class="ctl" data-id="wheel"><rect class="body" x="141" y="52" width="18" height="42" rx="9"/>
           <rect class="hit" x="135" y="46" width="30" height="54"/><text class="lbl" x="150" y="118">Rad</text></g>
-        <g class="ctl" data-id="forward"><rect class="body" x="58" y="70" width="16" height="26" rx="6"/>
-          <rect class="hit" x="52" y="64" width="28" height="38"/><text class="lbl" x="44" y="66">vor</text></g>
-        <g class="ctl" data-id="back"><rect class="body" x="58" y="104" width="16" height="26" rx="6"/>
-          <rect class="hit" x="52" y="98" width="28" height="38"/><text class="lbl" x="44" y="140">zurück</text></g>
+        <g class="ctl" data-id="mode"><rect class="body" x="136" y="106" width="28" height="10" rx="5"/>
+          <rect class="hit" x="130" y="100" width="40" height="22"/><text class="lbl" x="150" y="132">Modus</text></g>
+        <g class="ctl" data-id="thumbwheel"><rect class="body" x="58" y="66" width="14" height="26" rx="6"/>
+          <rect class="hit" x="52" y="60" width="26" height="38"/></g>
+        <g class="ctl" data-id="gesture"><rect class="body" x="84" y="108" width="26" height="64" rx="12"/>
+          <rect class="hit" x="78" y="102" width="38" height="76"/><text class="lbl" x="97" y="96">Geste</text></g>
+        <g class="ctl" data-id="back"><rect class="body" x="58" y="100" width="14" height="24" rx="6"/>
+          <rect class="hit" x="52" y="94" width="26" height="36"/><text class="lbl" x="36" y="116">zurück</text></g>
+        <g class="ctl" data-id="forward"><rect class="body" x="58" y="132" width="14" height="24" rx="6"/>
+          <rect class="hit" x="52" y="126" width="26" height="36"/><text class="lbl" x="36" y="148">vor</text></g>
       </svg>
     </div>
   </div>
@@ -827,6 +930,8 @@ def self_test():
     bound = [c for c in st["controls"] if c["command"] != joymap.NONE]
     cats = sorted({c["cat"] for c in st["controls"]})
     assert all(c["cat_color"].startswith("#") for c in st["controls"]), "no colours"
+    assert len(st["mouse"]) >= 10, "mouse inputs missing"
+    assert any(m["id"] == "gesture" for m in st["mouse"]), "gesture missing"
     print("self-test: html ok, %d controls, %d bound, %d devices, %d search hits, cats %s"
           % (len(st["controls"]), len(bound), len(st["devices"]), len(rows),
              ",".join(cats)))
