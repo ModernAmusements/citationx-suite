@@ -247,6 +247,10 @@ def logi_profile():
 
 def mouse_state():
     logi = logi_profile()
+    # Keys the suite always listens for on the mouse layer (CitationX_MasterSuite:
+    # MOUSE_KEY_ACTIONS). Shown as a hint while Logi still sends something else.
+    targets = {"gesture": ("Ctrl+Shift+8", "Landelichter"),
+               "thumbwheel": ("Ctrl+Shift+6", "Taxilicht")}
     suite = {}
     for b in suite_bindings():
         parts = []
@@ -273,6 +277,9 @@ def mouse_state():
             desc, cat = "%s  →  in X-Plane nicht belegt" % combo, "logi"
         else:
             desc, cat = info["label"] or "—", "logi"
+        if slot in targets and combo != targets[slot][0]:
+            key, what = targets[slot]
+            desc += "  ·  in Logi auf %s legen → %s" % (key, what)
         return {"id": ident, "label": label, "description": desc, "cat": cat,
                 "cat_label": CATEGORIES[cat][0], "cat_color": CATEGORIES[cat][1]}
 

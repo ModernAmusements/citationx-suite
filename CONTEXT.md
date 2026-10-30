@@ -1216,13 +1216,22 @@ Fixed on 2026-10-30 with X-Plane closed, by rewriting both blocks of
 | Share | `sim/flight_controls/speed_brakes_toggle` |
 | Options | `sim/engines/thrust_reverse_toggle` (all engines) |
 | Touchpad | `laminar/CitX/autopilot/cmd_ap_toggle` |
-| PS / R3 | `sim/flight_controls/aileron_trim_left` / `_right` |
-| L3 | `sim/view/3d_cockpit_cmnd_look` |
+| PS | `sim/flight_controls/aileron_trim_left` |
+| L3 / R3 | `sim/view/3d_cockpit_cmnd_look` / `sim/view/still_spot` |
 
-The spot view is no longer on a button; `sim/view/still_spot` stays available as a command.
+Aileron trim right has no button any more (R3 gave it up for the outside view); trim left is
+still on PS. Everything else on the pad is a hard requirement from the pilot.
 
 The button labels follow the order X-Plane gives this pad (shoulders first: L1, L2, R1, R2 =
 buttons 0..3, face buttons 4..7), which is what makes L2/R2 the throttle in the live profile.
+
+**Mouse layer** (Logi MX Master 3, keys come from Logi Options+' X-Plane profile):
+thumb back `Ctrl+Shift+9` and forward `Ctrl+Shift+0` step ALT SEL; the **gesture button**
+(`Ctrl+Shift+8`) toggles both landing lights and the **thumb wheel** (`Ctrl+Shift+6`) toggles the
+taxi light. All four are always live (`MOUSE_KEY_ACTIONS` / the ALT SEL block), so they need no
+input mapper. Logi Options+ must actually send those keys — `tools/joymap_gui.py` reads the
+profile out of `~/Library/Application Support/LogiOptionsPlus/settings.db` and shows what each
+mouse input currently sends, including the ones X-Plane never sees as buttons.
 
 Backup: `X-Plane Joystick Settings.prf.bak-before-dpad-view-2026-10-30` next to the profile.
 `tools/joymap.py` performs the same edits from the command line, refuses to run while the sim
