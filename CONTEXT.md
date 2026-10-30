@@ -1210,10 +1210,11 @@ Fixed on 2026-10-30 with X-Plane closed, by rewriting both blocks of
 | L1 | `sim/flight_controls/pitch_trim_down` |
 | R1 | `sim/flight_controls/pitch_trim_up` |
 | L2 / R2 | `sim/engines/throttle_down` / `throttle_up` |
-| □ / ○ | `sim/flight_controls/aileron_trim_left` / `_right` |
+| □ | `sim/flight_controls/landing_gear_toggle` |
+| ○ | `sim/flight_controls/aileron_trim_right` |
 | △ / ✕ | `sim/flight_controls/flaps_up` / `flaps_down` |
 | Options | `sim/flight_controls/speed_brakes_toggle` |
-| PS | `sim/flight_controls/landing_gear_toggle` |
+| PS | `sim/flight_controls/aileron_trim_left` |
 | Share / L3 / R3 | 3-D cockpit look / spot view / reversers |
 
 The button labels follow the order X-Plane gives this pad (shoulders first: L1, L2, R1, R2 =
