@@ -93,6 +93,8 @@ def category(command):
         return "none"
     if command.startswith(("sim/view/", "sim/general/hat_switch", "sim/general/rot_")):
         return "view"
+    if "/autopilot/" in command:
+        return "ap"
     if command.startswith("sim/flight_controls/"):
         return "flight"
     if command.startswith("sim/engines/"):

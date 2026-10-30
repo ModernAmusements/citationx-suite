@@ -1213,9 +1213,13 @@ Fixed on 2026-10-30 with X-Plane closed, by rewriting both blocks of
 | □ | `sim/flight_controls/landing_gear_toggle` |
 | ○ | `sim/flight_controls/brakes_regular` (hold) |
 | △ / ✕ | `sim/flight_controls/flaps_up` / `flaps_down` |
-| Options | `sim/flight_controls/speed_brakes_toggle` |
-| PS / Touchpad | `sim/flight_controls/aileron_trim_left` / `_right` |
-| Share / L3 / R3 | 3-D cockpit look / spot view / reversers |
+| Share | `sim/flight_controls/speed_brakes_toggle` |
+| Options | `sim/engines/thrust_reverse_toggle` (all engines) |
+| Touchpad | `laminar/CitX/autopilot/cmd_ap_toggle` |
+| PS / R3 | `sim/flight_controls/aileron_trim_left` / `_right` |
+| L3 | `sim/view/still_spot` |
+
+3-D cockpit look is no longer on a button; the mouse and X-Plane's own keys still move the view.
 
 The button labels follow the order X-Plane gives this pad (shoulders first: L1, L2, R1, R2 =
 buttons 0..3, face buttons 4..7), which is what makes L2/R2 the throttle in the live profile.
