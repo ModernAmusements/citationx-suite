@@ -17,12 +17,12 @@ standalone landing-performance scorer.
 ## Control panel
 
 **Two panels are on screen at load: the black realism panel and the Master Suite hub.**
-The suite does not touch the pilot's input map — X-Plane's own `citX` joystick/key profile owns
-every control. There are two exceptions, neither of which draws anything: the DS4 right-stick
-**STICK HDG KNOB** (X-Plane "Axis 3") turns the heading bug, and the mouse **thumb buttons**
-(`Ctrl+Shift+9` / `Ctrl+Shift+0`) step ALT SEL. The keyboard mapper, the R3 cockpit look, the
-axis optimizer and the realism handling curve all start OFF. Every other panel starts hidden
-and is opened from a hub row, the FlyWithLua macro menu or the commands below.
+The suite does not touch the pilot's input map — no keystroke is consumed at load, so every key
+binding belongs to X-Plane's own profile. The one exception is the DS4 right-stick **STICK HDG
+KNOB** (X-Plane "Axis 3"), which turns the heading bug and draws nothing. The keyboard mapper,
+the joystick-button map, the mouse thumb-button ALT SEL keys, the R3 cockpit look, the axis
+optimizer and the realism handling curve all start OFF. Every panel starts hidden and is opened
+from a hub row, the FlyWithLua macro menu or the commands below.
 Two macros flip the whole suite: `CitationX Suite: enable all modules` /
 `disable all modules`.
 
@@ -100,9 +100,9 @@ stays untracked via `.gitignore`.
   emergency generator, input mapper, `joy_autobind_enabled` / `joy_map_enabled` (the
   free-controller-button map), the right-stick heading knob
   (`stick_hdg_*`: `stick_hdg_axes = { 3, 28 }` pins DS4 Axis 3 over USB/Bluetooth,
-  `stick_hdg_exclude_axes` adds vetoes), the mouse thumb-button ALT SEL keys
-  (`alt_keys_enabled`, live even with the input mapper off) and the 3-D cockpit look
-  (`view_pan_*`: button, axis pair, rate, inversion, 3-D switch).
+  `stick_hdg_exclude_axes` adds vetoes) and the 3-D cockpit look
+  (`view_pan_*`: button, axis pair, rate, inversion, 3-D switch). No keystroke is
+  captured while the input mapper is off.
   Panel layout lives in `SUITE_STYLE` (`row_h`, `header_h`, `footer_h`, `pad`, `x`/`top`).
 - `CitationX_CabinOps.lua` — `CAB_CONFIG` (`row_h` controls row spacing).
 - `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG` (`row_h` controls row spacing).

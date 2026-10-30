@@ -182,22 +182,22 @@ check(not (CONFIG.log_enabled or CONFIG.emergency_enabled or CONFIG.axis_optimiz
   or CONFIG.input_map_enabled or CONFIG.stick_hdg_enabled),
   "disable all modules turns them off again")
 
--- ---------- mouse thumb buttons stay mapped to ALT SEL ----------------------
--- Logi Options+ sends Ctrl+Shift+9 (back) / Ctrl+Shift+0 (forward) from the
--- mouse. The input mapper is OFF, but these two keys must still step ALT SEL.
+-- ---------- every key belongs to X-Plane --------------------------------
+-- The suite no longer captures the mouse thumb-button combos (Ctrl+Shift+9 /
+-- Ctrl+Shift+0) or any other keystroke while the mapper is OFF.
 CONFIG.input_map_enabled = false
+check(CONFIG.alt_keys_enabled == nil, "the ALT SEL keystroke layer is gone")
 alt_sel_ft, alt_legacy_ft = 10000, 10000
 CONTROL_KEY, SHIFT_KEY, OPTION_KEY = true, true, false
 KEY_ACTION = "pressed"
-VKEY = 0x30                                     -- forward
-RESUME_KEY = false
-citationx_keystroke()
-check(alt_sel_ft == 10100 and alt_legacy_ft == 10100,
-  "Ctrl+Shift+0 raises ALT SEL one step", alt_sel_ft)
-check(RESUME_KEY == true, "the altitude key is consumed")
-VKEY = 0x39                                     -- back
-citationx_keystroke()
-check(alt_sel_ft == 10000, "Ctrl+Shift+9 lowers ALT SEL one step", alt_sel_ft)
+for _, combo in ipairs({ 0x30, 0x39 }) do
+  VKEY = combo
+  RESUME_KEY = false
+  citationx_keystroke()
+  check(RESUME_KEY == false, string.format("Ctrl+Shift+%X passes through", combo))
+end
+check(alt_sel_ft == 10000 and alt_legacy_ft == 10000,
+  "no keystroke moves ALT SEL any more", alt_sel_ft)
 -- every other combo still belongs to X-Plane while the mapper is off
 VKEY = 0x31                                     -- Ctrl+Shift+1 (NAV lights)
 RESUME_KEY = false

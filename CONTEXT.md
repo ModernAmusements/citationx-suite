@@ -1,27 +1,23 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 ## Session handoff — read this first
 
-**2026-10-29 — input reset.** The suite no longer intercepts the pilot's controls. Every
-Lua-side input layer defaults OFF (keyboard/button mapper, analog L2/R2 throttle, arrow-key view
-tilt, stick ALT SEL, axis optimizer, R3 cockpit look, and the realism pack's handling curve).
-The only inputs kept are the heading bug on the DS4 **Axis 3** (right stick up/down), pinned to
-raw axes 3/28 so it works over USB and Bluetooth, and the mouse **thumb buttons** back/forward
-(`Ctrl+Shift+9` / `Ctrl+Shift+0`) for ALT SEL. The mouse wheel is untouched. See §30.
+**2026-10-30 — bindings fully native.** The pilot wants X-Plane's own keyboard/mouse mapping
+back. The last Lua keystroke layer (`CONFIG.alt_keys_enabled`, which turned the mouse thumb
+buttons `Ctrl+Shift+9` / `Ctrl+Shift+0` into ALT SEL steps) is **removed**: while the input
+mapper is OFF the suite consumes no key at all, so every key binding belongs to X-Plane. The
+only input the suite still reads is the heading bug on the DS4 **Axis 3** (right stick up/down,
+raw axes 3/28, USB + Bluetooth). Realism pack, panels and the heading knob are untouched.
 
-**Session ended 2026-10-29.** Two small steps are implemented, validated offline and pushed
-(`450367e` input reset, `1ce6b6c` mouse ALT SEL). Neither has been verified in X-Plane yet.
-
-1. **Input reset.** The suite reads exactly two pilot inputs now: the DS4 **Axis 3** heading bug
-   (raw 3/28, USB + Bluetooth) and the mouse **thumb buttons** for ALT SEL (`Ctrl+Shift+9`
-   back = down, `Ctrl+Shift+0` forward = up, 100 ft per press). Everything else defaults OFF:
-   keyboard and joystick-button mappers, L2/R2 analog throttle, arrow-key view tilt, stick
-   ALT SEL, axis optimizer, R3 cockpit look and the realism handling curve. The **mouse wheel
-   is not consumed** — it stays X-Plane's view zoom.
-2. **Next session starts with one in-sim check** (see "Open item" below), then we continue in
-   small steps.
+All X-Plane and Logi files touched on 2026-10-30 were reverted: the global
+`X-Plane Joystick Settings.prf` and the active `PS4-CitationX - Joysticks.prf` match their
+pre-session backups, the Logi X-Plane profile is back to gesture `Do Nothing` / thumb wheel
+unchanged, and `citX - Joysticks.prf` (used by the stock Citation X) was restored from
+`…bak2-2026-10-27`, undoing the two button edits made today. The active aircraft
+(`Cessna Citation X AviTab_mods`) uses `PS4-CitationX`, so the pilot's own pad mapping is
+unchanged.
 
 Historical note: the 2026-10-24 session turned the realism pack into the suite's only active
 script (callouts, monitors, one black panel). See §21.
@@ -50,7 +46,7 @@ script (callouts, monitors, one black panel). See §21.
 | Textures | Cockpit panel: 8K dark Cascade 3 PNG + 8K DDS; cockpit overall/cabin 8K, seat 4K; `plain white` fuselage sharpened |
 | Tests | `smoke_realism.lua` added; control-panel and geometry harnesses updated |
 
-### Verification status (2026-10-29)
+### Verification status (2026-10-30)
 
 ```
 syntax ........................ ok
@@ -58,39 +54,37 @@ runtime load (LuaJIT, shared) .. 104 bindings, 0 failures, 0 problems
 dataref bindings .............. ok (5 suite scripts)
 kpcrew require graph (C750) ... 0 missing
 mastersuite smoke ............. PASSED (Axis 3/28, triggers/yaw rejected, watchdog, R3 hand-off)
-control panel smoke ........... PASSED (14 rows; Ctrl+Shift+9/0 with the mapper off)
+control panel smoke ........... PASSED (14 rows; every key passes through with the mapper off)
 realism smoke ................. PASSED (handling OFF at load, curve on demand)
 efb smoke ..................... PASSED
 panel geometry ................ PASSED (65 checks, incl. drag and active QRH)
 ```
 
-### Open item — verify the two inputs in-sim
+### Open item — verify the native input map in-sim
 
-**No in-sim run has happened since the 2026-10-29 input reset.** Reload Lua in X-Plane
+**No in-sim run has happened since the 2026-10-30 binding revert.** Reload Lua in X-Plane
 (*FlyWithLua → Reload all Lua script files*), then:
 
 1. `Log.txt`: no `FlyWithLua Error:`, no `Moved Bad Script`, and **no**
    `Citation X Suite: axis optimizer engaged/released` lines.
-2. Push the DS4 right stick **up/down** → HDG SEL turns. If the direction is backwards, set
+2. A key bound in X-Plane's own keyboard settings must work; the suite must not swallow it.
+   `Ctrl+Shift+9` / `Ctrl+Shift+0` (the mouse thumb buttons) are no longer read by the suite.
+3. Push the DS4 right stick **up/down** → HDG SEL turns. If the direction is backwards, set
    `CONFIG.stick_hdg_invert = true`; if it is too fast/slow, `CONFIG.stick_hdg_rate_dps` (30).
-3. Press the mouse **thumb back / forward** → ALT SEL steps ∓100 ft with a toast. If nothing
-   happens, check what Logi Options+ actually sends and change the two `vkey`s in
-   `citationx_keystroke` (currently `0x39` back / `0x30` forward).
 4. Roll the **mouse wheel** → the view must still zoom (the suite must not consume it).
-5. Confirm yaw, triggers, pitch/roll, the D-pad and the arrow keys do nothing in the suite.
+5. Confirm yaw, triggers, pitch/roll, the D-pad and the arrow keys are handled only by X-Plane.
 
 Textures still need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
 
-## Current runtime state (2026-10-29)
+## Current runtime state (2026-10-30)
 - **Suite scripts (tracked):** `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
   `CitationX_CabinOps.lua`, `CitationX_EFB.lua`, `CitationX_Realism.lua` plus
   `CitationX_Callouts/*.wav` (19 files). All load clean; no `FlyWithLua Error:` lines.
-- **The suite reads exactly two pilot inputs: the heading bug on DS4 Axis 3 and the mouse thumb
-  buttons (ALT SEL).** Every other input layer is OFF at load — no keyboard map beyond
-  `Ctrl+Shift+9/0`, no joystick-button map, no analog-trigger throttle, no arrow-key view tilt,
-  no stick ALT SEL, no axis optimizer, no R3 cockpit look, no realism handling curve. X-Plane's
-  own `citX` profile is the single source of truth for the pad, the keyboard and the mouse
-  wheel. Re-enable any layer from the control panel, the macro menu
+- **The suite reads exactly one pilot input: the heading bug on DS4 Axis 3.** Every other input
+  layer is OFF at load — no keyboard map, no joystick-button map, no analog-trigger throttle, no
+  arrow-key view tilt, no stick ALT SEL, no axis optimizer, no R3 cockpit look, no realism
+  handling curve. X-Plane's own profile is the single source of truth for the pad, the keyboard
+  and the mouse wheel. Re-enable any layer from the control panel, the macro menu
   (`CitationX Suite: <row>`, `enable all modules`) or `CitationXSuite/toggle_<key>`.
 - **Panels:** the realism panel and the MasterSuite hub (`status`) are the only two drawn at
   load; CabinOps, QRH, EFB and LandingPerformance start hidden.
@@ -1142,12 +1136,11 @@ parallel layers were fighting it.
 
 - **The one input kept:** the heading bug on **DS4 Axis 3** (right stick up/down). X-Plane's
   profile leaves Axis 3 unassigned, which is why it is the free spring-centred axis.
-- **Mouse thumb buttons (added later the same day, on request):** the Logitech MX
-  back/forward buttons are the only other live control. Logi Options+ sends `Ctrl+Shift+9` /
-  `Ctrl+Shift+0`; `citationx_keystroke` handles exactly those two combos
-  (`CONFIG.alt_keys_enabled = true`) even while `input_map_enabled` is false: back = ALT SEL
-  down, forward = up, 100 ft per press. Every other combo still passes through to X-Plane. The
-  mouse **wheel** is not consumed — `thumbwheel_altitude` stays false, so view zoom is intact.
+- **Mouse thumb buttons (added later the same day, removed 2026-10-30):** the Logitech MX
+  back/forward buttons used to drive ALT SEL via `Ctrl+Shift+9` / `Ctrl+Shift+0`
+  (`CONFIG.alt_keys_enabled`). That layer is gone; the keys now pass straight through to
+  X-Plane like every other keystroke. The mouse **wheel** was never consumed —
+  `thumbwheel_altitude` stays false, so view zoom is intact.
 - **Both device slots are pinned:** `CONFIG.stick_hdg_axes = { 3, 28 }`. The pad enumerates
   twice, so Axis 3 is raw 3 in the first slot and raw 28 in the second (USB vs Bluetooth).
   `stick_hdg_axes` selects the most-deflected listed axis each frame; an axis must have been
@@ -1167,13 +1160,13 @@ parallel layers were fighting it.
 Verification (2026-10-29): `luac -p` clean; `check_datarefs.lua` 0 problems across 5 scripts;
 `check_kpcrew_modules.lua C750` 0 missing; `probe_load_order.lua` 104 bindings, 0 failures;
 `smoke_mastersuite` (Axis 3/28 drive the bug, triggers/yaw/dead-slot never do, watchdog,
-late-enumeration, R3 hand-off), `smoke_hud_toggles` (only `status` + `stick` ON at load; `Ctrl+Shift+9/0` still steps ALT SEL
-with the mapper off and other combos pass through),
+late-enumeration, R3 hand-off), `smoke_hud_toggles` (only `status` + `stick` ON at load),
 `smoke_realism` (handling OFF at load), `smoke_efb` and `smoke_panel_geometry` (65 checks) all
 pass. **In-sim check pending:** reload Lua, confirm the log has no `axis optimizer engaged/released`
 lines, then push the right stick up/down — HDG SEL turns; yaw, triggers, arrow keys and the D-pad
-do nothing in the suite. Thumb back/forward must step ALT SEL 100 ft; the wheel must still zoom.
-If the heading direction feels inverted, set `CONFIG.stick_hdg_invert = true`.
+do nothing in the suite. The thumb-button ALT SEL keys were removed on 2026-10-30 (§32); the
+wheel must still zoom. If the heading direction feels inverted, set
+`CONFIG.stick_hdg_invert = true`.
 
 ## 31. D-pad is a HID hat; 160-slot device stride (2026-10-30)
 
@@ -1226,18 +1219,17 @@ The button labels follow the order X-Plane gives this pad (shoulders first: L1, 
 buttons 0..3, face buttons 4..7), which is what makes L2/R2 the throttle in the live profile.
 
 **Mouse layer** (Logi MX Master 3, keys come from Logi Options+' X-Plane profile):
-thumb back `Ctrl+Shift+9` and forward `Ctrl+Shift+0` step ALT SEL; the **gesture button**
-(`Ctrl+Shift+8`) toggles both landing lights and the **thumb wheel** (`Ctrl+Shift+6`) toggles the
-taxi light. All four are always live (`MOUSE_KEY_ACTIONS` / the ALT SEL block), so they need no
-input mapper; `mouse_key_repeat_s` (0.4 s) swallows the wheel's second key so one flick toggles
-once. Logi Options+ must actually send those keys — `tools/joymap_gui.py` reads the profile out of
+thumb back `Ctrl+Shift+9`, forward `Ctrl+Shift+0`, gesture `Do Nothing`, thumb wheel unchanged.
+The suite used to consume back/forward (ALT SEL) and, briefly, the gesture button and thumb
+wheel (landing/taxi lights). **All of that is gone since 2026-10-30:** the Logi profile matches
+its pre-session backup and the script no longer listens for any of those keys, so they reach
+X-Plane and can be bound natively. `tools/joymap_gui.py` still reads the profile out of
 `~/Library/Application Support/LogiOptionsPlus/settings.db` and shows what each mouse input
-currently sends, including the ones X-Plane never sees as buttons.
+currently sends.
 
-That file was written directly on 2026-10-30 (gesture `DO_NOTHING` → `Ctrl+Shift+8`, thumb wheel
-`Ctrl+Shift+Left/Right` → `Ctrl+Shift+6`). The Logi agent (`com.logi.cp-dev-mgr`) rewrites it from
-memory, so it has to be stopped first — `launchctl bootout gui/$UID/com.logi.cp-dev-mgr`, write,
-then `launchctl bootstrap gui/$UID /Library/LaunchAgents/com.logi.optionsplus.plist`. Backups:
+The Logi agent (`com.logi.cp-dev-mgr`) rewrites that file from memory, so editing it needs
+`launchctl bootout gui/$UID/com.logi.cp-dev-mgr` first, then
+`launchctl bootstrap gui/$UID /Library/LaunchAgents/com.logi.optionsplus.plist`. Backups:
 `settings.db.bak-2026-10-30-231926` and `…-232106`.
 
 **X-Plane 12 stores the mapping per aircraft.** `Miscellaneous.prf` maps the aircraft folder to a
@@ -1276,6 +1268,33 @@ and `control profiles/PS4-CitationX - Joysticks.prf.bak-2026-10-30-233044`, the 
 `settings.db.bak-2026-10-30-231926`, and `MOUSE_KEY_ACTIONS` was removed from the script. Only the
 suite itself (realism pack, panels, heading knob) stays as it was. The tooling
 (`tools/joymap.py`, `tools/joymap_gui.py`) and the 160-slot scan fix are kept.
+
+## 32. Every keystroke belongs to X-Plane (2026-10-30, later)
+
+*"ich will mein natives xplane key binding benutzen"* — the last Lua keystroke listener had to
+go. `CONFIG.alt_keys_enabled` and the `Ctrl+Shift+9` / `Ctrl+Shift+0` ALT SEL block were removed
+from `citationx_keystroke()`. With the input mapper OFF the function now consumes **nothing**:
+`RESUME_KEY` is only set by the opt-in keyboard map (`input_map_enabled`) and the opt-in
+arrow-key view tilt (`view_tilt_enabled`), both false at load. The mouse wheel was already
+untouched (`thumbwheel_heading` / `thumbwheel_altitude` are false).
+
+Profile audit after the revert:
+
+| File | State |
+| --- | --- |
+| `Output/preferences/X-Plane Joystick Settings.prf` | byte-identical to `.bak-before-dpad-view-2026-10-30` |
+| `control profiles/PS4-CitationX - Joysticks.prf` | byte-identical to `.bak-2026-10-30-233044` (active aircraft profile, the pilot's own mapping) |
+| `control profiles/citX - Joysticks.prf` | restored from `…bak2-2026-10-27`; the two edits made today (`_joy_BUTN_use162/167`) are gone |
+| Logi X-Plane profile | matches `settings.db.bak-2026-10-30-231926`: gesture `Do Nothing`, thumb wheel unchanged, back/forward still `Ctrl+Shift+9/0` |
+
+The heading knob on DS4 Axis 3 stays (the pilot's explicit 2026-10-29 request); it reads an axis,
+not a key, and `_joy_AXIS_use3` / `_joy_AXIS_use28` are unassigned in the profile so it cannot
+fight a native binding. Turn it off with `CitationXSuite/toggle_stick_hdg` or
+`CONFIG.stick_hdg_enabled = false` if even that should be native.
+
+Validation: `luac -p` clean; `check_datarefs` 0 problems; `probe_load_order` 104 bindings, 0
+failures; `smoke_hud_toggles` now asserts the ALT SEL layer is gone and `Ctrl+Shift+0/9` pass
+through; mastersuite, realism, EFB and panel geometry all pass.
 
 ## Not yet verified in-sim
 

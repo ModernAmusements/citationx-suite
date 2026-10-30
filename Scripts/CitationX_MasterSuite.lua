@@ -28,12 +28,12 @@
 
 -- ------------------------------------------------------------------ CONFIG --
 CONFIG = {
-    -- Clean slate: the suite does not touch the pilot's input map. X-Plane's
-    -- own joystick/key profile is the single source of truth; the only inputs
-    -- the suite keeps are the heading-bug knob on the DS4 right stick (Axis 3,
-    -- see stick_hdg_* below) and the mouse thumb buttons' ALT SEL keys (see
-    -- alt_keys_enabled below). Every module can still be switched on from the
-    -- control panel or the FlyWithLua macro menu / CitationXSuite commands.
+    -- Clean slate: the suite does not touch the pilot's keyboard, mouse or
+    -- joystick-button mappings. X-Plane's own profile is the single source of
+    -- truth. The one input the suite keeps is the heading-bug knob on the DS4
+    -- right stick (Axis 3, see stick_hdg_* below). Every module can still be
+    -- switched on from the control panel or the FlyWithLua macro menu /
+    -- CitationXSuite commands.
     log_enabled            = false,
     log_to_desktop         = true,
 
@@ -76,12 +76,9 @@ CONFIG = {
     heading_key_step_deg    = 5,
     heading_wheel_invert    = false,
 
-    -- Mouse thumb buttons back/forward. Logi Options+ sends Ctrl+Shift+9 and
-    -- Ctrl+Shift+0; those two keys stay live even with the input map OFF
-    -- because they are the pilot's own mouse mapping, not a suite shortcut:
-    -- back = ALT SEL down, forward = ALT SEL up, one altitude_step_ft per
-    -- press. No other keystroke is read while input_map_enabled is false.
-    alt_keys_enabled        = true,
+    -- No keystroke is consumed while input_map_enabled is false. Mouse thumb
+    -- buttons, the gesture button, the thumb wheel and every keyboard shortcut
+    -- belong to X-Plane's own mapping again.
 
     -- Analog DS4 triggers -> throttle up/down. OFF: L2/R2 are already on the
     -- pilot's X-Plane profile (button 6/7 plus the analog end-stop), so the
@@ -1200,22 +1197,8 @@ function citationx_keystroke()
         if KEY_ACTION ~= "pressed" then return end
     end
 
-    -- Mouse thumb buttons: Logi Options+ sends Ctrl+Shift+9 (back) and
-    -- Ctrl+Shift+0 (forward). These two stay live while the input map is OFF:
-    -- they are the pilot's own mouse mapping, not a suite shortcut. Back
-    -- lowers ALT SEL, forward raises it, one altitude_step_ft per press.
-    -- No other keystroke is touched while input_map_enabled is false.
-    if CONFIG.alt_keys_enabled
-        and (vkey == 0x39 or vkey == 0x30)
-        and CONTROL_KEY and SHIFT_KEY and not OPTION_KEY then
-        RESUME_KEY = true
-        if KEY_ACTION == "pressed" then
-            citationx_altitude(vkey == 0x30
-                and CONFIG.altitude_step_ft or -CONFIG.altitude_step_ft)
-        end
-        return
-    end
-
+    -- Mouse thumb buttons and every other keystroke belong to X-Plane's own
+    -- mapping. No key is captured while the input map is OFF.
     if KEY_ACTION ~= "pressed" or not CONFIG.input_map_enabled then return end
     local binding = find_binding(vkey)
     if binding then
