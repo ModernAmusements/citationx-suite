@@ -1240,6 +1240,15 @@ memory, so it has to be stopped first — `launchctl bootout gui/$UID/com.logi.c
 then `launchctl bootstrap gui/$UID /Library/LaunchAgents/com.logi.optionsplus.plist`. Backups:
 `settings.db.bak-2026-10-30-231926` and `…-232106`.
 
+**X-Plane 12 stores the mapping per aircraft.** `Miscellaneous.prf` maps the aircraft folder to a
+control profile (`P acf_profile Cessna___Citation___X_mods PS4-CitationX`), and that profile lives
+in `Output/preferences/control profiles/<name> - Joysticks.prf`. Editing
+`X-Plane Joystick Settings.prf` — the global "User Profile" — does nothing while the aircraft has a
+profile of its own; that cost a whole test cycle. `joymap.default_profile()` now resolves the
+active profile from `Miscellaneous.prf` and both tools default to it. The profiles also carry
+different **axis** assignments, so never swap an aircraft to "User Profile" to pick up buttons:
+`PS4-CitationX` has roll/pitch/yaw on 25/26/27, the global file has throttle/roll/pitch there.
+
 Backup: `X-Plane Joystick Settings.prf.bak-before-dpad-view-2026-10-30` next to the profile.
 `tools/joymap.py` performs the same edits from the command line, refuses to run while the sim
 is open and backs up before every write.
