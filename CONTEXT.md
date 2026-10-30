@@ -1225,6 +1225,11 @@ it with `Resources/plugins/Commands.txt` (3144 core commands), so `commands --un
 what is still free on the pad and `set` validates against both. The gear has **no** CitX
 commands — its lever is dataref-driven — so gear stays on `sim/flight_controls/landing_gear_*`.
 
+`tools/joymap_gui.py` wraps the same library in a local web GUI (stdlib `http.server`, no
+tkinter — Homebrew Python ships without Tk): a drawn DualShock 4 and mouse, green controls for
+bound inputs, click-to-reassign with catalog search, undo, and a hard refusal to write while
+X-Plane is running. `--self-test` exercises the page and both API endpoints headlessly.
+
 **In-sim check pending:** the D-pad must tilt/pan the 3-D cockpit, and the physical labels of
 btn0 / btn9 / btn12 must be confirmed — they were the only unassigned buttons, and labels
 cannot be recorded without the sim.

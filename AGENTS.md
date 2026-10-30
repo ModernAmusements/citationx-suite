@@ -26,6 +26,7 @@ tests/smoke_mastersuite.lua
 tests/smoke_panel_geometry.lua
 tests/smoke_realism.lua
 tools/joymap.py
+tools/joymap_gui.py
 README.md  AGENTS.md  CONTEXT.md  SCRIPT_STATUS.md
 .opencode/agents/citationx.md
 ```

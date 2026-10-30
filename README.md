@@ -189,6 +189,19 @@ running (the sim rewrites the profile on exit) and takes a timestamped `.bak-*` 
 The aircraft folder is auto-detected from `Aircraft/*/Cessna_CitationX.acf`; override it with
 `--aircraft PATH`.
 
+### GUI
+
+```sh
+python3 tools/joymap_gui.py          # opens http://127.0.0.1:8765/ in the browser
+python3 tools/joymap_gui.py --self-test
+```
+
+A DualShock 4 and a mouse are drawn on one page: every bound control is green, clicking one
+shows its command and opens the catalog search, and picking a command writes the binding
+(backup first, undo button included). It is served by Python's standard library — no packages,
+no tkinter (Homebrew Python ships without Tk). X-Plane must be closed; the page says so and
+refuses to write while the sim runs.
+
 ## Repository
 
 Private: <https://github.com/ModernAmusements/citationx-suite>
