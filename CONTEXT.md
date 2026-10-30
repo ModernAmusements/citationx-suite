@@ -1,6 +1,6 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-10-30
+Last updated: 2026-10-31
 
 ## Session handoff — read this first
 
@@ -17,7 +17,7 @@ pre-session backups, the Logi X-Plane profile is back to gesture `Do Nothing` / 
 unchanged, and `citX - Joysticks.prf` (used by the stock Citation X) was restored from
 `…bak2-2026-10-27`, undoing the two button edits made today. The active aircraft
 (`Cessna Citation X AviTab_mods`) uses `PS4-CitationX`, so the pilot's own pad mapping is
-unchanged.
+unchanged. Pushed as `876a219`, on top of the earlier `64c1412` revert.
 
 Historical note: the 2026-10-24 session turned the realism pack into the suite's only active
 script (callouts, monitors, one black panel). See §21.
@@ -46,7 +46,7 @@ script (callouts, monitors, one black panel). See §21.
 | Textures | Cockpit panel: 8K dark Cascade 3 PNG + 8K DDS; cockpit overall/cabin 8K, seat 4K; `plain white` fuselage sharpened |
 | Tests | `smoke_realism.lua` added; control-panel and geometry harnesses updated |
 
-### Verification status (2026-10-30)
+### Verification status (last run 2026-10-30)
 
 ```
 syntax ........................ ok
@@ -76,7 +76,7 @@ panel geometry ................ PASSED (65 checks, incl. drag and active QRH)
 
 Textures still need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
 
-## Current runtime state (2026-10-30)
+## Current runtime state (2026-10-31)
 - **Suite scripts (tracked):** `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
   `CitationX_CabinOps.lua`, `CitationX_EFB.lua`, `CitationX_Realism.lua` plus
   `CitationX_Callouts/*.wav` (19 files). All load clean; no `FlyWithLua Error:` lines.
