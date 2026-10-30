@@ -252,19 +252,26 @@ HTML = r"""<!doctype html>
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
-         font:14px/1.4 -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; }
-  header { display:flex; align-items:baseline; gap:14px; padding:14px 20px;
+         font:13px/1.35 -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  header { display:flex; align-items:baseline; gap:12px; padding:10px 16px;
            border-bottom:1px solid var(--line); }
-  header h1 { font-size:17px; font-weight:600; margin:0; letter-spacing:.2px; }
+  header h1 { font-size:14px; font-weight:600; margin:0; letter-spacing:.3px; }
   header .sub { color:var(--dim); font-size:12px; }
   .warn { color:var(--amber); font-size:12px; margin-left:auto; }
-  main { display:flex; gap:18px; padding:18px 20px 28px; align-items:flex-start; }
-  .left { flex:1 1 auto; min-width:520px; }
-  .right { flex:0 0 380px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px;
-          padding:12px; margin-bottom:14px; }
-  .card h2 { font-size:11px; letter-spacing:.14em; text-transform:uppercase;
-             color:var(--dim); margin:0 0 10px; font-weight:600; }
+  main { display:flex; gap:14px; padding:14px 16px 24px; align-items:flex-start;
+         max-width:1180px; margin:0 auto; }
+  .left { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;
+          flex:1 1 auto; min-width:0; }
+  .right { flex:0 0 330px; position:sticky; top:12px;
+           max-height:calc(100vh - 24px); overflow:auto; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:9px;
+          padding:10px; margin-bottom:12px; }
+  .padcard { flex:1 1 500px; max-width:600px; }
+  .mousecard { flex:0 0 200px; }
+  #pad { max-width:100%; }
+  #mouse { max-width:180px; margin:0 auto; }
+  .card h2 { font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+             color:var(--dim); margin:0 0 8px; font-weight:600; }
   svg { width:100%; height:auto; display:block; user-select:none; }
   .ctl { cursor:pointer; }
   .ctl .hit { fill:transparent; }
@@ -279,34 +286,38 @@ HTML = r"""<!doctype html>
   .hull { fill:#191a1d; stroke:#34343a; stroke-width:3; }
   .stickbase { fill:#101012; stroke:#3a3a40; stroke-width:2; }
   .labels line { stroke:#2e2e33; stroke-width:1; }
-  .list { max-height:340px; overflow:auto; }
-  .row { display:flex; gap:8px; align-items:baseline; padding:5px 6px; border-radius:6px;
+  .list { max-height:240px; overflow:auto; }
+  .row { display:flex; gap:7px; align-items:baseline; padding:3px 5px; border-radius:5px;
          cursor:pointer; }
   .row:hover { background:#1d1d21; }
   .row.sel { background:#221c0d; outline:1px solid var(--amber); }
-  .row .name { flex:0 0 92px; color:var(--dim); font-size:12px; }
-  .row .cmd { flex:1 1 auto; font-family:ui-monospace, Menlo, monospace; font-size:12px;
+  .row .name { flex:0 0 84px; color:var(--dim); font-size:11px; }
+  .row .cmd { flex:1 1 auto; font-family:ui-monospace, Menlo, monospace; font-size:11px;
               color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .row .cmd.none { color:#5a5a62; }
   .row .tag { flex:0 0 auto; font-size:10px; color:var(--dim); text-transform:uppercase; }
   input[type=search] { width:100%; background:#0f0f11; color:var(--text);
-      border:1px solid var(--line); border-radius:7px; padding:8px 10px; font-size:13px; }
+      border:1px solid var(--line); border-radius:6px; padding:6px 9px; font-size:12px; }
   input[type=search]:focus { outline:1px solid var(--amber); }
   button { background:#1f1f23; color:var(--text); border:1px solid var(--line);
-           border-radius:7px; padding:7px 12px; font-size:12px; cursor:pointer; }
+           border-radius:6px; padding:5px 9px; font-size:11px; cursor:pointer; }
   button:hover { border-color:#55555e; }
   button.primary { border-color:var(--green); color:var(--green); }
   button.danger { border-color:#5a2a2a; color:var(--red); }
   button:disabled { opacity:.4; cursor:default; }
-  .detail { font-size:12px; color:var(--dim); margin-top:6px; }
+  .detail { font-size:11px; color:var(--dim); margin-top:5px; }
   .detail b { color:var(--text); font-weight:600; }
-  .toast { position:fixed; left:20px; bottom:18px; background:#1b1b1f; border:1px solid var(--line);
-           border-radius:8px; padding:9px 14px; font-size:12px; opacity:0; transition:.2s; }
+  .toast { position:fixed; left:16px; bottom:14px; background:#1b1b1f; border:1px solid var(--line);
+           border-radius:7px; padding:7px 12px; font-size:11px; opacity:0; transition:.2s; }
   .toast.show { opacity:1; }
-  .axes { font-size:12px; color:var(--dim); }
-  .axes span { display:inline-block; margin-right:12px; font-family:ui-monospace, Menlo, monospace; }
-  .legend { display:flex; gap:14px; font-size:11px; color:var(--dim); margin-top:8px; }
-  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+  .axes { font-size:11px; color:var(--dim); }
+  .axes span { display:inline-block; margin-right:10px; font-family:ui-monospace, Menlo, monospace; }
+  .legend { display:flex; gap:12px; font-size:10px; color:var(--dim); margin-top:6px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+  @keyframes flash { 0% { filter:drop-shadow(0 0 0 rgba(61,220,132,.9)); }
+                     100% { filter:drop-shadow(0 0 9px rgba(61,220,132,.9)); } }
+  .ctl.flash .body { animation:flash .28s ease-in-out 3 alternate; }
+  .ctl:hover .body { filter:brightness(1.3); }
 </style></head>
 <body>
 <header>
@@ -316,7 +327,7 @@ HTML = r"""<!doctype html>
 </header>
 <main>
   <div class="left">
-    <div class="card">
+    <div class="card padcard">
       <h2>DualShock 4</h2>
       <svg viewBox="0 0 760 470" id="pad">
         <path class="hull" d="M150 62 H610 C668 62 706 108 706 178
@@ -387,7 +398,7 @@ HTML = r"""<!doctype html>
       </div>
     </div>
 
-    <div class="card">
+    <div class="card mousecard">
       <h2>Maus</h2>
       <svg viewBox="0 0 300 220" id="mouse">
         <path class="hull" d="M150 22 C 92 22 74 74 74 118 C 74 168 100 200 150 200
@@ -440,7 +451,7 @@ HTML = r"""<!doctype html>
 <div class="toast" id="toast"></div>
 
 <script>
-let STATE = null, SELECTED = null, DEVICE = 0;
+let STATE = null, SELECTED = null, SELECTED_MOUSE = null, DEVICE = 0;
 
 function toast(msg, ms=2600) {
   const t = document.getElementById('toast');
@@ -487,6 +498,15 @@ function render() {
       if (FIXED.includes(t.textContent)) return;
       t.textContent = bound ? c.short : '';
     });
+    // click + hover tooltip with the full command
+    let tip = null;
+    for (const child of el.children) if (child.tagName === 'title') tip = child;
+    if (!tip) {
+      tip = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+      el.insertBefore(tip, el.firstChild);
+    }
+    tip.textContent = c.label + ' — ' + (bound ? c.command : 'frei');
+    el.onclick = () => select(c.id, true);
   }
   // sticks show axis functions
   const ax = STATE.axes.map(a => a.name);
@@ -509,9 +529,11 @@ function render() {
     : 'Keine Achsen belegt.';
 
   document.getElementById('mouserows').innerHTML = STATE.mouse.map(m =>
-    `<div class="row" data-mouse="${m.id}">
+    `<div class="row ${SELECTED_MOUSE === m.id ? 'sel' : ''}" data-mouse="${m.id}">
        <span class="name">${m.label}</span>
        <span class="cmd">${m.description}</span></div>`).join('');
+  document.querySelectorAll('#mouserows .row').forEach(r =>
+    r.onclick = () => selectMouse(r.dataset.mouse));
 
   document.getElementById('btnclear').disabled = !SELECTED || STATE.sim_running;
   paintMouse();
@@ -520,12 +542,35 @@ function render() {
 function paintMouse() {
   for (const g of document.querySelectorAll('#mouse .ctl')) {
     g.classList.add('bound');
-    g.classList.remove('selected');
+    g.classList.toggle('selected', SELECTED_MOUSE === g.dataset.id);
   }
+}
+
+function selectMouse(id) {
+  SELECTED = null;
+  SELECTED_MOUSE = id;
+  render();
+  const m = STATE.mouse.find(x => x.id === id);
+  if (!m) return;
+  document.getElementById('selname').innerHTML =
+    `<b>${m.label}</b><br>${m.description}` +
+    `<div style="margin-top:6px">Nativ bzw. über die Suite — liegt nicht im Joystick-Profil.</div>`;
+  document.getElementById('q').value = '';
+  document.getElementById('results').innerHTML =
+    '<div class="detail">Maus-Eingaben werden hier nur angezeigt.</div>';
+  document.getElementById('btnclear').disabled = true;
+}
+
+function flash(id) {
+  const el = document.querySelector(`#pad .ctl[data-id="${id}"]`);
+  if (!el) return;
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 900);
 }
 
 function select(id, scroll=true) {
   SELECTED = id;
+  SELECTED_MOUSE = null;
   render();
   const c = STATE.controls.find(x => x.id === id);
   if (!c) return;
@@ -569,6 +614,7 @@ async function assign(command) {
   toast(`${c.label}: ${out.new ? out.new : command}`);
   await load(DEVICE);
   select(SELECTED, false);
+  flash(SELECTED);
 }
 
 document.getElementById('q').oninput = e => search(e.target.value);
@@ -582,10 +628,7 @@ document.getElementById('undo').onclick = async () => {
   toast('Wiederhergestellt'); await load(DEVICE);
 };
 for (const el of document.querySelectorAll('#mouse .ctl')) {
-  el.onclick = () => {
-    const role = STATE.mouse.find(m => m.id === el.dataset.id);
-    toast(role.label + ': ' + role.description, 5000);
-  };
+  el.onclick = () => selectMouse(el.dataset.id);
 }
 load(0);
 </script>
@@ -686,6 +729,8 @@ def self_test():
     with urllib.request.urlopen(base + "/") as resp:
         page = resp.read().decode()
     assert "<svg" in page and "DualShock" in page, "html missing"
+    for marker in ("padcard", "mousecard", "selectMouse", "flash("):
+        assert marker in page, "html missing " + marker
 
     with urllib.request.urlopen(base + "/api/state?device=0") as resp:
         st = json.loads(resp.read())
