@@ -44,14 +44,14 @@ CONTROLS = [
     (5, "hat_down_left", "D-Pad ↙", "dpad"),
     (6, "hat_left", "D-Pad ◀", "dpad"),
     (7, "hat_up_left", "D-Pad ↖", "dpad"),
-    (8, "btn0", "□", "face"),
-    (9, "btn1", "✕", "face"),
-    (10, "btn2", "○", "face"),
-    (11, "btn3", "△", "face"),
-    (12, "btn4", "L1", "shoulder"),
-    (13, "btn5", "R1", "shoulder"),
-    (14, "btn6", "L2", "shoulder"),
-    (15, "btn7", "R2", "shoulder"),
+    (8, "btn0", "L1", "shoulder"),
+    (9, "btn1", "L2", "shoulder"),
+    (10, "btn2", "R1", "shoulder"),
+    (11, "btn3", "R2", "shoulder"),
+    (12, "btn4", "□", "face"),
+    (13, "btn5", "✕", "face"),
+    (14, "btn6", "○", "face"),
+    (15, "btn7", "△", "face"),
     (16, "btn8", "Share", "misc"),
     (17, "btn9", "Options", "misc"),
     (18, "btn10", "L3", "stick"),
@@ -389,13 +389,13 @@ HTML = r"""<!doctype html>
           C520 316 240 316 194 300 C176 340 140 366 106 344
           C64 316 54 244 54 178 C54 108 92 62 150 62 Z"/>
         <g id="top">
-          <g class="ctl" data-id="btn6"><rect class="body" x="146" y="26" width="104" height="26" rx="9"/>
+          <g class="ctl" data-id="btn1"><rect class="body" x="146" y="26" width="104" height="26" rx="9"/>
             <rect class="hit" x="146" y="26" width="104" height="26"/><text class="lbl" x="198" y="44">L2</text></g>
-          <g class="ctl" data-id="btn4"><rect class="body" x="146" y="58" width="104" height="24" rx="9"/>
+          <g class="ctl" data-id="btn0"><rect class="body" x="146" y="58" width="104" height="24" rx="9"/>
             <rect class="hit" x="146" y="58" width="104" height="24"/><text class="lbl" x="198" y="75">L1</text></g>
-          <g class="ctl" data-id="btn7"><rect class="body" x="510" y="26" width="104" height="26" rx="9"/>
+          <g class="ctl" data-id="btn3"><rect class="body" x="510" y="26" width="104" height="26" rx="9"/>
             <rect class="hit" x="510" y="26" width="104" height="26"/><text class="lbl" x="562" y="44">R2</text></g>
-          <g class="ctl" data-id="btn5"><rect class="body" x="510" y="58" width="104" height="24" rx="9"/>
+          <g class="ctl" data-id="btn2"><rect class="body" x="510" y="58" width="104" height="24" rx="9"/>
             <rect class="hit" x="510" y="58" width="104" height="24"/><text class="lbl" x="562" y="75">R1</text></g>
         </g>
         <g class="ctl" data-id="btn13"><rect class="body" x="300" y="92" width="160" height="78" rx="10"/>
@@ -422,16 +422,16 @@ HTML = r"""<!doctype html>
           <g class="ctl" data-id="hat_down_right"><rect class="body" x="212" y="248" width="34" height="34" rx="6"/>
             <rect class="hit" x="212" y="248" width="34" height="34"/><text class="lbl" x="229" y="297">↘</text></g>
         </g>
-        <g class="ctl" data-id="btn3"><circle class="body" cx="560" cy="196" r="19"/>
+        <g class="ctl" data-id="btn7"><circle class="body" cx="560" cy="196" r="19"/>
           <circle class="hit" cx="560" cy="196" r="26"/><text class="glyph" x="560" y="202">△</text>
           <text class="lbl" x="560" y="166"></text></g>
-        <g class="ctl" data-id="btn2"><circle class="body" cx="596" cy="232" r="19"/>
+        <g class="ctl" data-id="btn6"><circle class="body" cx="596" cy="232" r="19"/>
           <circle class="hit" cx="596" cy="232" r="26"/><text class="glyph" x="596" y="238">○</text>
           <text class="lbl" x="632" y="236"></text></g>
-        <g class="ctl" data-id="btn1"><circle class="body" cx="560" cy="268" r="19"/>
+        <g class="ctl" data-id="btn5"><circle class="body" cx="560" cy="268" r="19"/>
           <circle class="hit" cx="560" cy="268" r="26"/><text class="glyph" x="560" y="274">✕</text>
           <text class="lbl" x="560" y="302"></text></g>
-        <g class="ctl" data-id="btn0"><circle class="body" cx="524" cy="232" r="19"/>
+        <g class="ctl" data-id="btn4"><circle class="body" cx="524" cy="232" r="19"/>
           <circle class="hit" cx="524" cy="232" r="26"/><text class="glyph" x="524" y="238">□</text>
           <text class="lbl" x="488" y="236"></text></g>
         <g class="ctl" data-id="btn10"><circle class="stickbase" cx="330" cy="336" r="44"/>

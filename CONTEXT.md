@@ -1230,9 +1230,11 @@ tkinter — Homebrew Python ships without Tk): a drawn DualShock 4 and mouse, gr
 bound inputs, click-to-reassign with catalog search, undo, and a hard refusal to write while
 X-Plane is running. `--self-test` exercises the page and both API endpoints headlessly.
 
-**In-sim check pending:** the D-pad must tilt/pan the 3-D cockpit, and the physical labels of
-btn0 / btn9 / btn12 must be confirmed — they were the only unassigned buttons, and labels
-cannot be recorded without the sim.
+**In-sim check pending:** the D-pad must tilt/pan the 3-D cockpit, and the button order must be
+confirmed. X-Plane numbers this pad with the shoulders first — L1, L2, R1, R2 = buttons 0..3,
+□ ✕ ○ △ = 4..7, Share/Options/L3/R3/PS/Touchpad = 8..13 — because L2/R2 carry throttle
+down/up in the live profile, which only fits that order. If a label is off in the cockpit, it
+is one table in `tools/joymap_gui.py` (`CONTROLS`).
 
 ## Not yet verified in-sim
 
