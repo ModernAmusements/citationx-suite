@@ -1229,9 +1229,16 @@ buttons 0..3, face buttons 4..7), which is what makes L2/R2 the throttle in the 
 thumb back `Ctrl+Shift+9` and forward `Ctrl+Shift+0` step ALT SEL; the **gesture button**
 (`Ctrl+Shift+8`) toggles both landing lights and the **thumb wheel** (`Ctrl+Shift+6`) toggles the
 taxi light. All four are always live (`MOUSE_KEY_ACTIONS` / the ALT SEL block), so they need no
-input mapper. Logi Options+ must actually send those keys — `tools/joymap_gui.py` reads the
-profile out of `~/Library/Application Support/LogiOptionsPlus/settings.db` and shows what each
-mouse input currently sends, including the ones X-Plane never sees as buttons.
+input mapper; `mouse_key_repeat_s` (0.4 s) swallows the wheel's second key so one flick toggles
+once. Logi Options+ must actually send those keys — `tools/joymap_gui.py` reads the profile out of
+`~/Library/Application Support/LogiOptionsPlus/settings.db` and shows what each mouse input
+currently sends, including the ones X-Plane never sees as buttons.
+
+That file was written directly on 2026-10-30 (gesture `DO_NOTHING` → `Ctrl+Shift+8`, thumb wheel
+`Ctrl+Shift+Left/Right` → `Ctrl+Shift+6`). The Logi agent (`com.logi.cp-dev-mgr`) rewrites it from
+memory, so it has to be stopped first — `launchctl bootout gui/$UID/com.logi.cp-dev-mgr`, write,
+then `launchctl bootstrap gui/$UID /Library/LaunchAgents/com.logi.optionsplus.plist`. Backups:
+`settings.db.bak-2026-10-30-231926` and `…-232106`.
 
 Backup: `X-Plane Joystick Settings.prf.bak-before-dpad-view-2026-10-30` next to the profile.
 `tools/joymap.py` performs the same edits from the command line, refuses to run while the sim

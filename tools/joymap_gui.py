@@ -81,6 +81,7 @@ LOGI_SLOTS = {
 BIND_RE = re.compile(
     r'\{ vkey = (0x[0-9A-Fa-f]+|\d+), ctrl = (true|false),\s*shift = (true|false),'
     r'\s*label = "([^"]+)",\s*(?:command = "([^"]+)"|action = )')
+MOUSE_KEY_RE = re.compile(r'key = "([^"]+)",\s*label = "([^"]+)"')
 
 # Colour code for the map: what a binding actually does.
 CATEGORIES = {
@@ -235,6 +236,15 @@ def logi_profile():
         card = a.get("card", {})
         macro = card.get("macro") or {}
         combo = macro.get("actionName") if macro.get("type") == "KEYSTROKE" else None
+        if not combo:                      # 2-way adapters keep them nested
+            nested = card.get("nestedCards") or {}
+            names = []
+            for direction in ("left", "right"):
+                leaf = (nested.get(direction) or {}).get("macro") or {}
+                if leaf.get("type") == "KEYSTROKE" and leaf.get("actionName"):
+                    names.append(leaf["actionName"])
+            if names and len(set(names)) == 1:
+                combo = names[0]
         if macro.get("type") == "DO_NOTHING":
             label = "Do Nothing"
         elif combo:
@@ -251,7 +261,12 @@ def mouse_state():
     # MOUSE_KEY_ACTIONS). Shown as a hint while Logi still sends something else.
     targets = {"gesture": ("Ctrl+Shift+8", "Landelichter"),
                "thumbwheel": ("Ctrl+Shift+6", "Taxilicht")}
+
+    def norm(text):
+        return (text or "").replace(" ", "").lower()
+
     suite = {}
+    always_on = set()
     for b in suite_bindings():
         parts = []
         if b["ctrl"]:
@@ -259,7 +274,15 @@ def mouse_state():
         if b["shift"]:
             parts.append("Shift")
         parts.append(b["key"])
-        suite[" + ".join(parts)] = b["label"]
+        suite[norm(" + ".join(parts))] = b["label"]
+    try:
+        with open(SUITE_LUA, "r", encoding="utf-8", errors="ignore") as fd:
+            lua = fd.read()
+    except OSError:
+        lua = ""
+    for match in MOUSE_KEY_RE.finditer(lua):
+        suite.setdefault(norm(match.group(1)), match.group(2))
+        always_on.add(match.group(2))
 
     def entry(ident, label, native=None, slot=None):
         info = logi.get(slot) if slot else None
@@ -268,16 +291,18 @@ def mouse_state():
             desc, cat = native, "native"
         elif not info:
             desc, cat = "kein Logi-Profil gefunden", "logi"
-        elif slot == "thumbwheel":
-            desc, cat = "horizontales Scrollen", "logi"
-        elif combo and combo in suite:
-            note = "" if suite[combo].startswith("ALT SEL") else "  (INPUT MAPPER nötig)"
-            desc, cat = "%s  →  Suite: %s%s" % (combo, suite[combo], note), "suite"
+        elif combo and norm(combo) in suite:
+            suite_label = suite[norm(combo)]
+            live = suite_label.startswith("ALT SEL") or suite_label in always_on
+            note = "" if live else "  (INPUT MAPPER nötig)"
+            desc, cat = "%s  →  Suite: %s%s" % (combo, suite_label, note), "suite"
         elif combo:
             desc, cat = "%s  →  in X-Plane nicht belegt" % combo, "logi"
+        elif slot == "thumbwheel":
+            desc, cat = "horizontales Scrollen", "logi"
         else:
             desc, cat = info["label"] or "—", "logi"
-        if slot in targets and combo != targets[slot][0]:
+        if slot in targets and norm(combo) != norm(targets[slot][0]):
             key, what = targets[slot]
             desc += "  ·  in Logi auf %s legen → %s" % (key, what)
         return {"id": ident, "label": label, "description": desc, "cat": cat,

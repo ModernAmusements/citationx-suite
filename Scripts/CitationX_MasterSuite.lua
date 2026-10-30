@@ -88,6 +88,7 @@ CONFIG = {
     -- = thumb wheel. They work with the input mapper OFF, like the thumb
     -- buttons above.
     mouse_keys_enabled      = true,
+    mouse_key_repeat_s      = 0.40,
 
     -- Analog DS4 triggers -> throttle up/down. OFF: L2/R2 are already on the
     -- pilot's X-Plane profile (button 6/7 plus the analog end-stop), so the
@@ -1191,6 +1192,9 @@ local MOUSE_KEY_ACTIONS = {
     [0x36] = { key = "Ctrl+Shift+6", label = "TAXI LIGHT",
                command = "sim/lights/taxi_lights_toggle" },     -- thumb wheel
 }
+-- The thumb wheel sends its key once per detent, in both directions, so a
+-- flick otherwise toggles twice. Ignore repeats inside this window.
+local mouse_key_last = {}
 
 function citationx_keystroke()
     local vkey = (VKEY or 0) % 256
@@ -1237,8 +1241,12 @@ function citationx_keystroke()
     if mouse_action and CONTROL_KEY and SHIFT_KEY and not OPTION_KEY then
         RESUME_KEY = true
         if KEY_ACTION == "pressed" then
-            command_once(mouse_action.command)
-            toast(mouse_action.label)
+            local stamp = citationx_sim_time or 0.0
+            if stamp - (mouse_key_last[vkey] or -10.0) > CONFIG.mouse_key_repeat_s then
+                mouse_key_last[vkey] = stamp
+                command_once(mouse_action.command)
+                toast(mouse_action.label)
+            end
         end
         return
     end
