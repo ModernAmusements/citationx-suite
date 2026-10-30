@@ -1217,9 +1217,9 @@ Fixed on 2026-10-30 with X-Plane closed, by rewriting both blocks of
 | Options | `sim/engines/thrust_reverse_toggle` (all engines) |
 | Touchpad | `laminar/CitX/autopilot/cmd_ap_toggle` |
 | PS / R3 | `sim/flight_controls/aileron_trim_left` / `_right` |
-| L3 | `sim/view/still_spot` |
+| L3 | `sim/view/3d_cockpit_cmnd_look` |
 
-3-D cockpit look is no longer on a button; the mouse and X-Plane's own keys still move the view.
+The spot view is no longer on a button; `sim/view/still_spot` stays available as a command.
 
 The button labels follow the order X-Plane gives this pad (shoulders first: L1, L2, R1, R2 =
 buttons 0..3, face buttons 4..7), which is what makes L2/R2 the throttle in the live profile.
