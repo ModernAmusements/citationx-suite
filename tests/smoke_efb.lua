@@ -25,8 +25,20 @@ SCREEN_WIDTH, SCREEN_HIGHT = 2560, 1440
 MOUSE_X, MOUSE_Y, MOUSE_STATUS = -1, -1, "up"
 RESUME_MOUSE_CLICK = false
 VKEY, CKEY = 0, ""
--- the suite resolves the airport index and the checklist from here
-SCRIPT_DIRECTORY = "Scripts/"
+-- The suite walks four levels up from SCRIPT_DIRECTORY for the X-Plane root
+-- (Scripts -> FlyWithLua -> plugins -> Resources -> X-Plane 12). Build that
+-- shape under TMPDIR so the test never reads the live aircraft checklist or
+-- the installed navdata.
+local tmp = os.getenv("TMPDIR") or "/tmp/"
+local sandbox = tmp .. "citationx_efb_xp12/"
+local scripts_dir = sandbox .. "Resources/plugins/FlyWithLua/Scripts/"
+os.execute("mkdir -p '" .. scripts_dir .. "' '" .. sandbox .. "Resources/default data'")
+os.execute("cp '" .. (script:match("^(.*)/") or ".") .. "/CitationX_Airports.csv' '"
+  .. scripts_dir .. "'")
+local navhdr = assert(io.open(sandbox .. "Resources/default data/earth_nav.dat", "w"))
+navhdr:write("I\n1200 Version - data cycle 2406, build 20251002, metadata NavXP1200.\n")
+navhdr:close()
+SCRIPT_DIRECTORY = scripts_dir
 
 local draw_cb, click_cb
 local drawn = {}
@@ -35,7 +47,14 @@ function dataref(name, path, mode, index)
   _G[name] = 0
   return 0
 end
-function dataref_table() return {} end
+function dataref_table(path)
+  -- FlyWithLua exposes acf_relative_path as a string in current builds; the
+  -- EFB must accept that instead of assuming a table of byte numbers.
+  if path == "sim/aircraft/view/acf_relative_path" then
+    return "Aircraft/Test Aircraft/Test.acf"
+  end
+  return {}
+end
 function draw_string(x, y, text, r, g, b) drawn[#drawn + 1] = tostring(text) end
 function measure_string(t) return #tostring(t) * 7 end
 function glColor4f() end
@@ -169,6 +188,8 @@ if fms then
   local body = fms:read("*a")
   fms:close()
   check(body:find("1100 Version", 1, true) ~= nil, "FMS has a 1100 header")
+  check(body:find("CYCLE 2406", 1, true) ~= nil,
+    "FMS stamps the installed navdata cycle", body:match("CYCLE %d+"))
   check(body:find("ADEP KJFK", 1, true) ~= nil, "FMS declares the departure")
   check(body:find("ADES EDDF", 1, true) ~= nil, "FMS declares the destination")
   check(body:find("1 KJFK ADEP", 1, true) ~= nil, "FMS has an airport row")

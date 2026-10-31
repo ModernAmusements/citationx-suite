@@ -69,7 +69,7 @@ EFB_CONFIG = {
     route_max_len   = 4,
     route_msg       = "TYPE AN ICAO CODE",
     route_out_dir   = nil,     -- nil = <X-Plane>/Output/FMS plans/
-    route_cycle     = 2601,    -- AIRAC cycle stamped into the .fms header
+    route_cycle     = 2601,    -- fallback AIRAC stamp when navdata is unreadable
 }
 
 -- Same black / Helvetica language as the realism panel.
@@ -155,20 +155,59 @@ local function efb_trim(s)
     return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
--- FlyWithLua is at Resources/plugins/FlyWithLua/, so three levels up is the
--- X-Plane root.
+-- FlyWithLua's SCRIPT_DIRECTORY is Resources/plugins/FlyWithLua/Scripts/, so
+-- four levels up is the X-Plane root (Scripts -> FlyWithLua -> plugins ->
+-- Resources -> X-Plane 12).
 local function efb_root_dir()
     local s = SCRIPT_DIRECTORY
     if not s or s == "" then return nil end
-    return s .. "../../../"
+    return s .. "../../../../"
+end
+
+-- AIRAC cycle actually installed in the sim, read from the navdata header.
+-- Custom Data wins over the stock data, exactly as X-Plane loads it.
+local efb_cycle_cache = nil
+local function efb_navdata_cycle()
+    if efb_cycle_cache ~= nil then return efb_cycle_cache or nil end
+    efb_cycle_cache = false
+    local root = efb_root_dir()
+    if not root then return nil end
+    local files = {
+        root .. "Custom Data/earth_nav.dat",
+        root .. "Resources/default data/earth_nav.dat",
+    }
+    for _, path in ipairs(files) do
+        local fd = io.open(path, "r")
+        if fd then
+            fd:read("*l")                       -- "I"
+            local hdr = fd:read("*l") or ""
+            fd:close()
+            local cycle = tonumber(hdr:match("data cycle%s+(%d%d%d%d)"))
+            if cycle then
+                efb_cycle_cache = cycle
+                return cycle
+            end
+        end
+    end
+    return nil
 end
 
 local function efb_byte_string(tbl, max_len)
+    -- FlyWithLua can expose a byte[] dataref either as a table of numbers or
+    -- as a plain string, depending on the build. Handle both: indexing a Lua
+    -- string returns a one-character string, which string.char() rejects.
+    if type(tbl) == "string" then return tbl end
     local chars = {}
     for i = 0, (max_len or 511) do
         local b = tbl[i]
-        if b == nil or b == 0 then break end
-        chars[#chars + 1] = string.char(b)
+        if b == nil then break end
+        if type(b) == "string" then
+            if b == "" then break end
+            chars[#chars + 1] = b:sub(1, 1)
+        else
+            if b == 0 then break end
+            chars[#chars + 1] = string.char(b)
+        end
     end
     return table.concat(chars)
 end
@@ -698,7 +737,10 @@ function efb_route_build()
         return
     end
     -- 1100 format, exactly as the sim writes it (airports are row type 1).
-    fd:write("I\n1100 Version\nCYCLE " .. tostring(EFB_CONFIG.route_cycle) .. "\n")
+    -- Stamp the cycle the sim actually has, not a hard-coded one, so the plan
+    -- never advertises navdata newer than the FMS can resolve.
+    local cycle = efb_navdata_cycle() or EFB_CONFIG.route_cycle
+    fd:write("I\n1100 Version\nCYCLE " .. tostring(cycle) .. "\n")
     fd:write("ADEP " .. EFB_CONFIG.route_dep .. "\n")
     fd:write("ADES " .. EFB_CONFIG.route_dest .. "\n")
     fd:write("NUMENR 2\n")

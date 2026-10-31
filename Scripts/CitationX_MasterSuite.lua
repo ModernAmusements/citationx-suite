@@ -11,8 +11,10 @@
 --  What it still does, all of it "realism / quality of life":
 --    1. Axis optimizer   - deadzone, expo and smoothing on the pitch/roll axes
 --                          (the physical stick response, not a key mapping)
---    2. Mouse wheel      - forward/backward moves ALT SEL (the only input the
---                          suite reads itself; no key is ever captured)
+--    2. Mouse wheel      - the main scroll wheel stays with X-Plane (view
+--                          zoom); the thumbwheel moves the heading bug in
+--                          10 deg steps and an optional third wheel moves
+--                          ALT SEL. No key is ever captured
 --    3. Mouse actions    - taxi light, both landing lights, heading bug and
 --                          ALT SEL are published as real X-Plane commands, so
 --                          a middle click / gesture / thumbwheel can be pointed
@@ -67,20 +69,20 @@ CONFIG = {
     texture_cycle_enabled  = true,
 
     -- Mouse wheel -----------------------------------------------------------
-    -- The only pilot input the suite reads itself. Wheel forward/backward
-    -- moves ALT SEL; nothing is bound to a key and no button is remapped.
-    -- Middle click / gestures belong to the mouse driver or X-Plane's own
-    -- joystick screen - the suite only publishes commands for them.
+    -- The main scroll wheel is left alone so X-Plane keeps its view zoom.
+    -- X-Plane numbers wheels from 0: 0 = main wheel, 1 = thumbwheel, and so
+    -- on. The thumbwheel moves the heading bug in 10 deg steps; an optional
+    -- third wheel moves ALT SEL. Run CitationXSuite/wheel_report to see which
+    -- number your mouse sends, and CitationXSuite/wheel_map_swap to exchange
+    -- the two mappings.
     mouse_wheel_altitude   = true,
-    -- X-Plane reports which wheel moved: the main wheel and the thumbwheel
-    -- are different numbers. 1 = main wheel -> ALT SEL, 2 = thumbwheel ->
-    -- heading bug. Swap them with CitationXSuite/wheel_map_swap if your mouse
-    -- enumerates them the other way round.
-    wheel_altitude_number  = 1,
-    wheel_heading_number   = 2,
+    wheel_altitude_number  = 2,
+    wheel_heading_number   = 1,
     wheel_heading_enabled  = true,
+    wheel_heading_fast     = true,
     alt_step_ft            = 100,
     hdg_step_deg           = 1,
+    hdg_fast_step_deg      = 10,
     alt_min_ft             = 0,
     alt_max_ft             = 50000,
 }
@@ -597,10 +599,10 @@ function citationx_avitab_report()
 end
 
 -- ------------------------------------------------------ MOUSE SELECTORS ----
--- The wheel is the one pilot input the suite touches, and it only moves the
--- two autopilot selectors. Every action is also a real X-Plane command, so a
--- middle click, a gesture or a thumbwheel can be pointed at it from X-Plane's
--- joystick screen (or the mouse driver) without the suite grabbing anything.
+-- The suite reads one wheel only: the thumbwheel by default. The main scroll
+-- wheel is never consumed, so X-Plane's view zoom keeps working. Every action
+-- is also a real X-Plane command, so another button can be pointed at it from
+-- X-Plane's joystick screen (or the mouse driver).
 function citationx_set_wheel_altitude(on)
     CONFIG.mouse_wheel_altitude = (on == true)
     toast_state("WHEEL = ALT SEL", CONFIG.mouse_wheel_altitude)
@@ -625,18 +627,20 @@ function citationx_alt_down()
     toast(string.format("ALT SEL %d FT", feet))
 end
 
-function citationx_hdg_up()
-    local deg = ((citationx_hdg_sel_deg or 0) + CONFIG.hdg_step_deg) % 360
-    citationx_hdg_sel_deg = deg
-    toast(string.format("HDG %03.0f", deg))
-end
-
-function citationx_hdg_down()
-    local deg = ((citationx_hdg_sel_deg or 0) - CONFIG.hdg_step_deg) % 360
+local function hdg_step(delta)
+    local deg = ((citationx_hdg_sel_deg or 0) + delta) % 360
     if deg < 0 then deg = deg + 360 end
     citationx_hdg_sel_deg = deg
     toast(string.format("HDG %03.0f", deg))
 end
+
+function citationx_hdg_up() hdg_step(CONFIG.hdg_step_deg) end
+function citationx_hdg_down() hdg_step(-CONFIG.hdg_step_deg) end
+
+-- Big-step commands for a key or mouse button: 10 degrees per press instead
+-- of the fine 1-degree step.
+function citationx_hdg_fast_up() hdg_step(CONFIG.hdg_fast_step_deg) end
+function citationx_hdg_fast_down() hdg_step(-CONFIG.hdg_fast_step_deg) end
 
 -- Taxi light and both landing lights: X-Plane's own switches, so the cockpit
 -- annunciation follows automatically.
@@ -650,40 +654,54 @@ function citationx_landing_lights()
     toast("LANDING LIGHTS")
 end
 
--- Two wheels, two selectors:
---   main wheel forward/back  -> ALT SEL up/down
---   thumbwheel forward/back  -> heading bug right/left
--- X-Plane tells us which wheel moved in MOUSE_WHEEL_NUMBER. RESUME_MOUSE_WHEEL
--- keeps the notch from also zooming the view. No key is ever read.
+-- Wheels are numbered from 0 by X-Plane:
+--   0 (main scroll)  -> left to X-Plane, so the view zooms as usual
+--   1 (thumbwheel)   -> heading bug, 10 deg per notch by default
+--   2 (third wheel)  -> ALT SEL up/down
+-- RESUME_MOUSE_WHEEL is set only when the suite actually uses the notch, so
+-- the main wheel is never swallowed. No key is ever read.
 local wheel_last_number, wheel_last_clicks = nil, 0
 
 function citationx_mouse_wheel()
     local clicks = MOUSE_WHEEL_CLICKS or 0
-    local wheel  = MOUSE_WHEEL_NUMBER or 1
+    local wheel  = MOUSE_WHEEL_NUMBER or 0
     wheel_last_number, wheel_last_clicks = wheel, clicks
+    RESUME_MOUSE_WHEEL = false
     if clicks == 0 then return end
 
-    if wheel == CONFIG.wheel_heading_number then
-        if not CONFIG.wheel_heading_enabled then return end
-        local n = math.min(math.abs(clicks), 10)
-        for _ = 1, n do
-            if clicks > 0 then citationx_hdg_up() else citationx_hdg_down() end
-        end
-    else
+    if wheel == CONFIG.wheel_altitude_number then
         if not CONFIG.mouse_wheel_altitude then return end
         local n = math.min(math.abs(clicks), 10)
         for _ = 1, n do
             if clicks > 0 then citationx_alt_up() else citationx_alt_down() end
         end
+        RESUME_MOUSE_WHEEL = true
+        return
     end
-    RESUME_MOUSE_WHEEL = true
+
+    if wheel == CONFIG.wheel_heading_number then
+        if not CONFIG.wheel_heading_enabled then return end
+        local step = CONFIG.wheel_heading_fast and CONFIG.hdg_fast_step_deg
+            or CONFIG.hdg_step_deg
+        local n = math.min(math.abs(clicks), 10)
+        for _ = 1, n do
+            if clicks > 0 then hdg_step(step) else hdg_step(-step) end
+        end
+        RESUME_MOUSE_WHEEL = true
+    end
+    -- any other wheel (the main scroll wheel by default) falls through:
+    -- RESUME stays false, so X-Plane receives it and zooms.
 end
 
--- Which physical wheel is which? Turn one notch and run the report.
+-- Which physical wheel is which? Turn one notch and run the report; the toast
+-- and the log both show the number, so the mapping can be set without guessing.
 function citationx_wheel_report()
+    local last = tostring(wheel_last_number)
+    local clicks = wheel_last_clicks or 0
     logMsg(string.format(
         "Citation X Suite: last wheel event = number %s, %d click(s); ALT SEL wheel %d, heading wheel %d",
-        tostring(wheel_last_number), wheel_last_clicks or 0,
+        last, clicks, CONFIG.wheel_altitude_number, CONFIG.wheel_heading_number))
+    toast(string.format("WHEEL %s (%d) - ALT %d HDG %d", last, clicks,
         CONFIG.wheel_altitude_number, CONFIG.wheel_heading_number))
 end
 
@@ -737,7 +755,7 @@ end
 function citationx_status_report()
     logMsg("Citation X Suite: status report ----------------------------------")
     logMsg(string.format("  aircraft = %s (C750=%s)", tostring(PLANE_ICAO), tostring(is_c750)))
-    logMsg("  input layer = mouse wheel -> ALT SEL (no keystrokes, no buttons)")
+    logMsg("  input layer = thumbwheel -> heading; main wheel stays X-Plane zoom")
     for i = 1, #SUITE_MODULES do
         local m = SUITE_MODULES[i]
         logMsg(string.format("  %-18s : %s", m.label, m.state()))
@@ -990,14 +1008,14 @@ function citationx_overlay()
         local box_x  = (screen_w - box_w) / 2
         local box_y  = screen_h - 96
         draw_bar(box_x, box_y - 8, box_y + 22, box_w, {0.00, 0.00, 0.00}, 0.92)
-        draw_bar(box_x, box_y - 8, box_x + 3, box_y + 22, SUITE_STYLE.accent, 1.0)
+        draw_bar(box_x, box_y - 8, box_y + 22, 3, SUITE_STYLE.accent, 1.0)
         suite_text(box_x + 16, box_y + 3, toast_text, 12, SUITE_STYLE.value)
     end
 end
 
 -- ------------------------------------------------------------- MOUSE (UI) ---
--- Panel dragging and clickable rows only. No keystroke and no wheel handler is
--- registered at all, so every key and scroll belongs to X-Plane.
+-- Panel dragging and clickable rows only. No keystroke handler and no button
+-- remap; the wheel is handled separately, and only wheels 1 and 2 are consumed.
 function citationx_mouse_click()
     if not CONFIG.status_enabled then
         panel_drag.active = false
@@ -1113,8 +1131,8 @@ create_command("CitationXSuite/status_report",
     "CitationX Suite: write the active-system report to Log.txt",
     "citationx_status_report()", "", "")
 
--- Mouse actions as real commands: point a middle click, a gesture or the
--- thumbwheel at these from X-Plane's joystick screen (or the mouse driver).
+-- Mouse actions as real commands: point another mouse button, a gesture or a
+-- second wheel at these from X-Plane's joystick screen (or the mouse driver).
 create_command("CitationXSuite/alt_sel_up",
     "CitationX Suite: altitude selector up", "citationx_alt_up()", "", "")
 create_command("CitationXSuite/alt_sel_down",
@@ -1123,6 +1141,10 @@ create_command("CitationXSuite/hdg_bug_up",
     "CitationX Suite: heading bug right", "citationx_hdg_up()", "", "")
 create_command("CitationXSuite/hdg_bug_down",
     "CitationX Suite: heading bug left", "citationx_hdg_down()", "", "")
+create_command("CitationXSuite/hdg_fast_up",
+    "CitationX Suite: heading bug +10 deg", "citationx_hdg_fast_up()", "", "")
+create_command("CitationXSuite/hdg_fast_down",
+    "CitationX Suite: heading bug -10 deg", "citationx_hdg_fast_down()", "", "")
 create_command("CitationXSuite/taxi_light_toggle",
     "CitationX Suite: taxi light toggle", "citationx_taxi_light()", "", "")
 create_command("CitationXSuite/landing_lights_toggle",
@@ -1135,6 +1157,8 @@ add_macro("CitationX Suite: altitude selector up", "citationx_alt_up()")
 add_macro("CitationX Suite: altitude selector down", "citationx_alt_down()")
 add_macro("CitationX Suite: heading bug right", "citationx_hdg_up()")
 add_macro("CitationX Suite: heading bug left", "citationx_hdg_down()")
+add_macro("CitationX Suite: heading bug +10", "citationx_hdg_fast_up()")
+add_macro("CitationX Suite: heading bug -10", "citationx_hdg_fast_down()")
 add_macro("CitationX Suite: taxi light toggle", "citationx_taxi_light()")
 add_macro("CitationX Suite: both landing lights", "citationx_landing_lights()")
 -- AviTab is a separate plugin; these commands only forward to its own API.
@@ -1158,7 +1182,7 @@ add_macro("CitationX Suite: AviTab map", "citationx_avitab_maps()")
 add_macro("CitationX Suite: AviTab routes", "citationx_avitab_routes()")
 add_macro("CitationX Suite: AviTab report", "citationx_avitab_report()")
 create_command("CitationXSuite/wheel_report",
-    "CitationX Suite: log which mouse wheel moved last",
+    "CitationX Suite: show which mouse wheel moved last",
     "citationx_wheel_report()", "", "")
 create_command("CitationXSuite/wheel_map_swap",
     "CitationX Suite: swap the ALT SEL and heading wheels",

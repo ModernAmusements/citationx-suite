@@ -1564,3 +1564,94 @@ fallback). If the UI comes up mirrored, flip the quad's v coordinates.
   rsvg delegate). The README's panel images are produced from the actual draw calls, not
   hand-drawn. The texture images are copies of the §29 gallery
   (`~/Desktop/CitationX_textures_before_after/img/`).
+
+## 34. Wheel mapping, EFB root/cycle fixes, AviTab quad repair (2026-10-31, evening)
+
+Follow-up after the §33 restore. Four separate problems, all fixed offline; the in-sim checks
+are listed at the end.
+
+### Aircraft selection pointed at an incomplete backup
+
+`Output/preferences/Freeflight.prf` had been left on
+`Aircraft/Cessna Citation X_mods/_mod_backups/2026-10-31_191051_avitab_restore/Cessna_CitationX.acf`.
+That folder holds only the ACF and `objects/cockpit_panel/`; it has no `Airfoils/` and none of
+the aircraft objects, so X-Plane aborted with
+`An airfoil file could not be found ... Citation Root.afl`.
+
+- `Freeflight.prf._aircraft` points at `Aircraft/Cessna Citation X_mods/Cessna_CitationX.acf`
+  again; the original pref is `Freeflight.prf.bak-20261031`.
+- The partial backup moved out of the scan path to
+  `Output/_mod_backups/2026-10-31_191051_avitab_restore/`, so it cannot be selected as an
+  aircraft again. Nothing was deleted.
+
+### EFB (`CitationX_EFB.lua`)
+
+- `efb_root_dir()` was one level short. `SCRIPT_DIRECTORY` is
+  `Resources/plugins/FlyWithLua/Scripts/`, so the root is **four** levels up, not
+  `../../../`. The old value resolved to `Resources/`, which made the EFB miss
+  `<aircraft>/clist.txt` and try to write plans under `Resources/Output/FMS plans/`.
+- `efb_byte_string()` accepts a plain string as well as a table. Current FlyWithLua exposes
+  `sim/aircraft/view/acf_relative_path` as a string; `string.char()` on its characters raised
+  `bad argument #1 to 'char' (number expected, got string)` from the draw callback when the
+  CHECK page first loaded (`Log.txt`, 2026-10-31 22:10).
+- `.fms` plans no longer stamp the hard-coded `CYCLE 2601`. `efb_navdata_cycle()` reads
+  `Custom Data/earth_nav.dat` first, then `Resources/default data/earth_nav.dat`, and writes
+  the cycle the sim actually has (currently **2406**).
+- The installed navdata is cycle **2406** (build 2025-10-02); current is 2611. Updating it
+  needs Navigraph Hub → X-Plane 12 → Navdata, which writes into `Custom Data/`. There is no
+  free worldwide drop-in.
+
+### Mouse wheel / heading / altitude
+
+The main scroll wheel is now left entirely to X-Plane (view zoom). `citationx_mouse_wheel`
+sets `RESUME_MOUSE_WHEEL = false` first and only sets it true for a wheel it actually uses;
+previously it consumed every notch and treated any non-heading wheel as ALT SEL.
+
+- wheel **0** (main): X-Plane zoom.
+- wheel **1** (thumbwheel): heading bug, `hdg_fast_step_deg = 10` per notch.
+- wheel **2**: ALT SEL.
+- `wheel_map_swap` still exchanges 1 and 2.
+- New commands/macros `CitationXSuite/hdg_fast_up` / `hdg_fast_down` (+/−10°).
+- Fixed the 2 s toast: the 3 px accent bar passed `box_x + 3` as `y_top` and `box_y + 22` as
+  width, drawing a huge white rectangle. Correct call:
+  `draw_bar(box_x, box_y - 8, box_y + 22, 3, accent, 1.0)`.
+
+No keybinding file is written by the suite. X-Plane's active profile differs from
+`control profiles/PS4-CitationX`; reselect that profile in Settings → Joystick. For reference:
+K/L = altitude up/down, Z/U = heading up/down (stock 1°), B = wheel brakes, V = max brakes.
+
+### AviTab screen quad
+
+The §33 append ended with both `TRIS 57627 6` and a duplicate
+`IDX10 16793 16794 16795 16796 16797 16798`. `POINT_COUNTS` already counts the `TRIS` six
+indices, so the extra `IDX10` made X-Plane report `IDX10 index is out of range` and
+`unbalanced anim begins`, which aborted the aircraft load.
+
+- Removed only the stray `IDX10` line. The object now has `POINT_COUNTS 16799 0 0 57633`,
+  16799 `VT` lines, 472 `TRIS`, no extra indices, ANIM balance 0.
+- Installed in `Aircraft/Cessna Citation X_mods/objects/cockpit_panel/`.
+- Stock object saved in `Output/_mod_backups/2026-10-31_2250_stock_obj/`; the repaired copy
+  in `..._2245_repaired_avitab_obj/`.
+- The quad UVs match `AviTab.json` (`679, 208, 344×288`).
+- `Resources/plugins/FlyWithLua/CitationX_Avitab/` still holds the older full integration
+  (screen + home + power buttons, 16823 points) for reference; it was not used because its
+  panel rect is the old `1358, 235, 688×775`.
+
+### Checklist
+
+`Aircraft/Cessna Citation X_mods/clist.txt`, APPROACH & LANDING, now has
+`sw_item: SPEED 180 KIAS|MAX FLAPS:sim/cockpit2/gauges/indicators/airspeed_kts_pilot:<180`.
+The EFB only shows the text before `|`; the old `==>|SPEED 180 KIAS` displayed as `==>`.
+It auto-ticks below 180 KIAS. Backup `clist.txt.bak-20261031-kias180`.
+
+### Validation
+
+`luac -p Scripts/*.lua`; `check_datarefs` 0 problems across 5 scripts; `check_kpcrew_modules`
+0 missing; `probe_load_order` 103 bindings, 0 load failures, 0 binding problems;
+`smoke_mastersuite`, `smoke_hud_toggles`, `smoke_efb`, `smoke_realism` and
+`smoke_panel_geometry` (69 checks) all pass. `smoke_efb` now builds a sandbox
+`X-Plane 12/Resources/...` tree under `TMPDIR`, writes a `data cycle 2406` header and asserts
+the generated `.fms` carries it.
+
+**Pending in-sim:** the repaired AviTab quad, the wheel mapping on the MX Master, and the EFB
+checklist/route paths after the root fix.

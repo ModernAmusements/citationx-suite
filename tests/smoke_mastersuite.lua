@@ -1,10 +1,11 @@
 --[[
   smoke_mastersuite.lua — mock-FlyWithLua smoke test for the Master Suite hub.
 
-  v3.0 has no input layer at all: no keystroke handler, no mouse-wheel handler,
-  no controller-button map and no axis-to-heading-bug knob. This test pins that
-  contract and then exercises what is left: the pitch/roll axis optimizer, the
-  flight recorder, the emergency generator, the livery cycler and the panel.
+  v3.0 has no keyboard or controller-button layer. The main mouse wheel stays
+  with X-Plane for view zoom; only the second wheel drives ALT SEL. This test
+  pins that contract and then exercises what is left: the pitch/roll axis
+  optimizer, the flight recorder, the emergency generator, the livery cycler
+  and the panel.
 
   Usage:
     HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
@@ -117,18 +118,45 @@ end
 check(CONFIG.axis_optimizer_enabled == true, "the axis optimizer is ON by default")
 check(not logged("heading bug"), "no heading-bug engine in the log")
 
--- ---------- mouse wheel -> ALT SEL ----------
-check(CONFIG.mouse_wheel_altitude == true, "the wheel drives ALT SEL by default")
+-- ---------- mouse wheel: main wheel zooms, thumbwheel -> heading ----------
+check(CONFIG.mouse_wheel_altitude == true, "wheel 2 drives ALT SEL by default")
+check(CONFIG.wheel_altitude_number == 2, "ALT SEL listens on the third wheel")
+check(CONFIG.wheel_heading_number == 1, "heading listens on the thumbwheel")
+check(CONFIG.wheel_heading_fast == true, "the heading wheel uses the big step")
 citationx_alt_sel_ft, citationx_alt_legacy_ft = 10000, 10000
+citationx_hdg_sel_deg = 100
+
+-- the main scroll wheel (0) is never used and never consumed
+MOUSE_WHEEL_NUMBER = 0
 MOUSE_WHEEL_CLICKS = 3
 RESUME_MOUSE_WHEEL = false
 wheel_cb()
-check(citationx_alt_sel_ft == 10300, "three wheel notches up add 300 ft", citationx_alt_sel_ft)
+check(citationx_alt_sel_ft == 10000, "the main wheel leaves ALT SEL alone", citationx_alt_sel_ft)
+check(citationx_hdg_sel_deg == 100, "the main wheel leaves heading alone", citationx_hdg_sel_deg)
+check(RESUME_MOUSE_WHEEL == false, "the main wheel still reaches X-Plane (view zoom)")
+
+-- the thumbwheel (1) steps the heading bug by 10 degrees per notch
+MOUSE_WHEEL_NUMBER = 1
+MOUSE_WHEEL_CLICKS = 4
+RESUME_MOUSE_WHEEL = false
+wheel_cb()
+check(citationx_hdg_sel_deg == 140, "four thumbwheel notches add 40 deg", citationx_hdg_sel_deg)
+check(RESUME_MOUSE_WHEEL == true, "the thumbwheel notch is consumed (no view zoom)")
+MOUSE_WHEEL_CLICKS = -2
+wheel_cb()
+check(citationx_hdg_sel_deg == 120, "thumbwheel backward subtracts 20 deg", citationx_hdg_sel_deg)
+
+-- the third wheel (2) moves ALT SEL
+MOUSE_WHEEL_NUMBER = 2
+MOUSE_WHEEL_CLICKS = 3
+RESUME_MOUSE_WHEEL = false
+wheel_cb()
+check(citationx_alt_sel_ft == 10300, "three altitude-wheel notches add 300 ft", citationx_alt_sel_ft)
 check(citationx_alt_legacy_ft == 10300, "the legacy altitude dial follows", citationx_alt_legacy_ft)
-check(RESUME_MOUSE_WHEEL == true, "the wheel notch is consumed (no view zoom)")
+check(RESUME_MOUSE_WHEEL == true, "the altitude wheel notch is consumed")
 MOUSE_WHEEL_CLICKS = -5
 wheel_cb()
-check(citationx_alt_sel_ft == 9800, "wheel backward subtracts", citationx_alt_sel_ft)
+check(citationx_alt_sel_ft == 9800, "altitude wheel backward subtracts", citationx_alt_sel_ft)
 citationx_alt_sel_ft = 49800
 MOUSE_WHEEL_CLICKS = 10
 wheel_cb()
@@ -140,29 +168,27 @@ check(citationx_alt_sel_ft == 0, "ALT SEL clamps at the floor", citationx_alt_se
 
 citationx_set_wheel_altitude(false)
 MOUSE_WHEEL_CLICKS = 2
+RESUME_MOUSE_WHEEL = false
 local alt_before = citationx_alt_sel_ft
 wheel_cb()
 check(citationx_alt_sel_ft == alt_before, "the wheel row can switch it off")
+check(RESUME_MOUSE_WHEEL == false, "a switched-off wheel is not consumed")
 citationx_set_wheel_altitude(true)
 
--- thumbwheel -> heading bug (wheel number 2 by default)
-citationx_hdg_sel_deg = 100
-MOUSE_WHEEL_NUMBER = 2
-MOUSE_WHEEL_CLICKS = 4
-wheel_cb()
-check(citationx_hdg_sel_deg == 104, "the thumbwheel steps the heading bug", citationx_hdg_sel_deg)
-MOUSE_WHEEL_NUMBER = 1
-MOUSE_WHEEL_CLICKS = -2
-local hdg_before = citationx_hdg_sel_deg
-wheel_cb()
-check(citationx_hdg_sel_deg == hdg_before, "the main wheel never moves the heading")
 citationx_wheel_map_swap()
-check(CONFIG.wheel_altitude_number == 2 and CONFIG.wheel_heading_number == 1,
+check(CONFIG.wheel_altitude_number == 1 and CONFIG.wheel_heading_number == 2,
     "the wheel map can be swapped")
 citationx_wheel_map_swap()
 citationx_wheel_report()
 check(logged("last wheel event"), "the wheel report logs")
 MOUSE_WHEEL_NUMBER = nil
+
+-- big-step heading commands
+citationx_hdg_sel_deg = 355
+citationx_hdg_fast_up()
+check(citationx_hdg_sel_deg == 5, "fast heading up adds 10 deg and wraps", citationx_hdg_sel_deg)
+citationx_hdg_fast_down()
+check(citationx_hdg_sel_deg == 355, "fast heading down subtracts 10 deg", citationx_hdg_sel_deg)
 
 -- ---------- heading bug and the two light commands ----------
 citationx_hdg_sel_deg = 359
@@ -275,7 +301,7 @@ end
 for _, k in ipairs({ "input", "learn", "stick", "look" }) do
     check(keys[k] == nil, "input-layer module '" .. k .. "' is gone")
 end
-check(logged("input layer = mouse wheel"), "the status report names the wheel input")
+check(logged("input layer = thumbwheel"), "the status report names the wheel input")
 
 -- ---------- panel ----------
 drawn = {}
