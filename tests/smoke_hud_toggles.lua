@@ -94,21 +94,19 @@ chunk()
 check(type(SUITE_MODULES) == "table", "SUITE_MODULES exists")
 check(type(SUITE_STYLE) == "table", "SUITE_STYLE exists")
 
--- ---------- at load only the realism panel and the hub are on screen ----------
+-- ---------- at load only the hub is on screen ------------------------------
 check(CONFIG.status_enabled == true, "control panel is visible at load")
 check(CONFIG.axis_monitor == false, "axis monitor starts hidden")
-check(CONFIG.input_learn_mode == false, "learn mode starts hidden")
 
--- ---------- and nothing runs except the heading knob ------------------------
+-- ---------- and nothing else is switched on -------------------------------
 local on_at_load = {}
 for i = 1, #SUITE_MODULES do
   local m = SUITE_MODULES[i]
   if m.state() == "ON" then on_at_load[#on_at_load + 1] = m.key end
 end
 table.sort(on_at_load)
-check(#on_at_load == 2
-    and on_at_load[1] == "status" and on_at_load[2] == "stick",
-  "only the hub and the heading knob start ON",
+check(#on_at_load == 2 and on_at_load[1] == "status" and on_at_load[2] == "wheel",
+  "only the hub and the wheel row start ON",
   table.concat(on_at_load, ","))
 
 -- ---------- the duplicate cockpit readouts must not come back ----------
@@ -118,8 +116,8 @@ check(rawget(_G, "HUD_STYLE") == nil, "no HUD palette left behind")
 
 -- ---------- every module row is complete ----------
 local expected = {
-  "status", "axis", "log", "emerg", "input", "learn", "stick", "axmon",
-  "look", "cabin", "qrh", "landperf", "efb", "realism",
+  "status", "axis", "log", "emerg", "axmon", "texture", "wheel",
+  "avitab", "cabin", "qrh", "landperf", "efb", "realism",
 }
 local seen = {}
 for i, m in ipairs(SUITE_MODULES) do
@@ -176,38 +174,26 @@ for _, key in ipairs(expected) do pcall(citationx_toggle_module, key) end
 -- ---------- everything can be switched back on ----------
 citationx_set_all(true)
 check(CONFIG.log_enabled and CONFIG.emergency_enabled and CONFIG.axis_optimizer_enabled
-  and CONFIG.input_map_enabled, "enable all modules arms the hidden modules")
+  and CONFIG.axis_monitor, "enable all modules arms the hidden modules")
 citationx_set_all(false)
 check(not (CONFIG.log_enabled or CONFIG.emergency_enabled or CONFIG.axis_optimizer_enabled
-  or CONFIG.input_map_enabled or CONFIG.stick_hdg_enabled),
-  "disable all modules turns them off again")
+  or CONFIG.axis_monitor), "disable all modules turns them off again")
 
--- ---------- every key belongs to X-Plane --------------------------------
--- The suite no longer captures the mouse thumb-button combos (Ctrl+Shift+9 /
--- Ctrl+Shift+0) or any other keystroke while the mapper is OFF.
-CONFIG.input_map_enabled = false
+-- ---------- every key and button belongs to X-Plane -----------------------
+-- v3.0 registers no keystroke handler, no wheel handler and no input map, so
+-- there is nothing that could consume a pilot input.
+check(rawget(_G, "INPUT_BINDINGS") == nil, "no input binding table")
+check(rawget(_G, "CITX_BINDINGS") == nil, "no keystroke binding table")
+check(type(rawget(_G, "citationx_keystroke")) ~= "function", "no keystroke handler exists")
+check(type(rawget(_G, "citationx_mouse_wheel")) == "function", "the mouse wheel handler exists")
+
 check(CONFIG.alt_keys_enabled == nil, "the ALT SEL keystroke layer is gone")
-alt_sel_ft, alt_legacy_ft = 10000, 10000
-CONTROL_KEY, SHIFT_KEY, OPTION_KEY = true, true, false
-KEY_ACTION = "pressed"
-for _, combo in ipairs({ 0x30, 0x39 }) do
-  VKEY = combo
-  RESUME_KEY = false
-  citationx_keystroke()
-  check(RESUME_KEY == false, string.format("Ctrl+Shift+%X passes through", combo))
-end
-check(alt_sel_ft == 10000 and alt_legacy_ft == 10000,
-  "no keystroke moves ALT SEL any more", alt_sel_ft)
--- every other combo still belongs to X-Plane while the mapper is off
-VKEY = 0x31                                     -- Ctrl+Shift+1 (NAV lights)
-RESUME_KEY = false
-citationx_keystroke()
-check(RESUME_KEY == false, "other Ctrl+Shift keys are not consumed")
+check(CONFIG.input_map_enabled == nil, "the input mapper is gone")
+check(CONFIG.stick_hdg_enabled == nil, "the stick heading knob is gone")
 
 -- ---------- the control panel is the only thing drawn ----------
 CONFIG.status_enabled     = false
 CONFIG.axis_monitor       = false
-CONFIG.input_learn_mode   = false
 citationx_sim_time        = 100.0   -- expire the toggle toasts
 primitives = 0
 citationx_overlay()

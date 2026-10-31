@@ -25,6 +25,8 @@ SCREEN_WIDTH, SCREEN_HIGHT = 2560, 1440
 MOUSE_X, MOUSE_Y, MOUSE_STATUS = -1, -1, "up"
 RESUME_MOUSE_CLICK = false
 VKEY, CKEY = 0, ""
+-- the suite resolves the airport index and the checklist from here
+SCRIPT_DIRECTORY = "Scripts/"
 
 local draw_cb, click_cb
 local drawn = {}
@@ -48,6 +50,7 @@ function logMsg() end
 function toast() end
 function XPLMFindDataRef() return nil end
 function XPLMGetDataf() return 0 end
+function XPLMGetDatai() return 0 end
 
 -- ---------- load ----------
 local chunk = assert(loadfile(script))
@@ -112,16 +115,68 @@ efb_toggle_check_item(3)
 drawn = {}
 efb_draw()
 text = table.concat(drawn, "\n")
-check(text:find("2 / 8", 1, true) ~= nil, "CHECK counts two checked items", text)
+check(text:find("2 / 4", 1, true) ~= nil, "CHECK counts two checked items", text)
 
 efb_check_next()
 drawn = {}
 efb_draw()
 text = table.concat(drawn, "\n")
-check(text:find("START", 1, true) ~= nil, "CHECK advances to START")
+check(text:find("BEFORE TAKEOFF", 1, true) ~= nil, "CHECK advances to the next phase")
 
--- ---------- page 3: fuel ----------
+efb_check_prev()
+efb_check_prev()
+drawn = {}
+efb_draw()
+text = table.concat(drawn, "\n")
+check(text:find("SHUTDOWN", 1, true) ~= nil, "CHECK wraps backwards to the last phase")
+
+-- ---------- page 3: flight plan ----------
 efb_set_page(3)
+drawn = {}
+ok, err = pcall(efb_draw)
+check(ok, "ROUTE page draws", err)
+text = table.concat(drawn, "\n")
+check(text:find("DEPARTURE", 1, true) ~= nil, "ROUTE shows the departure field")
+check(text:find("DESTINATION", 1, true) ~= nil, "ROUTE shows the destination field")
+check(text:find("BUILD", 1, true) ~= nil, "ROUTE shows the build key")
+
+-- type KJFK -> EDDF on the keypad
+for _, k in ipairs({ "K", "J", "F", "K" }) do efb_route_press(k) end
+efb_route_set_field(2)
+for _, k in ipairs({ "E", "D", "D", "F" }) do efb_route_press(k) end
+check(EFB_CONFIG.route_dep == "KJFK", "ROUTE records the departure", EFB_CONFIG.route_dep)
+check(EFB_CONFIG.route_dest == "EDDF", "ROUTE records the destination", EFB_CONFIG.route_dest)
+
+drawn = {}
+efb_draw()
+text = table.concat(drawn, "\n")
+local dist_nm, trk
+for _, s in ipairs(drawn) do
+  local d, t = s:match("^(%d+) NM / (%d+) T$")
+  if d then dist_nm, trk = tonumber(d), tonumber(t) end
+end
+check(dist_nm ~= nil and dist_nm > 3300 and dist_nm < 3600,
+  "ROUTE great-circle distance KJFK-EDDF", dist_nm)
+check(trk ~= nil and trk > 40 and trk < 80, "ROUTE initial track eastbound", trk)
+
+-- writing the .fms must produce a loadable 1100 header
+local out_dir = os.getenv("TMPDIR") or "/tmp/"
+EFB_CONFIG.route_out_dir = out_dir
+efb_route_build()
+local fms = io.open(out_dir .. "KJFK-EDDF.fms", "r")
+check(fms ~= nil, "ROUTE writes <DEP>-<DEST>.fms")
+if fms then
+  local body = fms:read("*a")
+  fms:close()
+  check(body:find("1100 Version", 1, true) ~= nil, "FMS has a 1100 header")
+  check(body:find("ADEP KJFK", 1, true) ~= nil, "FMS declares the departure")
+  check(body:find("ADES EDDF", 1, true) ~= nil, "FMS declares the destination")
+  check(body:find("1 KJFK ADEP", 1, true) ~= nil, "FMS has an airport row")
+end
+EFB_CONFIG.route_out_dir = nil
+
+-- ---------- page 4: fuel ----------
+efb_set_page(4)
 drawn = {}
 ok, err = pcall(efb_draw)
 check(ok, "FUEL page draws", err)
@@ -158,7 +213,7 @@ check(EFB_CONFIG.rwy_condition == 1, "condition wraps to DRY", EFB_CONFIG.rwy_co
 drawn = {}
 efb_draw()
 local rows = efb_clickable_rows()
-check(#rows >= 3, "tabs registered as clickable rows", #rows)
+check(#rows >= 4, "tabs registered as clickable rows", #rows)
 
 local function click_center(r)
   MOUSE_X = (r.x1 + r.x2) / 2
@@ -174,8 +229,17 @@ check(RESUME_MOUSE_CLICK == true, "tab click is consumed")
 drawn = {}
 efb_draw()
 text = table.concat(drawn, "\n")
-check(text:find("FUEL PLANNING", 1, true) ~= nil, "third tab opens FUEL")
+check(text:find("FLIGHT PLAN", 1, true) ~= nil, "third tab opens ROUTE", text)
 
+rows = efb_clickable_rows()
+local tab4 = rows[4]
+click_center(tab4)
+drawn = {}
+efb_draw()
+text = table.concat(drawn, "\n")
+check(text:find("FUEL PLANNING", 1, true) ~= nil, "fourth tab opens FUEL", text)
+
+rows = efb_clickable_rows()
 local tab2 = rows[2]
 click_center(tab2)
 drawn = {}

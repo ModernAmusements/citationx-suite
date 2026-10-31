@@ -22,7 +22,10 @@ do
   end
   fh:close()
 end
-local function is_array(t) return t and t:find("%[%d+%]") ~= nil end
+-- byte[] datarefs (acf paths, strings) are arrays without an index: they are
+-- read with dataref_table() but never need an explicit subscript.
+local function is_array(t) return t and t:find("%[") ~= nil end
+local function needs_index(t) return t and t:find("%[%d+%]") ~= nil end
 
 ------------------------------------------------------------ mock FlyWithLua --
 -- Every dataref()/dataref_table() is attributed to the script being loaded.
@@ -178,7 +181,7 @@ for _, b in ipairs(bound) do
     if not (b.path:match("^laminar/") or b.path:match("^kp/")) then
       print("  PROBLEM  not in DataRefs.txt: " .. where); problems = problems + 1
     end
-  elseif is_array(typ) and not b.index then
+  elseif is_array(typ) and needs_index(typ) and not b.index then
     print("  PROBLEM  array without index: " .. where .. " (" .. typ .. ")"); problems = problems + 1
   end
 end

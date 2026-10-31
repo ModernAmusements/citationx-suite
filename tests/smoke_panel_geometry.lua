@@ -405,7 +405,7 @@ do
   efb_draw()
 
   -- every page must render without leaving the screen
-  for _, page in ipairs({ 2, 3, 1 }) do
+  for _, page in ipairs({ 2, 3, 4, 1 }) do
     efb_set_page(page)
     reset()
     efb_draw()

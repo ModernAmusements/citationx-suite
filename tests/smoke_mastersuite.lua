@@ -1,39 +1,46 @@
--- Mock-FlyWithLua smoke test for the CitationX_MasterSuite stick-heading knob.
--- Verifies: the knob only ever reads the DS4 "Axis 3" raw axes (USB 3 /
--- Bluetooth 28), the L2/R2 triggers can never move the bug, a dead interface
--- parked at a hard extreme is vetoed after 6 s, and the R3 look mode still
--- borrows the stick without the bug drifting.
+--[[
+  smoke_mastersuite.lua — mock-FlyWithLua smoke test for the Master Suite hub.
+
+  v3.0 has no input layer at all: no keystroke handler, no mouse-wheel handler,
+  no controller-button map and no axis-to-heading-bug knob. This test pins that
+  contract and then exercises what is left: the pitch/roll axis optimizer, the
+  flight recorder, the emergency generator, the livery cycler and the panel.
+
+  Usage:
+    HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
+--]]
 
 local TMP = os.getenv("TMPDIR") or "/tmp/"
 SCRIPT_DIRECTORY = TMP
 PLANE_ICAO = "C750"
 SCREEN_WIDTH, SCREEN_HIGHT = 2560, 1440
+MOUSE_X, MOUSE_Y, MOUSE_STATUS = -1, -1, "up"
+RESUME_MOUSE_CLICK = false
 
+-- ---------- mock FlyWithLua ----------
 local defaults = {
     mach_no = 0, g_nrml = 1, elevation_m = 0, ias_kts = 0,
     pitch_deg = 0, roll_deg = 0, citationx_sim_time = 0,
     joy_pitch = 0, joy_roll = 0, joy_avail_pitch = 1, joy_avail_roll = 1,
     yoke_pitch_ratio = 0, yoke_roll_ratio = 0,
     ovr_joystick_pitch = 0, ovr_joystick_roll = 0,
-    alt_sel_ft = 10000, alt_legacy_ft = 10000, hdg_sel_deg = 180,
-    view_panel_type = 2,   -- 3-D cockpit lit: the look tests run there
+    citationx_livery_index = 0,
 }
 
-function dataref(name, path, access, index)
+function dataref(name)
     _G[name] = defaults[name] or 0
 end
 
-local axis_values, axis_assign, button_assign, button_values
+local livery_bytes = {}
+local axis_values, axis_assign
 function dataref_table(path)
     local t = setmetatable({}, { __index = function() return 0 end })
     if path == "sim/joystick/joystick_axis_values" then
         axis_values = t
     elseif path == "sim/joystick/joystick_axis_assignments" then
         axis_assign = t
-    elseif path == "sim/joystick/joystick_button_assignments" then
-        button_assign = t
-    elseif path == "sim/joystick/joystick_button_values" then
-        button_values = t
+    elseif path == "sim/aircraft/view/acf_livery_path" then
+        return livery_bytes
     end
     return t
 end
@@ -47,273 +54,318 @@ local function logged(text)
     return false
 end
 
-function create_command() end
-function add_macro() end
-function command_once() end
-function do_every_frame() end
-function do_every_draw() end
-function do_on_exit() end
-function do_on_keystroke() end
-function do_on_mouse_click() end
-function do_on_mouse_wheel() end
+local commands, macros = {}, {}
+function create_command(name, description, function_body) commands[name] = true end
+function add_macro(label) macros[label] = true end
+function command_once(name) commands[#commands + 1] = name; commands.executed[#commands.executed + 1] = name end
+commands.executed = {}
+
+local frame_cb, draw_cb, exit_cb, click_cb
+local keystroke_cb, wheel_cb
+local function as_fn(f)
+    if type(f) == "function" then return f end
+    return assert(loadstring(f))
+end
+function do_every_frame(f) frame_cb = as_fn(f) end
+function do_every_draw(f) draw_cb = as_fn(f) end
+function do_on_exit(f) exit_cb = as_fn(f) end
+function do_on_mouse_click(f) click_cb = as_fn(f) end
+function do_on_keystroke(f) keystroke_cb = as_fn(f) end
+function do_on_mouse_wheel(f) wheel_cb = as_fn(f) end
+
+local drawn = {}
+function draw_string(x, y, text) drawn[#drawn + 1] = tostring(text) end
+draw_string_Helvetica_10 = draw_string
+draw_string_Helvetica_12 = draw_string
+draw_string_Helvetica_18 = draw_string
+function measure_string(t) return #tostring(t) * 7 end
+function glColor4f() end
+function glRectf() end
+function XPLMSetGraphicsState() end
 function XPLMFindDataRef() return nil end
 function XPLMGetDataf() return 0 end
 
-local SCRIPT = arg[1] or "CitationX_MasterSuite.lua"
+local SCRIPT = arg[1] or "Scripts/CitationX_MasterSuite.lua"
 dofile(SCRIPT)
 
--- The heading knob is the one input the suite keeps, so it is already ON; set
--- it explicitly anyway so this harness is about the stick logic itself.
-CONFIG.stick_hdg_enabled = true
+local fails = 0
+local function check(ok, label, detail)
+    if ok then
+        print("PASS  " .. label)
+    else
+        print("FAIL  " .. label .. (detail ~= nil and ("  -> " .. tostring(detail)) or ""))
+        fails = fails + 1
+    end
+end
 
 local function frame(t)
     citationx_sim_time = t
     citationx_frame()
 end
 
-local function delta(after, before)
-    local d = (after - before) % 360
-    if d > 180 then d = d - 360 end
-    return d
+-- ---------- keyboard layer gone, mouse wheel is the only reader ----------
+check(keystroke_cb == nil, "no do_on_keystroke handler is registered")
+check(wheel_cb ~= nil, "the mouse wheel handler is registered")
+for _, g in ipairs({ "INPUT_BINDINGS", "CITX_BINDINGS", "JOY_BINDINGS",
+                     "INPUT_BINDING_LIST", "VIEW_PAN" }) do
+    check(_G[g] == nil, "no " .. g .. " global")
+end
+for _, k in ipairs({ "stick_hdg_enabled", "alt_keys_enabled", "joy_autobind_enabled",
+                     "view_pan_enabled", "trigger_throttle_enabled", "learn_mode" }) do
+    check(CONFIG[k] == nil, "CONFIG." .. k .. " no longer exists")
+end
+check(CONFIG.axis_optimizer_enabled == true, "the axis optimizer is ON by default")
+check(not logged("heading bug"), "no heading-bug engine in the log")
+
+-- ---------- mouse wheel -> ALT SEL ----------
+check(CONFIG.mouse_wheel_altitude == true, "the wheel drives ALT SEL by default")
+citationx_alt_sel_ft, citationx_alt_legacy_ft = 10000, 10000
+MOUSE_WHEEL_CLICKS = 3
+RESUME_MOUSE_WHEEL = false
+wheel_cb()
+check(citationx_alt_sel_ft == 10300, "three wheel notches up add 300 ft", citationx_alt_sel_ft)
+check(citationx_alt_legacy_ft == 10300, "the legacy altitude dial follows", citationx_alt_legacy_ft)
+check(RESUME_MOUSE_WHEEL == true, "the wheel notch is consumed (no view zoom)")
+MOUSE_WHEEL_CLICKS = -5
+wheel_cb()
+check(citationx_alt_sel_ft == 9800, "wheel backward subtracts", citationx_alt_sel_ft)
+citationx_alt_sel_ft = 49800
+MOUSE_WHEEL_CLICKS = 10
+wheel_cb()
+check(citationx_alt_sel_ft == 50000, "ALT SEL clamps at the ceiling", citationx_alt_sel_ft)
+citationx_alt_sel_ft = 100
+MOUSE_WHEEL_CLICKS = -10
+wheel_cb()
+check(citationx_alt_sel_ft == 0, "ALT SEL clamps at the floor", citationx_alt_sel_ft)
+
+citationx_set_wheel_altitude(false)
+MOUSE_WHEEL_CLICKS = 2
+local alt_before = citationx_alt_sel_ft
+wheel_cb()
+check(citationx_alt_sel_ft == alt_before, "the wheel row can switch it off")
+citationx_set_wheel_altitude(true)
+
+-- thumbwheel -> heading bug (wheel number 2 by default)
+citationx_hdg_sel_deg = 100
+MOUSE_WHEEL_NUMBER = 2
+MOUSE_WHEEL_CLICKS = 4
+wheel_cb()
+check(citationx_hdg_sel_deg == 104, "the thumbwheel steps the heading bug", citationx_hdg_sel_deg)
+MOUSE_WHEEL_NUMBER = 1
+MOUSE_WHEEL_CLICKS = -2
+local hdg_before = citationx_hdg_sel_deg
+wheel_cb()
+check(citationx_hdg_sel_deg == hdg_before, "the main wheel never moves the heading")
+citationx_wheel_map_swap()
+check(CONFIG.wheel_altitude_number == 2 and CONFIG.wheel_heading_number == 1,
+    "the wheel map can be swapped")
+citationx_wheel_map_swap()
+citationx_wheel_report()
+check(logged("last wheel event"), "the wheel report logs")
+MOUSE_WHEEL_NUMBER = nil
+
+-- ---------- heading bug and the two light commands ----------
+citationx_hdg_sel_deg = 359
+citationx_hdg_up()
+check(citationx_hdg_sel_deg == 0, "heading bug wraps forward past north", citationx_hdg_sel_deg)
+citationx_hdg_down()
+check(citationx_hdg_sel_deg == 359, "heading bug wraps backward past north", citationx_hdg_sel_deg)
+
+local n0 = #commands.executed
+citationx_taxi_light()
+check(commands.executed[#commands.executed] == "sim/lights/taxi_lights_toggle",
+    "taxi light uses X-Plane's own toggle", commands.executed[#commands.executed])
+citationx_landing_lights()
+check(commands.executed[#commands.executed] == "sim/lights/landing_lights_toggle",
+    "landing lights use X-Plane's own toggle", commands.executed[#commands.executed])
+check(#commands.executed == n0 + 2, "each action fires exactly one command")
+
+-- ---------- axis optimizer ----------
+frame(1.0)
+check(ovr_joystick_pitch == 1 and ovr_joystick_roll == 1,
+    "optimizer takes the pitch/roll axes", tostring(ovr_joystick_pitch) .. "/" .. tostring(ovr_joystick_roll))
+
+joy_pitch, joy_roll = 0.5, -0.5
+for i = 1, 40 do frame(1.0 + i / 60) end
+check(yoke_pitch_ratio > 0.30 and yoke_pitch_ratio < 0.50,
+    "half stick is shaped, not passed through", yoke_pitch_ratio)
+check(yoke_roll_ratio < -0.30 and yoke_roll_ratio > -0.50,
+    "roll is shaped symmetrically", yoke_roll_ratio)
+table.insert(logs, "")
+check(logged("axis optimizer engaged"), "engaging the optimizer is logged")
+
+-- deadzone: a 1 % input never reaches the controls
+joy_pitch, joy_roll = 0.01, -0.01
+for i = 1, 200 do frame(2.0 + i / 60) end
+check(math.abs(yoke_pitch_ratio) < 0.002, "deadzone swallows a 1 % input", yoke_pitch_ratio)
+
+-- full deflection still reaches the stop
+joy_pitch, joy_roll = 1.0, -1.0
+for i = 1, 200 do frame(5.0 + i / 60) end
+check(yoke_pitch_ratio > 0.99, "full pitch reaches the stop", yoke_pitch_ratio)
+check(yoke_roll_ratio < -0.99, "full roll reaches the stop", yoke_roll_ratio)
+
+-- switching it off hands the axes straight back to X-Plane
+citationx_set_axis(false)
+check(CONFIG.axis_optimizer_enabled == false, "citationx_set_axis(false) disables it")
+frame(10.0)
+check(ovr_joystick_pitch == 0 and ovr_joystick_roll == 0,
+    "releasing the optimizer clears both overrides")
+check(logged("axis optimizer released"), "release is logged")
+
+citationx_set_axis(true)
+frame(11.0)
+check(ovr_joystick_pitch == 1, "re-enabling it takes the axes again")
+
+-- a missing stick must not leave X-Plane overridden
+joy_avail_pitch, joy_avail_roll = 0, 0
+frame(12.0)
+check(ovr_joystick_pitch == 0 and ovr_joystick_roll == 0,
+    "no mapped stick releases the override")
+joy_avail_pitch, joy_avail_roll = 1, 1
+frame(13.0)
+
+-- ---------- flight recorder ----------
+check(CONFIG.log_enabled == false, "the recorder starts off")
+citationx_set_logging(true)
+check(CONFIG.log_enabled == true, "citationx_set_logging(true) arms it")
+local rec = io.open(TMP .. "XPlane_CitationX_FlightLog.csv", "r")
+check(rec ~= nil, "the recorder creates its CSV")
+if rec then rec:close() end
+frame(20.0)
+frame(21.5)
+citationx_set_logging(false)
+local rec2 = io.open(TMP .. "XPlane_CitationX_FlightLog.csv", "r")
+local body = rec2 and rec2:read("*a") or ""
+if rec2 then rec2:close() end
+check(body:find("Time_Sec,Altitude_FT", 1, true) ~= nil, "the CSV has a header")
+check(select(2, body:gsub("\n", "")) >= 2, "at least one sample was written", body)
+
+-- ---------- emergency generator ----------
+citationx_set_emergency(true)
+check(CONFIG.emergency_enabled == true, "the emergency generator arms")
+citationx_test_emergency()
+check(logged("TEST bleed air"), "the test command logs")
+frame(30.0)
+citationx_set_emergency(false)
+frame(31.0)
+
+-- ---------- livery cycler ----------
+citationx_texture_next()
+check(commands.executed[#commands.executed] == "sim/operation/next_livery",
+    "texture_next runs X-Plane's own next_livery", commands.executed[#commands.executed])
+citationx_texture_prev()
+check(commands.executed[#commands.executed] == "sim/operation/prev_livery",
+    "texture_prev runs X-Plane's own prev_livery", commands.executed[#commands.executed])
+citationx_texture_report()
+check(logged("texture = "), "the texture is reported to the log")
+CONFIG.texture_cycle_enabled = false
+local before = #commands.executed
+citationx_texture_next()
+check(#commands.executed == before, "the cycler can be disabled")
+CONFIG.texture_cycle_enabled = true
+
+-- ---------- module registry ----------
+local keys = {}
+for _, m in ipairs(SUITE_MODULES) do keys[m.key] = true end
+for _, k in ipairs({ "status", "axis", "log", "emerg", "axmon", "texture",
+                     "wheel", "avitab", "cabin", "qrh", "landperf", "efb", "realism" }) do
+    check(keys[k] == true, "module '" .. k .. "' is registered")
+end
+for _, k in ipairs({ "input", "learn", "stick", "look" }) do
+    check(keys[k] == nil, "input-layer module '" .. k .. "' is gone")
+end
+check(logged("input layer = mouse wheel"), "the status report names the wheel input")
+
+-- ---------- panel ----------
+drawn = {}
+draw_cb()
+local text = table.concat(drawn, "\n")
+check(text:find("CITATION X", 1, true) ~= nil, "the panel draws its title")
+check(text:find("MASTER SUITE", 1, true) ~= nil, "the panel shows its version")
+check(text:find("NO KEYBINDS", 1, true) ~= nil, "the panel says it owns no keybinds")
+check(text:find("AIRCRAFT TEXTURE", 1, true) ~= nil, "the texture row is on the panel")
+
+local h = citationx_panel_height()
+local top = SUITE_STYLE.top
+check(top - h >= 0, "the panel fits on the screen", top - h)
+
+-- click the second row (axis optimizer) and check it toggles
+local function row_y(i)
+    local body_top = top - SUITE_STYLE.header_h
+    local first_y = body_top - SUITE_STYLE.sub_h - 15
+    local row_top = first_y + SUITE_STYLE.row_h - (i - 1) * SUITE_STYLE.row_h
+    return row_top - 11
+end
+local function click(x, y)
+    MOUSE_X, MOUSE_Y, MOUSE_STATUS = x, y, "down"
+    RESUME_MOUSE_CLICK = false
+    click_cb()
+    MOUSE_STATUS = "up"
 end
 
-local function check(name, cond, detail)
-    if cond then
-        print("PASS  " .. name)
-    else
-        print("FAIL  " .. name .. (detail and ("  -> " .. tostring(detail)) or ""))
-        os.exit(1)
-    end
+local axis_was = CONFIG.axis_optimizer_enabled
+click(SUITE_STYLE.x + 40, row_y(2))
+check(CONFIG.axis_optimizer_enabled == not axis_was, "clicking the axis row toggles it")
+check(RESUME_MOUSE_CLICK == true, "the click is consumed")
+click(SUITE_STYLE.x + 40, row_y(2))
+check(CONFIG.axis_optimizer_enabled == axis_was, "clicking it again restores it")
+
+-- the texture row is an action, not a switch
+local n = #commands.executed
+click(SUITE_STYLE.x + 40, row_y(6))
+check(#commands.executed == n + 1, "clicking the texture row cycles the livery")
+
+-- AviTab row: with the plugin absent it must toast, never fire a command
+local avitab_row = nil
+for i, m in ipairs(SUITE_MODULES) do if m.key == "avitab" then avitab_row = i end end
+check(avitab_row ~= nil, "the AviTab row is on the panel")
+check(avitab_state() == "ABSENT", "AviTab reports ABSENT while the plugin is missing")
+if avitab_row then
+  local before_av = #commands.executed
+  click(SUITE_STYLE.x + 40, row_y(avitab_row))
+  check(#commands.executed == before_av, "no AviTab command is fired when it is absent")
+  citationx_avitab_charts()
+  check(#commands.executed == before_av, "citationx_avitab_charts() is a no-op when absent")
+  citationx_avitab_report()
+  check(logged("AviTab is not installed"), "the report says AviTab is not installed")
 end
 
--- Real DS4 layout. Slot 0 (first device, USB): 0 roll, 1 pitch, 2 yaw,
--- 3 right-stick Y (free = the heading knob), 4/5 L2/R2. Slot 1 (second
--- device, Bluetooth): the same layout offset by 25, so 28 is Axis 3 there.
-local function publish_pad(y3, y28)
-    axis_assign[0], axis_assign[1], axis_assign[2] = 2, 1, 3
-    axis_assign[25], axis_assign[26], axis_assign[27] = 2, 1, 3
-    for _, i in ipairs({ 0, 1, 2, 3, 25, 26, 27 }) do axis_values[i] = 0.5 end
-    axis_values[3], axis_values[28] = y3, y28
-    axis_values[4], axis_values[5] = 0.0, 0.0          -- L2/R2 at rest
-    axis_values[29], axis_values[30] = 0.0, 0.0
+-- header drag moves the panel
+MOUSE_X, MOUSE_Y = SUITE_STYLE.x + 80, top - 10
+MOUSE_STATUS = "down"
+click_cb()
+MOUSE_X, MOUSE_Y, MOUSE_STATUS = SUITE_STYLE.x + 80 - 120, top - 10 - 40, "drag"
+click_cb()
+check(SUITE_STYLE.x < 470, "the panel follows a header drag", SUITE_STYLE.x)
+MOUSE_STATUS = "up"
+MOUSE_X, MOUSE_Y = -1, -1
+click_cb()
+
+-- footer hides the panel (redraw first: the click rects are rebuilt each draw)
+top = SUITE_STYLE.top
+h = citationx_panel_height()
+drawn = {}
+draw_cb()
+local footer_y = (top - h) + 7 + 11
+click(SUITE_STYLE.x + SUITE_STYLE.width / 2, footer_y)
+check(CONFIG.status_enabled == false, "the hide button closes the panel")
+frame(200.0)   -- let the 2 s toast expire
+drawn = {}
+draw_cb()
+check(#drawn == 0, "a hidden panel draws nothing", #drawn)
+citationx_set_status(true)
+
+-- ---------- shutdown ----------
+exit_cb()
+check(ovr_joystick_pitch == 0 and ovr_joystick_roll == 0,
+    "shutdown releases both overrides")
+
+print("")
+if fails == 0 then
+    print("ALL MASTER SUITE TESTS PASSED")
+    os.exit(0)
+else
+    print(fails .. " MASTER SUITE TEST(S) FAILED")
+    os.exit(1)
 end
-
-publish_pad(0.5, 0.5)
-frame(0)   -- baseline frame (dt = 0)
-frame(1)   -- learn rests
-
--- 1. triggers must never grab the heading bug --------------------------------
-local h0 = hdg_sel_deg
-axis_values[4], axis_values[5] = 1.0, 1.0          -- squeeze both triggers
-axis_values[29], axis_values[30] = 1.0, 1.0
-frame(2)
-check("L2/R2 do not move heading", hdg_sel_deg == h0, delta(hdg_sel_deg, h0))
-axis_values[4], axis_values[5] = 0.0, 0.0
-axis_values[29], axis_values[30] = 0.0, 0.0
-frame(3)
-
--- 2. Axis 3 (first device slot) drives the knob -------------------------------
-local before = hdg_sel_deg
-axis_values[3] = 0.9
-frame(4)
-local d = delta(hdg_sel_deg, before)
-check("Axis 3 drives heading", d > 10, d)
-axis_values[3] = 0.5
-frame(5)
-
--- 3. Axis 3 of the second device slot does the same (USB <-> Bluetooth) -------
-before = hdg_sel_deg
-axis_values[28] = 0.9
-frame(6)
-d = delta(hdg_sel_deg, before)
-check("Axis 3 (second slot, raw 28) drives heading", d > 10, d)
-axis_values[28] = 0.5
-frame(7)
-
--- 4. every other stick axis is ignored ---------------------------------------
-axis_values[2] = 0.9                               -- right stick X (yaw)
-before = hdg_sel_deg
-frame(8)
-check("yaw axis does not move heading", hdg_sel_deg == before,
-    delta(hdg_sel_deg, before))
-axis_values[2] = 0.5
-axis_values[27] = 0.9                              -- yaw, second slot
-before = hdg_sel_deg
-frame(9)
-check("second-slot yaw axis does not move heading", hdg_sel_deg == before,
-    delta(hdg_sel_deg, before))
-axis_values[27] = 0.5
-frame(10)
-
--- 5. a dead interface parked at 0 from the start never qualifies --------------
--- Reload with the USB slot reading 0 (unplugged) and Bluetooth live at centre.
-logs = {}
-dofile(SCRIPT)
-CONFIG.stick_hdg_enabled = true
-publish_pad(0.0, 0.5)                              -- raw 3 dead, raw 28 alive
-frame(11)
-frame(12)
-before = hdg_sel_deg
-frame(13)
-check("dead slot at raw 0 cannot turn the bug", hdg_sel_deg == before,
-    delta(hdg_sel_deg, before))
-axis_values[28] = 0.9                              -- live slot still works
-before = hdg_sel_deg
-frame(14)
-check("live slot still drives heading", delta(hdg_sel_deg, before) > 10,
-    delta(hdg_sel_deg, before))
-axis_values[28] = 0.5
-frame(15)
-
--- 6. a slot stuck at a hard extreme is vetoed after the 6 s watchdog ----------
-axis_values[3] = 0.5                               -- pad reports Axis 3: learn rest
-frame(16)
-axis_values[3] = 1.0                               -- then hold it at the hard stop
-for t = 17, 24 do frame(t) end                     -- 8 s > 6 s threshold
-local settled = hdg_sel_deg
-frame(25)
-frame(26)
-check("stuck slot stops the bug", hdg_sel_deg == settled,
-    delta(hdg_sel_deg, settled))
-
--- 7. the slot coming back to centre revives it -------------------------------
-axis_values[3] = 0.5
-frame(27)                                          -- dead flag clears
-axis_values[3] = 0.9
-before = hdg_sel_deg
-frame(28)
-d = delta(hdg_sel_deg, before)
-check("revived slot drives heading again", d > 10, d)
-axis_values[3] = 0.5
-frame(29)
-
--- 8. module toggle re-arms cleanly -------------------------------------------
-citationx_set_stick_hdg(false)
-citationx_set_stick_hdg(true)
-frame(30)                                          -- re-learn the rest
-axis_values[3] = 0.9
-before = hdg_sel_deg
-frame(31)
-check("works after toggle", delta(hdg_sel_deg, before) > 10,
-    delta(hdg_sel_deg, before))
-axis_values[3] = 0.5
-frame(32)
-
--- 9. regression: X-Plane reports -0.01 before the pad enumerates --------------
--- The 2026-10-24 log showed every axis with a learned rest of -0.01, so the
--- knob never locked. Reload the script with Axis 3 "not live yet".
-logs = {}
-dofile(SCRIPT)
-CONFIG.stick_hdg_enabled = true
-
-publish_pad(-0.01, -0.01)                          -- must NOT latch -0.01
-frame(33)
-publish_pad(0.5, 0.5)                              -- pad enumerates, centred
-frame(34)
-axis_values[3] = 0.9
-before = hdg_sel_deg
-frame(35)
-d = delta(hdg_sel_deg, before)
-check("late-enumerating Axis 3 still drives heading", d > 10, d)
-axis_values[3] = 0.5
-frame(36)
-
--- 10. auto-bind uses ONLY the buttons X-Plane reports as unassigned -----------
--- The feature is off by default (it hijacked spare buttons in flight), so turn
--- it on explicitly for this check.
-logs = {}
-CONFIG.joy_autobind_enabled = true
-for b = 8, 17 do button_assign[64 + b] = 500 end   -- second slot fully mapped
-citationx_autobind_joy()
-check("free button 8 bound in the free slot", JOY_BINDINGS[8] ~= nil)
-check("first free button gets the panel", JOY_BINDINGS[8].label == "CONTROL PANEL",
-    JOY_BINDINGS[8] and JOY_BINDINGS[8].label)
-check("second free button gets realism", JOY_BINDINGS[9].label == "REALISM PANEL",
-    JOY_BINDINGS[9] and JOY_BINDINGS[9].label)
-check("already-mapped button is never overwritten", JOY_BINDINGS[64 + 8] == nil)
-local panel_before = CONFIG.status_enabled
-JOY_BINDINGS[8].action()
-check("bound action actually runs", CONFIG.status_enabled ~= panel_before)
-CONFIG.status_enabled = panel_before
-
--- 11. R3 + right stick looks around the 3-D cockpit ---------------------------
--- The feature is off by default now, so enable it explicitly for this check and
--- pin the look pair to Axis 3 (yaw) + its neighbour so the test does not depend
--- on auto-detection. Holding R3 must take the stick over: same stick pans the
--- head, the heading bug stays put.
-CONFIG.view_pan_enabled  = true
-CONFIG.view_pan_axis_x   = 3
-CONFIG.view_pan_axis_y   = 28
-axis_values[3], axis_values[28] = 0.5, 0.5
-frame(40)
-local hdg_before_look = hdg_sel_deg
-local psi0, the0 = view_head_psi, view_head_the
-button_values[11] = 1
-axis_values[3] = 0.9
-frame(41)
-check("R3 + stick yaws the 3-D cockpit view", view_head_psi ~= psi0,
-    view_head_psi)
-check("R3 suppresses the heading knob", hdg_sel_deg == hdg_before_look,
-    delta(hdg_sel_deg, hdg_before_look))
-
-axis_values[3] = 0.5
-axis_values[28] = 0.1                              -- stick pushed up
-frame(42)
-check("R3 + stick up pitches the view up", view_head_the > the0, view_head_the)
-
-axis_values[28] = 0.5
-button_values[11] = 0
-frame(43)
-axis_values[3] = 0.9
-local hdg_after_look = hdg_sel_deg
-frame(44)
-check("heading knob resumes after R3 is released",
-    delta(hdg_sel_deg, hdg_after_look) > 10,
-    delta(hdg_sel_deg, hdg_after_look))
-
--- centring the stick while R3 is held must not drift the view
-button_values[11] = 1
-axis_values[3], axis_values[28] = 0.5, 0.5
-frame(45)
-local psi_hold, the_hold = view_head_psi, view_head_the
-frame(46)
-check("R3 at stick centre holds the view",
-    view_head_psi == psi_hold and view_head_the == the_hold)
-button_values[11] = 0
-frame(47)
-
--- releasing R3 while the stick is still deflected must not hand the stick back
--- to the heading bug until it re-centres
-button_values[11] = 1
-axis_values[3], axis_values[28] = 0.5, 0.5
-frame(48)
-axis_values[3] = 0.9
-frame(49)
-local hdg_latched = hdg_sel_deg
-button_values[11] = 0
-frame(50)
-check("heading knob waits for the stick to centre after R3",
-    hdg_sel_deg == hdg_latched, delta(hdg_sel_deg, hdg_latched))
-axis_values[3] = 0.5
-frame(51)
-axis_values[3] = 0.9
-local hdg_recentre = hdg_sel_deg
-frame(52)
-check("heading knob resumes after the stick re-centres",
-    delta(hdg_sel_deg, hdg_recentre) > 10,
-    delta(hdg_sel_deg, hdg_recentre))
-
--- in a 2-D view the head offsets must not be written (R3 asks X-Plane for the
--- 3-D cockpit first; the pan starts on a later frame)
-view_panel_type = 0
-button_values[11] = 1
-axis_values[3], axis_values[28] = 0.9, 0.5
-local psi_2d = view_head_psi
-frame(53)
-check("2-D view: no head-offset writes", view_head_psi == psi_2d, view_head_psi)
-button_values[11] = 0
-axis_values[3] = 0.5
-view_panel_type = 2
-frame(54)
-
-print("\nALL MASTERSUITE STICK TESTS PASSED")

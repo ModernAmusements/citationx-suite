@@ -1,19 +1,19 @@
-# Script status — verified 2026-10-24, input reset 2026-10-30
+# Script status — verified 2026-10-31 (v3.0, no keyboard layer)
 
 Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
-`tests/check_kpcrew_modules.lua`, `tests/smoke_mastersuite.lua`,
-`tests/smoke_hud_toggles.lua`, `tests/smoke_realism.lua`,
+`tests/check_kpcrew_modules.lua`, `tests/smoke_mastersuite.lua`, `tests/smoke_hud_toggles.lua`,
+`tests/smoke_efb.lua`, `tests/smoke_checklist.lua`, `tests/smoke_realism.lua`,
 `tests/smoke_panel_geometry.lua`.
 
 ## Live in `Scripts/`
 
 | Script | State | Evidence / purpose |
 | --- | --- | --- |
-| `CitationX_MasterSuite.lua` | ✅ works* | `status report`; smoke tests pass. At load the suite shows exactly two panels: the realism panel and the Master Suite hub (`status` is ON). Every other drawing module is OFF. **Input: the only pilot input the suite reads is the heading bug on DS4 Axis 3 (`stick_hdg_axes = { 3, 28 }`, USB/Bluetooth); no keystroke is consumed — native X-Plane key bindings work, and the keyboard layer, joystick-button map, mouse thumb-button ALT SEL keys, L2/R2 analog throttle, arrow-key tilt, stick ALT SEL, axis optimizer, R3 look and realism handling curve are all OFF at load** (2026-10-30 reset, §32). The mouse wheel stays with X-Plane (view zoom). The knob's learned rest no longer latches X-Plane's `-0.01` pre-enumeration value. R3 + right stick pans `pilots_head_psi/the` only when COCKPIT LOOK is switched on; it then suppresses the heading knob while held. Free controller buttons are auto-bound only when the input mapper is switched on. |
+| `CitationX_MasterSuite.lua` | ✅ tests | v3.0 hub. `status report` says `input layer = mouse wheel -> ALT SEL`. **No `do_on_keystroke`, no wheel/button map, no axis-to-heading knob any more** — the only pilot input the suite reads is the mouse wheel (main wheel → ALT SEL, thumbwheel → heading bug, both configurable). Axis optimizer ON (pitch/roll deadzone + expo + smoothing, no key mapping), flight recorder, emergency generator, opt-in axis monitor, texture cycler (`sim/operation/next_livery`), AviTab app shortcuts, and the 13-row draggable hub with 470 px styling. `smoke_mastersuite.lua` pins the whole contract; `smoke_hud_toggles.lua` checks the registry; `smoke_panel_geometry.lua` renders the panel. |
 | `CitationX_FailureTrainer.lua` | ✅ works* | `Citation X Failure Trainer + QRH loaded` |
 | `CitationX_CabinOps.lua` | ✅ works* | `Cabin & Ground Ops loaded` |
-| `CitationX_Realism.lua` | ✅ tests | one black Helvetica realism panel (16 rows, clickable), audio callouts (FMOD master bus), handling curve, control check, takeoff trim/flap gate, fuel balance, MTOW/MLW weight limits, load-shed manager, brake fan, Vmo/Mmo overspeed, takeoff config, stabilised approach, gear-down confirmation, flap/gear overspeed, crosswind, icing/anti-ice and cabin-altitude advisories. `tests/smoke_realism.lua` drives all of it; `smoke_panel_geometry.lua` renders the panel |
-| `CitationX_EFB.lua` | ✅ tests | PERF / CHECK / FUEL pages; `tests/smoke_efb.lua` and the geometry sweep pass, not yet used in a flight |
+| `CitationX_Realism.lua` | ✅ tests | one black Helvetica panel, now a bank of **LEDs and bar gauges** instead of numbers: trim band, fuel balance, weight against MTOW/MLW, crosswind against the demonstrated limit, brake energy, bus voltage. Behind it: audio callouts (FMOD master bus), control check, takeoff trim/flap gate, fuel balance, weight limits, load-shed manager, brake fan, Vmo/Mmo overspeed, takeoff config, stabilised approach, gear-down confirmation, flap/gear overspeed, crosswind, icing/anti-ice and cabin-altitude advisories. `tests/smoke_realism.lua` drives all of it; `smoke_panel_geometry.lua` renders the panel |
+| `CitationX_EFB.lua` | ✅ tests | four pages: PERF, CHECK, ROUTE, FUEL. CHECK parses the pilot's own `clist.txt` (238 `sw_item` lines → 15 phases / 188 items, 128 with dataref conditions) and ticks items from the same expressions Xchecklist uses. ROUTE is the flight-plan maker: on-screen ICAO keypad, great-circle distance/track/time, and `efb_route_build` writes `Output/FMS plans/<DEP>-<DEST>.fms` (1100 format). Airport index `Scripts/CitationX_Airports.csv` (16,398 airports from the sim's apt.dat). `tests/smoke_efb.lua` + `tests/smoke_checklist.lua` pass |
 | `LandingPerformance.lua` | ✅ works* | `Landing Performance: C750 \| GOOD \| Score 76 \| -220 FPM \| 1.42 G` — scored a real landing |
 | `Sim_Rate.lua` | ✅ works | `Sim Rate Monitor Loaded`, `Setting Sim Rate to 4x/1x` |
 | `kpredline.lua` | ✅ works | FSX-style Shift-Z line (see below); draws only after `kp/redline/toggle` |

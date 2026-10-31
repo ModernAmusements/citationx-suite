@@ -16,10 +16,13 @@ Scripts/CitationX_EFB.lua
 Scripts/CitationX_FailureTrainer.lua
 Scripts/CitationX_MasterSuite.lua
 Scripts/CitationX_Realism.lua
+Scripts/CitationX_Airports.csv
 Scripts/CitationX_Callouts/*.wav
 tests/check_datarefs.lua
 tests/check_kpcrew_modules.lua
 tests/probe_kpcrew.lua
+tests/probe_load_order.lua
+tests/smoke_checklist.lua
 tests/smoke_efb.lua
 tests/smoke_hud_toggles.lua
 tests/smoke_mastersuite.lua
@@ -27,7 +30,7 @@ tests/smoke_panel_geometry.lua
 tests/smoke_realism.lua
 tools/joymap.py
 tools/joymap_gui.py
-README.md  AGENTS.md  CONTEXT.md  SCRIPT_STATUS.md
+README.md  AGENTS.md  CONTEXT.md  SCRIPT_STATUS.md  CONTROLLER.md
 .opencode/agents/citationx.md
 ```
 

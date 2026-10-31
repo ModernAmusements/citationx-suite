@@ -1,312 +1,120 @@
 -- ============================================================================
 --  CESSNA CITATION X MASTER SUITE
 --  X-Plane 12  |  FlyWithLua NG+ (2.8+)
---  Version 2.1
+--  Version 3.0
 -- ----------------------------------------------------------------------------
---  Systems:
---    1. Axis optimizer (deadzone, curve, smoothing) via joystick overrides
---    2. 1 Hz telemetry flight data recorder -> CSV
---    3. Trigger-based bleed-air / pressurization emergency generator
---    4. Input mapper: Logitech MX keys / mouse events / joystick buttons
---    5. Control panel: live ON/OFF state of every subsystem; click a row to
---       toggle it
+--  This is the suite hub and nothing else. It deliberately contains NO
+--  keyboard layer: no do_on_keystroke, no controller-button map and no
+--  axis-to-heading-bug knob. X-Plane's own keyboard / joystick profile is the
+--  single source of truth for every pilot input.
+--
+--  What it still does, all of it "realism / quality of life":
+--    1. Axis optimizer   - deadzone, expo and smoothing on the pitch/roll axes
+--                          (the physical stick response, not a key mapping)
+--    2. Mouse wheel      - forward/backward moves ALT SEL (the only input the
+--                          suite reads itself; no key is ever captured)
+--    3. Mouse actions    - taxi light, both landing lights, heading bug and
+--                          ALT SEL are published as real X-Plane commands, so
+--                          a middle click / gesture / thumbwheel can be pointed
+--                          at them from X-Plane or the mouse driver
+--    4. Flight recorder  - 1 Hz CSV of altitude, Mach, IAS, attitude, G, fuel
+--    5. Emergency gen    - rare bleed-air / pressurisation warning at altitude
+--    6. Axis monitor     - opt-in diagnostic readout of the live raw axes
+--    7. Texture cycler   - steps through the installed liveries from the panel
+--    8. Panel hub        - opens the sibling panels (EFB, QRH, cabin, realism)
 --
 --  There is deliberately NO telemetry overlay and NO C750 systems readback:
 --  the aircraft's own PFD, EICAS and synoptics already show airspeed, altitude,
---  heading, Mach, G, fuel flow, electrics, fuel and anti-ice. The only thing
---  drawn on screen is the control panel (plus the axis monitor / learn-mode
---  diagnostics while they are switched on).
+--  heading, Mach, G, fuel flow, electrics, fuel and anti-ice. The only surfaces
+--  drawn here are the control panel, the opt-in AXIS MONITOR and a 2 s toast.
 --
---  Everything below is toggleable at runtime from the FlyWithLua macro menu,
---  from X-Plane's joystick/key assignment UI (CitationXSuite/* commands), or by
---  clicking a row on the control panel. The panel always shows which subsystem
---  is currently active, so you are never guessing.
---
---  Verified against: DataRefs.txt, Commands.txt, the aircraft's own xLua
---  scripts (plugins/xlua/scripts/*.lua) and FlyWithLua_Manual_en.pdf.
+--  Verified against DataRefs.txt, Commands.txt and the aircraft's own xLua
+--  scripts (plugins/xlua/scripts/*.lua).
 -- ============================================================================
 
 -- ------------------------------------------------------------------ CONFIG --
 CONFIG = {
-    -- Clean slate: the suite does not touch the pilot's keyboard, mouse or
-    -- joystick-button mappings. X-Plane's own profile is the single source of
-    -- truth. The one input the suite keeps is the heading-bug knob on the DS4
-    -- right stick (Axis 3, see stick_hdg_* below). Every module can still be
-    -- switched on from the control panel or the FlyWithLua macro menu /
-    -- CitationXSuite commands.
+    -- Flight recorder -------------------------------------------------------
     log_enabled            = false,
     log_to_desktop         = true,
 
-    -- Control panel: the live "which subsystem is active" readout and the
-    -- suite's panel hub. Visible at load, next to the realism panel; every
-    -- other panel starts hidden and is opened from here.
-    status_enabled         = true,
-    status_clickable       = true,   -- click a row to toggle that system
+    -- Control panel ---------------------------------------------------------
+    status_enabled         = true,    -- the hub is the one panel shown at load
+    status_clickable       = true,    -- click a row to toggle / cycle it
 
-    -- Takes over pitch/roll input via the per-axis joystick overrides.
-    -- Off by default: enable only if you want the custom stick response.
-    axis_optimizer_enabled = false,
-    deadzone               = 0.03,
-    curve_exponent         = 1.6,
-    smoothing_factor       = 0.35,
+    -- Axis optimizer --------------------------------------------------------
+    -- Reshapes the pitch/roll axes on their way into X-Plane: deadzone, expo
+    -- and smoothing. It never maps a key or a button, and it can be switched
+    -- off from the panel row (the raw axes come straight back).
+    axis_optimizer_enabled = true,
+    deadzone               = 0.02,
+    curve_exponent         = 1.40,
+    smoothing_factor       = 0.50,
 
+    -- Emergency generator ---------------------------------------------------
     emergency_enabled      = false,
     emergency_chance_1hz   = 1 / 900,
     emergency_duration_sec = 20,
     emergency_alt_ft       = 15000,
     emergency_mach         = 0.85,
 
-    -- Keyboard/button layers for the C750 systems. OFF: the suite must not
-    -- consume keystrokes or claim controller buttons, otherwise the pilot's
-    -- own X-Plane profile and the script fight over the same control. Switch
-    -- on only if you want the Ctrl+Shift / Ctrl+Opt shortcuts back.
-    input_map_enabled      = false,
-    joy_map_enabled        = false,  -- fires JOY_BINDINGS when it is not empty
-    -- OFF: the suite must never claim controller buttons. X-Plane's own
-    -- joystick mapping is the single source of truth, otherwise pressing a
-    -- spare button toggles panels/recorder instead of flying the aircraft.
-    joy_autobind_enabled   = false,
-    input_learn_mode       = false,
-    input_probe_to_desktop = true,
+    -- Opt-in diagnostics ----------------------------------------------------
+    axis_monitor           = false,
 
-    -- The mouse wheel is left to X-Plane: it zooms the view in/out. Heading is
-    -- on the DS4 right stick Y (below) and the D-pad left/right.
-    thumbwheel_heading      = false,
-    heading_step_deg        = 1,
-    heading_key_step_deg    = 5,
-    heading_wheel_invert    = false,
+    -- Textures --------------------------------------------------------------
+    -- The cycler drives X-Plane's own next_livery / prev_livery commands, so
+    -- the sim reloads the aircraft art exactly as it does from the menu.
+    texture_cycle_enabled  = true,
 
-    -- No keystroke is consumed while input_map_enabled is false. Mouse thumb
-    -- buttons, the gesture button, the thumb wheel and every keyboard shortcut
-    -- belong to X-Plane's own mapping again.
-
-    -- Analog DS4 triggers -> throttle up/down. OFF: L2/R2 are already on the
-    -- pilot's X-Plane profile (button 6/7 plus the analog end-stop), so the
-    -- script must not issue throttle commands on the same axes.
-    -- 25 axes per device slot: USB = 4/5 and Bluetooth = 29/30.
-    trigger_throttle_enabled = false,
-    trigger_l2_axes          = { 4, 29 },
-    trigger_r2_axes          = { 5, 30 },
-    trigger_threshold        = 0.35,
-    trigger_repeat_s         = 0.08,
-
-    -- Spring-loaded heading-bug knob on the DS4 right stick. This is the ONE
-    -- input the suite keeps: X-Plane profile "Axis 3" (right stick up/down,
-    -- unassigned there), push up/down to turn the bug.
-    -- The pad enumerates twice, so the raw index depends on the slot X-Plane
-    -- gives it: 3 when it is the first device, 28 when it is the second
-    -- (USB vs Bluetooth). stick_hdg_axes lists both; only those axes may move
-    -- the bug, and an axis must have been seen centred at least once (a dead
-    -- interface parked at 0 never qualifies).
-    -- Leave stick_hdg_axes empty to fall back to the legacy single-axis pin
-    -- (stick_hdg_axis >= 0) or to auto-detection (stick_hdg_axis = -1).
-    -- Raw sim/joystick/joystick_axis_values is 0..1.
-    stick_hdg_enabled       = true,
-    stick_hdg_axes          = { 3, 28 },
-    stick_hdg_axis          = -1,
-    stick_hdg_sticky        = true,
-    stick_hdg_exclude_axes  = { },   -- extra RAW indices to veto, e.g. { 4, 5 }
-    stick_hdg_center_tol    = 0.25,  -- eligible only if the rest is near center
-    stick_hdg_stale_hold_s  = 6.0,   -- veto a slot stuck at an extreme this long
-    stick_hdg_invert        = false,
-    stick_hdg_center        = 0.5,
-    stick_hdg_rate_dps      = 30,
-    stick_hdg_deadzone      = 0.12,
-    -- Per-frame convergence rate of the learned rest value toward an idle
-    -- axis' current position (0..1). Slow enough that a deliberate push
-    -- outpaces it; fast enough to track drift.
-    stick_hdg_base_track    = 0.001,
-
-    -- Right-stick click (DS4 R3) + right-stick movement = look around the 3-D
-    -- cockpit. The button suppresses the heading knob while it is held, so the
-    -- same stick does not move the bug at the same time. view_pan_axis_* = -1
-    -- auto-detects the right stick as the first *moved* spring-centred axis
-    -- pair (DS4: raw 2/3). Pin them to fixed RAW indices to override.
-    --
-    -- OFF by default: it writes sim/graphics/view/pilots_head_psi/the itself
-    -- and its button (11) is this pad's throttle-up, so it fought both the
-    -- camera and the throttle. X-Plane's own cockpit look (mouse / right
-    -- stick) works without a script.
-    view_pan_enabled        = false,
-    view_pan_button         = 11,    -- 0-based physical button in a 64-button device slot (R3)
-    view_pan_axis_x         = -1,
-    view_pan_axis_y         = -1,
-    view_pan_deadzone       = 0.12,
-    view_pan_rate_dps       = 80,    -- look speed at full stick deflection
-    view_pan_invert_x       = false,
-    view_pan_invert_y       = false,
-    view_pan_force_3d       = true,  -- R3 switches to the 3-D cockpit if in 2-D
-    view_pan_pitch_limit    = 80,    -- degrees, keeps the head inside the cockpit
-
-    -- Plain arrow keys tilt the cockpit view. OFF: the keys belong to
-    -- X-Plane, and consuming them here would override the pilot's own
-    -- keyboard map (the script only holds the tilt while this is on).
-    view_tilt_enabled       = false,
-    view_tilt_rate_dps      = 70,
-    view_tilt_limit_deg     = 80,
-    view_tilt_invert        = false,
-
-    axis_monitor            = false,
-
-    altitude_step_ft        = 100,
-    altitude_coarse_step_ft = 1000,
-    altitude_wheel_invert   = false,
-    thumbwheel_altitude     = false,
-
-    -- Spring-loaded ALT SEL on the free spring-centred axis. OFF: that axis
-    -- (right stick Y, "Axis 3") is the heading knob now; one axis must never
-    -- drive two bugs.
-    stick_alt_enabled       = false,
-    stick_alt_rate_fps      = 400,   -- feet per second at full deflection
-    stick_alt_deadzone      = 0.12,
-    stick_alt_invert        = false,
+    -- Mouse wheel -----------------------------------------------------------
+    -- The only pilot input the suite reads itself. Wheel forward/backward
+    -- moves ALT SEL; nothing is bound to a key and no button is remapped.
+    -- Middle click / gestures belong to the mouse driver or X-Plane's own
+    -- joystick screen - the suite only publishes commands for them.
+    mouse_wheel_altitude   = true,
+    -- X-Plane reports which wheel moved: the main wheel and the thumbwheel
+    -- are different numbers. 1 = main wheel -> ALT SEL, 2 = thumbwheel ->
+    -- heading bug. Swap them with CitationXSuite/wheel_map_swap if your mouse
+    -- enumerates them the other way round.
+    wheel_altitude_number  = 1,
+    wheel_heading_number   = 2,
+    wheel_heading_enabled  = true,
+    alt_step_ft            = 100,
+    hdg_step_deg           = 1,
+    alt_min_ft             = 0,
+    alt_max_ft             = 50000,
 }
 
 -- ----------------------------------------------------------- PANEL STYLE ----
--- Matches the realism panel: black body, grey border, white Helvetica title,
--- 12 px rows and a 10 px sub-header. {r, g, b} in 0..1; background entries
--- carry alpha. `top` is the absolute top edge in FlyWithLua screen pixels
--- (origin bottom-left) and is updated when the panel is dragged.
+-- Shared black/Helvetica language. 38 px header, 22 px rows, hairline
+-- separators and a two-tone body so a 1600-wide screen still reads cleanly.
 SUITE_STYLE = {
     x            = 470,
-    top          = nil,          -- nil = top-right of the realism panel on first draw
-    width        = 430,
-    pad          = 14,
-    header_h     = 34,
-    sub_h        = 20,
-    row_h        = 21,
+    top          = nil,          -- nil = top-right on first draw
+    width        = 446,
+    pad          = 16,
+    header_h     = 38,
+    sub_h        = 22,
+    row_h        = 22,
     footer_h     = 34,
-    bg           = {0.00, 0.00, 0.00, 0.90},
-    header_bg    = {0.04, 0.04, 0.04, 0.96},
-    border       = {0.32, 0.32, 0.32, 1.00},
+    bg           = {0.00, 0.00, 0.00, 0.92},
+    bg_alt       = {0.06, 0.06, 0.06, 0.92},
+    header_bg    = {0.05, 0.05, 0.05, 0.97},
+    border       = {0.36, 0.36, 0.36, 1.00},
+    hairline     = {0.22, 0.22, 0.22, 1.00},
     title        = {1.00, 1.00, 1.00, 1.00},
-    sub          = {0.55, 0.55, 0.55, 1.00},
-    label        = {0.80, 0.80, 0.80, 1.00},
+    sub          = {0.58, 0.58, 0.58, 1.00},
+    label        = {0.86, 0.86, 0.86, 1.00},
     value        = {1.00, 1.00, 1.00, 1.00},
-    dim          = {0.45, 0.45, 0.45, 1.00},
-    ok           = {0.45, 0.85, 0.50, 1.00},
-    warn         = {0.95, 0.72, 0.25, 1.00},
-    alert        = {0.95, 0.36, 0.32, 1.00},
-    btn          = {0.10, 0.10, 0.10, 1.00},
-    -- legacy names kept so the older rows/toast code keeps working
+    dim          = {0.46, 0.46, 0.46, 1.00},
+    ok           = {0.45, 0.88, 0.52, 1.00},
+    warn         = {0.96, 0.74, 0.26, 1.00},
+    alert        = {0.96, 0.36, 0.32, 1.00},
+    btn          = {0.11, 0.11, 0.11, 1.00},
     accent       = {1.00, 1.00, 1.00, 1.00},
-    subhdr       = {0.55, 0.55, 0.55, 1.00},
-    learn_bg     = {0.10, 0.07, 0.02, 0.85},
-    learn        = {1.00, 0.75, 0.20, 1.00},
-}
-
--- ----------------------------------------------------------- INPUT MAP ------
--- Split of duties: the PS4 profile owns hands-on flying (stick, throttle,
--- flaps, gear, brakes, trim, autopilot bug/modes, speed brakes, reversers).
--- These keyboard layers own what the pad cannot reach: lights, fuel, engines,
--- electrical, APU, ice, hydraulics, pressurisation and oxygen. Do not add a
--- command here that is already on the pad.
--- vkey is the XPLM virtual key code (XPLMDefs.h). ctrl / opt / shift are the
--- modifiers seen by FlyWithLua. Remap MX buttons in Logi Options+ to these
--- keystrokes, or use learn mode to discover what each control really sends.
-INPUT_BINDINGS = {
-    { vkey = 0x31, ctrl = true, shift = true, label = "NAV lights",       command = "sim/lights/nav_lights_toggle" },
-    { vkey = 0x32, ctrl = true, shift = true, label = "Beacon lights",    command = "sim/lights/beacon_lights_toggle" },
-    { vkey = 0x33, ctrl = true, shift = true, label = "Strobe lights",    command = "sim/lights/strobe_lights_toggle" },
-    { vkey = 0x34, ctrl = true, shift = true, label = "Taxi lights",      command = "sim/lights/taxi_lights_toggle" },
-    { vkey = 0x35, ctrl = true, shift = true, label = "Landing lights (both)", action = function() citationx_toggle_landing_lights() end },
-    { vkey = 0x39, ctrl = true, shift = true, label = "ALT SEL down (fine)", action = function() citationx_altitude(-CONFIG.altitude_step_ft) end },
-    { vkey = 0x30, ctrl = true, shift = true, label = "ALT SEL up (fine)",   action = function() citationx_altitude( CONFIG.altitude_step_ft) end },
-    -- Keyboard rotary knob (Logi Options+ maps the two directions here).
-    { vkey = 0x2C, ctrl = true, shift = true, label = "Pitch trim down (knob)", command = "sim/flight_controls/pitch_trim_down" },
-    { vkey = 0x2E, ctrl = true, shift = true, label = "Pitch trim up (knob)",   command = "sim/flight_controls/pitch_trim_up" },
-    { vkey = 0x37, ctrl = true, shift = true, label = "AP heading hold",  command = "sim/autopilot/heading_hold" },
-}
-
--- JOY_BINDINGS maps controller button indices (discovered in learn mode) to
--- the same { label, command/action } shape as INPUT_BINDINGS. It is filled at
--- runtime by citationx_autobind_joy(): only buttons that X-Plane reports as
--- UNASSIGNED are used, so nothing the pilot already mapped is overwritten.
-JOY_BINDINGS = {}
-
--- What the suite puts on the free controller buttons, in order. The first free
--- physical button gets the panel, the next the realism panel, and so on.
-JOY_AUTOBIND_ACTIONS = {
-    { label = "CONTROL PANEL",  action = function() citationx_toggle_module("status") end },
-    { label = "REALISM PANEL",  action = function() command_once("CitationXRealism/hud") end },
-    { label = "TEST CALLOUT",   action = function() command_once("CitationXRealism/test_callout") end },
-    { label = "FLIGHT RECORDER", action = function() citationx_set_logging(not CONFIG.log_enabled) end },
-    { label = "EMERGENCY GEN",  action = function() citationx_set_emergency(not CONFIG.emergency_enabled) end },
-    { label = "AXIS MONITOR",   action = function() citationx_set_axis_monitor(not CONFIG.axis_monitor) end },
-}
-
--- ------------------------------------------------- C750 SYSTEMS COMMANDS -----
--- The Citation X registers ~220 custom xLua commands at
--- plugins/xlua/scripts/*.lua (create_command("laminar/CitX/...")). They are
--- not in Commands.txt and X-Plane's joystick UI makes them hard to find, so
--- the suite maps the high-value ones to three keyboard layers:
---   Ctrl+Shift + letter  flight ops / engines / fuel
---   Ctrl+Opt   + digit   electrical / APU
---   Ctrl+Opt   + letter  ice / pressurization / hydraulics / lights / O2
--- command_once() resolves runtime-registered commands by name, so these fire
--- exactly like clicking the 3D switch. Extend freely: copy an entry, change
--- vkey (XPLMDefs.h) and command (see the xLua scripts for the full list).
-CITX_BINDINGS = {
-    -- flight ops, engines, fuel: Ctrl+Shift + letter
-    { vkey = 0x41, ctrl = true, shift = true, label = "AP toggle",        command = "laminar/CitX/autopilot/cmd_ap_toggle" },
-    { vkey = 0x42, ctrl = true, shift = true, label = "AP half bank",     command = "laminar/CitX/autopilot/cmd_bank_mode" },
-    { vkey = 0x43, ctrl = true, shift = true, label = "AP CWS",           command = "laminar/CitX/autopilot/cmd_cngovr_mode" },
-    { vkey = 0x44, ctrl = true, shift = true, label = "AP ALT",           command = "laminar/CitX/autopilot/cmd_alt_mode" },
-    { vkey = 0x48, ctrl = true, shift = true, label = "Heading sync",     command = "sim/autopilot/heading_sync" },
-    { vkey = 0x49, ctrl = true, shift = true, label = "Fuel transfer L",  command = "laminar/CitX/fuel/cmd_transfer_left_up" },
-    { vkey = 0x4A, ctrl = true, shift = true, label = "Fuel transfer R",  command = "laminar/CitX/fuel/cmd_transfer_right_up" },
-    { vkey = 0x4B, ctrl = true, shift = true, label = "Start engine L",   command = "laminar/CitX/engine/cmd_starter_left" },
-    { vkey = 0x4C, ctrl = true, shift = true, label = "Start engine R",   command = "laminar/CitX/engine/cmd_starter_right" },
-    { vkey = 0x4F, ctrl = true, shift = true, label = "Ignition L",       command = "laminar/CitX/engine/cmd_ignition_switch_left_up" },
-    { vkey = 0x50, ctrl = true, shift = true, label = "Ignition R",       command = "laminar/CitX/engine/cmd_ignition_switch_right_up" },
-    { vkey = 0x51, ctrl = true, shift = true, label = "Boost pump L",     command = "laminar/CitX/fuel/cmd_boost_left_up" },
-    { vkey = 0x52, ctrl = true, shift = true, label = "Boost pump R",     command = "laminar/CitX/fuel/cmd_boost_right_up" },
-    { vkey = 0x53, ctrl = true, shift = true, label = "AP VS",            command = "laminar/CitX/autopilot/cmd_vs_mode" },
-    { vkey = 0x54, ctrl = true, shift = true, label = "Starter stop",     command = "laminar/CitX/engine/cmd_starter_stop" },
-    { vkey = 0x55, ctrl = true, shift = true, label = "Engine sync",      command = "laminar/CitX/engine/cmd_eng_sync_up" },
-    { vkey = 0x56, ctrl = true, shift = true, label = "AP VNAV",          command = "laminar/CitX/autopilot/cmd_vnav_mode" },
-    { vkey = 0x57, ctrl = true, shift = true, label = "Windshield air",   command = "laminar/CitX/ice/cmd_windshield_air_toggle" },
-    { vkey = 0x58, ctrl = true, shift = true, label = "Crossfeed L",      command = "laminar/CitX/fuel/cmd_crossfeed_left" },
-    { vkey = 0x59, ctrl = true, shift = true, label = "Yaw damper",       command = "laminar/CitX/autopilot/cmd_yd_toggle" },
-    { vkey = 0x5A, ctrl = true, shift = true, label = "Crossfeed R",      command = "laminar/CitX/fuel/cmd_crossfeed_right" },
-
-    -- electrical, APU: Ctrl+Opt + digit
-    { vkey = 0x31, ctrl = true, opt = true, label = "Battery L",          command = "laminar/CitX/electrical/cmd_battery_left_toggle" },
-    { vkey = 0x32, ctrl = true, opt = true, label = "Battery R",          command = "laminar/CitX/electrical/cmd_battery_right_toggle" },
-    { vkey = 0x33, ctrl = true, opt = true, label = "Generator L",        command = "laminar/CitX/electrical/cmd_generator_left_up" },
-    { vkey = 0x34, ctrl = true, opt = true, label = "Generator R",        command = "laminar/CitX/electrical/cmd_generator_right_up" },
-    { vkey = 0x35, ctrl = true, opt = true, label = "External power",     command = "laminar/CitX/electrical/cmd_ext_pwr_toggle" },
-    { vkey = 0x36, ctrl = true, opt = true, label = "Avionics",           command = "laminar/CitX/electrical/cmd_avionics_toggle" },
-    { vkey = 0x37, ctrl = true, opt = true, label = "Avionics EICAS",     command = "laminar/CitX/electrical/cmd_avionics_eicas_toggle" },
-    { vkey = 0x38, ctrl = true, opt = true, label = "APU master",         command = "laminar/CitX/APU/master_switch_toggle" },
-    { vkey = 0x39, ctrl = true, opt = true, label = "APU start",          command = "laminar/CitX/APU/starter_switch_up" },
-    { vkey = 0x30, ctrl = true, opt = true, label = "APU generator",      command = "laminar/CitX/APU/gen_switch_up" },
-
-    -- ice, pressurization, hydraulics, extra lights, oxygen: Ctrl+Opt + letter
-    { vkey = 0x41, ctrl = true, opt = true, label = "Ice engine L",       command = "laminar/CitX/ice/cmd_engine_left_toggle" },
-    { vkey = 0x42, ctrl = true, opt = true, label = "Ice engine R",       command = "laminar/CitX/ice/cmd_engine_right_toggle" },
-    { vkey = 0x43, ctrl = true, opt = true, label = "Wing ice light",     command = "laminar/CitX/ice/cmd_wing_light_toggle" },
-    { vkey = 0x44, ctrl = true, opt = true, label = "Slat heat",          command = "laminar/CitX/ice/cmd_slat_toggle" },
-    { vkey = 0x47, ctrl = true, opt = true, label = "Stab heat L",        command = "laminar/CitX/ice/cmd_stabilizer_left_toggle" },
-    { vkey = 0x48, ctrl = true, opt = true, label = "Stab heat R",        command = "laminar/CitX/ice/cmd_stabilizer_right_toggle" },
-    { vkey = 0x49, ctrl = true, opt = true, label = "Pitot heat L",       command = "laminar/CitX/ice/cmd_pitot_static_left_toggle" },
-    { vkey = 0x4A, ctrl = true, opt = true, label = "Pitot heat R",       command = "laminar/CitX/ice/cmd_pitot_static_right_toggle" },
-    { vkey = 0x4B, ctrl = true, opt = true, label = "Cabin dump",         command = "laminar/CitX/pressurization/cmd_cabin_dump_toggle" },
-    { vkey = 0x4C, ctrl = true, opt = true, label = "Iso valve",          command = "laminar/CitX/pressurization/cmd_iso_vlv_toggle" },
-    { vkey = 0x4D, ctrl = true, opt = true, label = "Master caution",     command = "sim/annunciator/clear_master_caution" },
-    { vkey = 0x4E, ctrl = true, opt = true, label = "Aux hyd pump",       command = "laminar/CitX/hydraulics/cmd_aux_pump_toggle" },
-    { vkey = 0x4F, ctrl = true, opt = true, label = "Unload pump A",      command = "laminar/CitX/hydraulics/cmd_unload_pump_A_toggle" },
-    { vkey = 0x50, ctrl = true, opt = true, label = "Unload pump B",      command = "laminar/CitX/hydraulics/cmd_unload_pump_B_toggle" },
-    { vkey = 0x51, ctrl = true, opt = true, label = "Antiskid",           command = "laminar/CitX/hydraulics/cmd_antiskid_toggle" },
-    { vkey = 0x52, ctrl = true, opt = true, label = "Gravity flow",       command = "laminar/CitX/fuel/cmd_gravity_flow_toggle" },
-    { vkey = 0x53, ctrl = true, opt = true, label = "AP FLC",             command = "laminar/CitX/autopilot/cmd_flc_mode" },
-    { vkey = 0x54, ctrl = true, opt = true, label = "Ground idle",        command = "laminar/CitX/engine/cmd_gnd_idle_toggle" },
-    { vkey = 0x55, ctrl = true, opt = true, label = "Tail flood light",   command = "laminar/CitX/lights/cmd_tail_flood_toggle" },
-    { vkey = 0x56, ctrl = true, opt = true, label = "Recognition lights", command = "laminar/CitX/lights/cmd_recognition_toggle" },
-    { vkey = 0x57, ctrl = true, opt = true, label = "Cabin master light", command = "laminar/CitX/lights/cmd_cabin_master_toggle" },
-    { vkey = 0x58, ctrl = true, opt = true, label = "Landing light L",    command = "laminar/CitX/lights/cmd_landing_left_toggle" },
-    { vkey = 0x59, ctrl = true, opt = true, label = "Landing light R",    command = "laminar/CitX/lights/cmd_landing_right_toggle" },
-    { vkey = 0x5A, ctrl = true, opt = true, label = "Passenger O2",       command = "laminar/CitX/oxygen/cmd_pass_oxy_up" },
+    subhdr       = {0.58, 0.58, 0.58, 1.00},
+    mon_bg       = {0.03, 0.05, 0.03, 0.90},
+    mon          = {0.62, 0.95, 0.66, 1.00},
 }
 
 -- --------------------------------------------------------------- DATAREFS ---
@@ -316,8 +124,10 @@ dataref("elevation_m", "sim/flightmodel/position/elevation", "readonly")
 dataref("ias_kts",     "sim/flightmodel/position/indicated_airspeed", "readonly")
 dataref("pitch_deg",   "sim/flightmodel/position/theta", "readonly")
 dataref("roll_deg",    "sim/flightmodel/position/phi", "readonly")
-dataref("citationx_sim_time",    "sim/time/total_running_time_sec", "readonly")
+dataref("citationx_sim_time", "sim/time/total_running_time_sec", "readonly")
 
+-- Mapped (post-assignment) pitch/roll, which is what the pilot's stick
+-- actually commands; the optimizer re-shapes exactly these two values.
 dataref("joy_pitch",       "sim/joystick/joy_mapped_axis_value", "readonly", 1)
 dataref("joy_roll",        "sim/joystick/joy_mapped_axis_value", "readonly", 2)
 dataref("joy_avail_pitch", "sim/joystick/joy_mapped_axis_avail", "readonly", 1)
@@ -328,25 +138,23 @@ dataref("yoke_roll_ratio",    "sim/joystick/yoke_roll_ratio", "writable")
 dataref("ovr_joystick_pitch", "sim/operation/override/override_joystick_pitch", "writable")
 dataref("ovr_joystick_roll",  "sim/operation/override/override_joystick_roll", "writable")
 
-dataref("alt_sel_ft",    "sim/cockpit2/autopilot/altitude_dial_ft", "writable")
-dataref("alt_legacy_ft", "sim/cockpit/autopilot/altitude", "writable")
-dataref("hdg_sel_deg",   "sim/cockpit2/autopilot/heading_dial_deg_mag_pilot", "writable")
+-- Autopilot selectors driven from the mouse wheel. These are the *stock*
+-- selectors the Citation X Primus autopilot reads, so the numbers appear on
+-- the aircraft's own displays.
+dataref("citationx_hdg_sel_deg", "sim/cockpit2/autopilot/heading_dial_deg_mag_pilot", "writable")
+dataref("citationx_alt_sel_ft",  "sim/cockpit2/autopilot/altitude_dial_ft", "writable")
+dataref("citationx_alt_legacy_ft", "sim/cockpit/autopilot/altitude", "writable")
 
--- 3-D cockpit look (R3 + right stick). These are the head-tracking offsets the
--- sim itself uses, so writing them pans the view without touching the camera.
-dataref("view_head_psi",   "sim/graphics/view/pilots_head_psi", "writable")
-dataref("view_head_the",   "sim/graphics/view/pilots_head_the", "writable")
-dataref("view_panel_type", "sim/graphics/view/panel_render_type", "readonly")
+-- Texture / livery readout. Both are read-only; the switches themselves are
+-- X-Plane's own sim/operation/next_livery / prev_livery commands.
+dataref("citationx_livery_index", "sim/aircraft/view/acf_livery_index", "readonly")
+local livery_path = dataref_table("sim/aircraft/view/acf_livery_path")
 
 local fuel_flow_kg_sec = dataref_table("sim/cockpit2/engine/indicators/fuel_flow_kg_sec")
-
-local joy_buttons      = dataref_table("sim/joystick/joystick_button_values")
-local joy_btn_assign   = dataref_table("sim/joystick/joystick_button_assignments")
 local joy_raw_axes     = dataref_table("sim/joystick/joystick_axis_values")
 local joy_raw_assign   = dataref_table("sim/joystick/joystick_axis_assignments")
 
--- sim/joystick/joystick_axis_assignments enum (X-Plane developer docs / the
--- stock "get_axis_assignments.lua" helper). Index 1 = Pitch, 2 = Roll, 3 = Yaw.
+-- sim/joystick/joystick_axis_assignments enum, for the axis monitor only.
 local AXIS_FUNCS = {
     "none", "pitch", "roll", "yaw", "throttle", "collective", "l toe brake",
     "r toe brake", "prop", "mixture", "carb heat", "flaps", "thrust vec",
@@ -358,303 +166,82 @@ local AXIS_FUNCS = {
 }
 local function axis_assign_name(v) return AXIS_FUNCS[(v or 0) + 1] or "?" end
 
--- Last raw axis the auto-detecting heading knob latched onto (for the monitor).
-local stick_hdg_live_axis = -1
--- Learned rest (idle) raw value per axis; nil until the axis is first seen.
-local stick_base_raw = {}
--- Slots that look disconnected: pinned at a hard extreme for a long time.
--- They are skipped by detection until their value comes back to center.
-local stick_dead_axis  = {}
-local stick_hdg_hold_s = 0.0
-local stick_hdg_diag_at = 0.0
-local joy_autobind_done = false
-
--- 3-D cockpit look state (R3 + right stick).
-local view_pan_axis_x   = -1
-local view_pan_axis_y   = -1
-local view_pan_was_held = false
-local view_tilt_up      = false
-local view_tilt_down    = false
-local view_pan_logged   = false
-local view_pan_wait_center = false
-
--- Center a raw 0..1 axis value to -1..1 around CONFIG.stick_hdg_center
--- (used by the AXIS MONITOR display only).
-local function stick_center_value(raw)
-    local c = (raw - CONFIG.stick_hdg_center) * 2.0
-    if CONFIG.stick_hdg_invert then c = -c end
-    return c
-end
-
--- Return the raw 0..1 axis value re-centered to -1..1 around CONFIG.stick_hdg_center.
-local function stick_axis_centered(idx)
-    return stick_center_value(joy_raw_axes[idx] or CONFIG.stick_hdg_center)
-end
-
--- Deflection of an axis away from its learned rest, -1..1. An axis parked
--- anywhere (a trigger at raw 0, a pad slot reading 0, a slightly drifted
--- stick) reads ~0 once its rest is learned, so only a genuine push shows up.
-local function stick_axis_deflection(idx)
-    local raw  = joy_raw_axes[idx]
-    local base = stick_base_raw[idx]
-    if raw == nil or base == nil then return 0.0 end
-    local d = (raw - base) * 2.0
-    if CONFIG.stick_hdg_invert then d = -d end
-    return d
-end
-
--- Adopt the first value seen for each axis as its rest, then creep the rest
--- toward the idle position. A deflected (driving) axis is frozen so the rest
--- cannot crawl toward a held stick. This makes a parked axis - idle trigger
--- at raw 0, slot of a disconnected pad, drifting pot - read as "at rest", so
--- it can never free-run the heading knob.
-local function stick_baseline_update()
-    for i = 0, 63 do
-        local raw = joy_raw_axes[i]
-        if raw then
-            local base = stick_base_raw[i]
-            if base == nil then
-                -- X-Plane publishes -0.01 (or 0) for axes whose device has not
-                -- enumerated yet. Latching that as the rest makes the axis look
-                -- permanently deflected, freezes the learned centre and the
-                -- knob never detects it (the 2026-10-24 "right stick dead"
-                -- symptom: base -0.01, deflection 1.02 at rest). Only adopt a
-                -- plausible centred first value; triggers rest at 0/1 and are
-                -- excluded by stick_axis_is_centered() anyway.
-                if math.abs(raw - CONFIG.stick_hdg_center) <= 0.35 then
-                    stick_base_raw[i] = raw
-                end
-            elseif (base < 0.05 or base > 0.95)
-                and math.abs(raw - base) > 0.35
-                and math.abs(raw - CONFIG.stick_hdg_center) <= 0.15 then
-                -- Repair a rest latched before the device went live.
-                stick_base_raw[i] = raw
-            elseif math.abs(stick_axis_deflection(i)) <= CONFIG.stick_hdg_deadzone then
-                stick_base_raw[i] = base + (raw - base) * CONFIG.stick_hdg_base_track
-            end
-        end
-    end
-end
-
--- An axis is only eligible while it is spring-centered: its learned rest must
--- sit near CONFIG.stick_hdg_center. Sticks rest at center; analog triggers
--- (L2/R2) and pedals rest at an extreme, so they can never be picked and the
--- heading bug stays on the right stick no matter what else is squeezed.
--- Boolean predicate, deliberately NOT named stick_axis_centered(): that name
--- already belongs to the numeric re-centering helper used by AXIS MONITOR.
--- Shadowing it made that panel call math.abs() on this boolean and killed the
--- whole draw callback every frame.
-local function stick_axis_is_centered(idx)
-    local base = stick_base_raw[idx]
-    if base == nil then return false end
-    return math.abs(base - CONFIG.stick_hdg_center) <= CONFIG.stick_hdg_center_tol
-end
-
-local function stick_axis_excluded(idx)
-    local list = CONFIG.stick_hdg_exclude_axes
-    for k = 1, #list do
-        if list[k] == idx then return true end
-    end
-    return false
-end
-
--- Most-deflected eligible RAW axis (relative to its learned rest): not bound
--- to a primary flight control (pitch/roll/yaw/throttle), spring-centered and
--- not vetoed. The DS4 right stick wins; L2/R2 (rest at an extreme) never do.
--- Returns nil when every candidate is at rest.
-local function detect_stick_hdg_axis()
-    local best_idx, best_mag = nil, CONFIG.stick_hdg_deadzone
-    for i = 0, 63 do
-        local a = joy_raw_assign[i] or 0
-        if a ~= 1 and a ~= 2 and a ~= 3 and a ~= 4
-            and not stick_dead_axis[i]
-            and not stick_axis_excluded(i)
-            and stick_axis_is_centered(i) then
-            local mag = math.abs(stick_axis_deflection(i))
-            if mag > best_mag then best_idx, best_mag = i, mag end
-        end
-    end
-    return best_idx
-end
-
--- Spring-loaded ALT SEL on the same eligible axis (the DS4 right stick Y).
--- No sticky lock: the value simply stops changing when the stick re-centres,
--- and whichever interface is live (USB raw 3 / Bluetooth raw 28) wins because
--- detect_stick_hdg_axis() returns the most-deflected eligible slot.
-local function stick_alt_tick(dt)
-    if not CONFIG.stick_alt_enabled or dt <= 0.0 then return end
-    local axis = detect_stick_hdg_axis()
-    if not axis then return end
-    local d = stick_axis_deflection(axis)
-    if CONFIG.stick_alt_invert then d = -d end
-    local mag = math.abs(d)
-    if mag <= CONFIG.stick_alt_deadzone then return end
-    local scaled = (mag - CONFIG.stick_alt_deadzone)
-                 / (1.0 - CONFIG.stick_alt_deadzone)
-    local target = (alt_sel_ft or 0.0)
-        + (d > 0 and 1 or -1) * scaled * CONFIG.stick_alt_rate_fps * dt
-    if target < 0.0 then target = 0.0 end
-    if target > 60000.0 then target = 60000.0 end
-    alt_sel_ft    = target
-    alt_legacy_ft = target
-end
-
--- ---------------------------------------------------------- COCKPIT LOOK ----
--- The DS4 right stick is a pair of adjacent spring-centred axes. Detection
--- runs only while R3 is held and the stick is actually pushed, so the left
--- stick (assigned to pitch/roll) and the triggers (rest at an extreme) can
--- never be picked. Pinned CONFIG.view_pan_axis_x/y values win.
-local function view_pan_axis_eligible(j)
-    if j < 0 or j > 63 then return false end
-    local a = joy_raw_assign[j] or 0
-    return a ~= 1 and a ~= 2 and a ~= 3 and a ~= 4
-        and not stick_dead_axis[j]
-        and not stick_axis_excluded(j)
-        and stick_base_raw[j] ~= nil
-end
-
-local function view_pan_pair()
-    if CONFIG.view_pan_axis_x >= 0 and CONFIG.view_pan_axis_y >= 0 then
-        return CONFIG.view_pan_axis_x, CONFIG.view_pan_axis_y
-    end
-    if view_pan_axis_x >= 0 and view_pan_axis_y >= 0 then
-        return view_pan_axis_x, view_pan_axis_y
-    end
-
-    -- Most-deflected eligible axis = the stick the pilot just pushed.
-    local best, best_mag = nil, CONFIG.view_pan_deadzone
-    for i = 0, 31 do
-        if view_pan_axis_eligible(i) and stick_axis_is_centered(i) then
-            local mag = math.abs(stick_axis_deflection(i))
-            if mag > best_mag then best, best_mag = i, mag end
-        end
-    end
-    if not best then return -1, -1 end
-
-    -- Its hardware partner: the adjacent index (DS4 Z/Rz = 2/3, Rx/Ry = 4/5).
-    -- Check both neighbours; a pad slot can start on either parity.
-    local partner = nil
-    local first  = (best % 2 == 0) and (best + 1) or (best - 1)
-    local second = (best % 2 == 0) and (best - 1) or (best + 1)
-    if view_pan_axis_eligible(first) then
-        partner = first
-    elseif view_pan_axis_eligible(second) then
-        partner = second
-    end
-    if not partner then return -1, -1 end
-
-    local ax, ay = best, partner
-    if ax > ay then ax, ay = ay, ax end
-    view_pan_axis_x, view_pan_axis_y = ax, ay
-    if not view_pan_logged then
-        view_pan_logged = true
-        logMsg(string.format(
-            "Citation X Suite: cockpit look axes %d/%d on button %d",
-            ax, ay, CONFIG.view_pan_button))
-    end
-    return ax, ay
-end
-
-local function view_pan_button_held()
-    local b = CONFIG.view_pan_button
-    for slot = 0, 1 do
-        if (joy_buttons[slot * 160 + b] or 0) == 1 then return true end
-    end
-    return false
-end
-
--- Returns true while R3 is held, so the heading knob stands down for that frame.
-local function citationx_view_pan(dt)
-    if not CONFIG.view_pan_enabled then return false end
-    if not view_pan_button_held() then
-        if view_pan_was_held then
-            view_pan_was_held = false
-            -- Do not hand the same stick back to the heading knob while it is
-            -- still deflected; wait until it re-centres.
-            view_pan_wait_center = true
-        end
-        if view_pan_wait_center then
-            -- Use the resolved pair (this also honours pinned view_pan_axis_*).
-            local ax, ay = view_pan_pair()
-            if ax >= 0 and ay >= 0 then
-                local dz = CONFIG.view_pan_deadzone
-                if math.abs(stick_axis_deflection(ax)) > dz
-                    or math.abs(stick_axis_deflection(ay)) > dz then
-                    return true
-                end
-            end
-            view_pan_wait_center = false
-        end
-        return false
-    end
-    view_pan_wait_center = false
-
-    if not view_pan_was_held then
-        view_pan_was_held = true
-        if CONFIG.view_pan_force_3d and (view_panel_type or 2) == 0 then
-            command_once("sim/view/3d_cockpit_cmnd_look")
-        end
-        if type(citationx_toast) == "function" then citationx_toast("COCKPIT LOOK") end
-    end
-
-    if dt > 0.0 and (view_panel_type or 2) ~= 0 then
-        local ax, ay = view_pan_pair()
-        if ax >= 0 and ay >= 0 then
-            local function shape(v)
-                local m = math.abs(v)
-                if m <= CONFIG.view_pan_deadzone then return 0.0 end
-                local s = (m - CONFIG.view_pan_deadzone)
-                        / (1.0 - CONFIG.view_pan_deadzone)
-                if v < 0.0 then s = -s end
-                return s
-            end
-            local yaw   = shape(stick_axis_deflection(ax))
-            local pitch = -shape(stick_axis_deflection(ay))  -- stick up looks up
-            if CONFIG.view_pan_invert_x then yaw   = -yaw end
-            if CONFIG.view_pan_invert_y then pitch = -pitch end
-
-            if yaw ~= 0.0 then
-                local psi = (view_head_psi or 0.0)
-                    + yaw * CONFIG.view_pan_rate_dps * dt
-                if psi > 180 then psi = psi - 360 end
-                if psi < -180 then psi = psi + 360 end
-                view_head_psi = psi
-            end
-            if pitch ~= 0.0 then
-                local lim = CONFIG.view_pan_pitch_limit
-                local the = (view_head_the or 0.0)
-                    + pitch * CONFIG.view_pan_rate_dps * dt
-                if the >  lim then the =  lim end
-                if the < -lim then the = -lim end
-                view_head_the = the
-            end
-        end
-    end
-    return true
-end
-
 -- ------------------------------------------------------------ STATE (early) --
--- Declared before SUITE_MODULES so its closures capture these locals (in Lua a
--- local is only visible to code textually after its declaration).
+-- Declared before SUITE_MODULES so its closures capture these locals.
 local log_fd           = nil
 local optimizer_active = false
 local emergency_left   = 0.0
 local emergency_armed  = true
 local is_c750          = true
 
+-- --------------------------------------------------- TEXTURE (LIVERY) NAME --
+-- acf_livery_path is a *slow* dataref (it builds a string), and the panel asks
+-- for the label on every draw, so the resolved name is cached and refreshed at
+-- 1 Hz instead of 60 times a second.
+local livery_label_cache = nil
+local livery_label_stamp = -1.0
+
+local function livery_name()
+    local chars = {}
+    for i = 0, 511 do
+        local b = livery_path[i]
+        if b == nil or b == 0 then break end
+        chars[#chars + 1] = string.char(b)
+    end
+    local path = table.concat(chars)
+    local name = path:match("([^/]+)/*$")
+    if name and name ~= "" then
+        return (name:gsub("%%20", " "):gsub("_", " "))
+    end
+    return nil
+end
+
+local function livery_label_now()
+    local name = livery_name()
+    if name then return name:upper() end
+    local idx = citationx_livery_index or 0
+    if idx and idx >= 0 then return "LIVERY " .. tostring(idx + 1) end
+    return "DEFAULT"
+end
+
+local function livery_label(force)
+    local now = citationx_sim_time or 0.0
+    if force or livery_label_cache == nil or now - livery_label_stamp >= 1.0 then
+        livery_label_cache = livery_label_now()
+        livery_label_stamp = now
+    end
+    return livery_label_cache
+end
+
+-- --------------------------------------------------------------- AVITAB ----
+-- AviTab (Resources/plugins/AviTab) publishes its own datarefs and commands;
+-- the suite only forwards to them, so the panel is honest about whether the
+-- plugin is even installed.
+local avitab_panel_ref = nil
+local function avitab_present()
+    if avitab_panel_ref == nil then
+        avitab_panel_ref = XPLMFindDataRef("avitab/panel_enabled") or false
+    end
+    return avitab_panel_ref ~= false
+end
+
+function avitab_state()
+    if not avitab_present() then return "ABSENT" end
+    local menu = XPLMFindDataRef("avitab/is_in_menu")
+    if menu and XPLMGetDatai(menu) == 1 then return "MENU" end
+    return "OPEN"
+end
+
 -- ------------------------------------------------- SUITE MODULE REGISTRY ----
--- One entry per subsystem the suite owns. `state()` returns the short status
--- word shown on the control panel. `set()` is the single point of control for
--- commands, macros and click-to-toggle.
+-- One entry per subsystem the suite owns. `state()` is the short status word,
+-- `set()` the single control point for commands, macros and panel clicks.
+-- `cycle = true` means the row is an action (click / macro = next texture).
 SUITE_MODULES = {
     {
         key = "status", label = "CONTROL PANEL", macro = "control panel",
         get = function() return CONFIG.status_enabled end,
         set = function(on) citationx_set_status(on) end,
-        state = function()
-            if CONFIG.status_enabled then return "ON" end
-            return "OFF"
-        end,
+        state = function() return CONFIG.status_enabled and "ON" or "OFF" end,
     },
     {
         key = "axis", label = "AXIS OPTIMIZER", macro = "axis optimizer",
@@ -687,55 +274,38 @@ SUITE_MODULES = {
         end,
     },
     {
-        key = "input", label = "INPUT MAPPER", macro = "input mapper",
-        get = function() return CONFIG.input_map_enabled end,
-        set = function(on) citationx_set_input_map(on) end,
-        state = function()
-            if CONFIG.input_map_enabled then return "ON" end
-            return "OFF"
-        end,
-    },
-    {
-        key = "learn", label = "LEARN MODE", macro = "input learn mode",
-        get = function() return CONFIG.input_learn_mode end,
-        set = function(on) citationx_set_input_learn(on) end,
-        state = function()
-            if CONFIG.input_learn_mode then return "ON" end
-            return "OFF"
-        end,
-    },
-    {
-        key = "stick", label = "STICK HDG KNOB", macro = "stick heading knob",
-        get = function() return CONFIG.stick_hdg_enabled end,
-        set = function(on) citationx_set_stick_hdg(on) end,
-        state = function()
-            if CONFIG.stick_hdg_enabled then return "ON" end
-            return "OFF"
-        end,
-    },
-    {
         key = "axmon", label = "AXIS MONITOR", macro = "axis monitor",
         get = function() return CONFIG.axis_monitor end,
         set = function(on) citationx_set_axis_monitor(on) end,
-        state = function()
-            if CONFIG.axis_monitor then return "ON" end
-            return "OFF"
-        end,
+        state = function() return CONFIG.axis_monitor and "ON" or "OFF" end,
     },
     {
-        key = "look", label = "COCKPIT LOOK", macro = "cockpit look (R3 + stick)",
-        get = function() return CONFIG.view_pan_enabled end,
-        set = function(on) citationx_set_view_pan(on) end,
-        state = function()
-            if not CONFIG.view_pan_enabled then return "OFF" end
-            if view_pan_was_held then return "PAN" end
-            return "ON"
+        key = "texture", label = "AIRCRAFT TEXTURE", macro = "next aircraft texture",
+        cycle = true,
+        get = function() return false end,
+        set = function(on)
+            if on == true then citationx_texture_next() end
         end,
+        state = function() return livery_label() end,
     },
-    -- --- sibling panels from the other suite scripts -------------------------
-    -- These scripts share one Lua state, so their globals are reachable here.
-    -- Every accessor is nil-guarded so the panel keeps working if a script is
-    -- missing, disabled or simply loaded in a different order.
+    {
+        key = "wheel", label = "WHEEL = ALT SEL", macro = "mouse wheel altitude",
+        get = function() return CONFIG.mouse_wheel_altitude end,
+        set = function(on) citationx_set_wheel_altitude(on) end,
+        state = function() return CONFIG.mouse_wheel_altitude and "ON" or "OFF" end,
+    },
+    {
+        key = "avitab", label = "AVITAB CHARTS", macro = "AviTab charts",
+        cycle = true,
+        get = function() return false end,
+        set = function(on)
+            if on == true then citationx_avitab_charts() end
+        end,
+        state = function() return avitab_state() end,
+    },
+    -- --- sibling panels from the other suite scripts ------------------------
+    -- They share one Lua state; every accessor is nil-guarded so the hub keeps
+    -- working when a script is missing, disabled or loaded in another order.
     {
         key = "cabin", label = "CABIN OPS", macro = "cabin ops panel",
         get = function()
@@ -746,8 +316,7 @@ SUITE_MODULES = {
         end,
         state = function()
             if type(CAB_CONFIG) ~= "table" then return "ABSENT" end
-            if CAB_CONFIG.panel_enabled then return "ON" end
-            return "OFF"
+            return CAB_CONFIG.panel_enabled and "ON" or "OFF"
         end,
     },
     {
@@ -760,8 +329,7 @@ SUITE_MODULES = {
         end,
         state = function()
             if type(TRAINER_CONFIG) ~= "table" then return "ABSENT" end
-            if TRAINER_CONFIG.panel_enabled then return "ON" end
-            return "OFF"
+            return TRAINER_CONFIG.panel_enabled and "ON" or "OFF"
         end,
     },
     {
@@ -769,13 +337,11 @@ SUITE_MODULES = {
         get = function() return la_displayOn == true end,
         set = function(on)
             if type(la_toggle_last_result) ~= "function" then return end
-            -- la_toggle_last_result flips; only call it when the state differs.
             if (la_displayOn == true) ~= (on == true) then la_toggle_last_result() end
         end,
         state = function()
             if la_show_last_result == nil then return "ABSENT" end
-            if la_displayOn == true then return "SHOWN" end
-            return "HIDDEN"
+            return la_displayOn == true and "SHOWN" or "HIDDEN"
         end,
     },
     {
@@ -788,8 +354,7 @@ SUITE_MODULES = {
         end,
         state = function()
             if type(EFB_CONFIG) ~= "table" then return "ABSENT" end
-            if EFB_CONFIG.panel_enabled then return "ON" end
-            return "OFF"
+            return EFB_CONFIG.panel_enabled and "ON" or "OFF"
         end,
     },
     {
@@ -802,18 +367,15 @@ SUITE_MODULES = {
         end,
         state = function()
             if type(REAL_CONFIG) ~= "table" then return "ABSENT" end
-            if REAL_CONFIG.enabled then return "ON" end
-            return "OFF"
+            return REAL_CONFIG.enabled and "ON" or "OFF"
         end,
     },
 }
 
--- Status word -> colour on the control panel.
 local function state_color(text)
     local st = SUITE_STYLE
     if text == "ON" or text == "LIVE" or text == "REC"
-        or text == "ACTIVE" or text == "ARMED" or text == "SHOWN"
-        or text == "PAN" then
+        or text == "ACTIVE" or text == "ARMED" or text == "SHOWN" then
         return st.ok
     end
     if text == "TRIGGERED" then return st.alert end
@@ -830,13 +392,6 @@ local smooth_roll      = 0.0
 
 local toast_text       = nil
 local toast_until      = 0.0
-local learn_last_event = "(waiting for input)"
-local learn_events     = 0
-local prev_joy_buttons = {}
-local prev_raw_axes    = {}
-local trigger_next     = 0.0
-local trigger_l2_base  = nil
-local trigger_r2_base  = nil
 local status_rects     = {}
 local panel_footer_rect = nil
 local panel_header_rect = nil
@@ -894,6 +449,7 @@ local function total_fuel_flow_kg_h()
     return ((fuel_flow_kg_sec[0] or 0.0) + (fuel_flow_kg_sec[1] or 0.0)) * 3600.0
 end
 
+-- Deadzone -> expo -> sign, so both axes share one response curve.
 local function shaped_axis(value)
     local magnitude = math.abs(value or 0.0)
     if magnitude <= CONFIG.deadzone then return 0.0 end
@@ -924,8 +480,8 @@ local function toast(text)
     toast_until = (citationx_sim_time or 0.0) + 2.0
 end
 
--- Sibling scripts (the realism pack) borrow the 2 s toast. Nil-guarded on their
--- side, so the suite still works when this file is absent.
+-- Sibling scripts (the realism pack) borrow the 2 s toast. Nil-guarded there,
+-- so the suite still works when this file is absent.
 function citationx_toast(text)
     toast(text)
 end
@@ -982,49 +538,167 @@ function citationx_set_emergency(on)
     toast_state("EMERGENCY GEN", CONFIG.emergency_enabled)
 end
 
-function citationx_set_input_map(on)
-    CONFIG.input_map_enabled = (on == true)
-    toast_state("INPUT MAPPER", CONFIG.input_map_enabled)
-end
-
-function citationx_set_stick_hdg(on)
-    CONFIG.stick_hdg_enabled = (on == true)
-    if not CONFIG.stick_hdg_enabled then
-        stick_hdg_live_axis = -1
-        stick_base_raw      = {}
-        stick_dead_axis     = {}
-        stick_hdg_hold_s    = 0.0
-    end
-    toast_state("STICK HDG KNOB", CONFIG.stick_hdg_enabled)
-end
-
-function citationx_set_stick_alt(on)
-    CONFIG.stick_alt_enabled = (on == true)
-    if not CONFIG.stick_alt_enabled then
-        stick_base_raw  = {}
-        stick_dead_axis = {}
-    end
-    toast_state("STICK ALT KNOB", CONFIG.stick_alt_enabled)
-end
-
 function citationx_set_axis_monitor(on)
     CONFIG.axis_monitor = (on == true)
     toast_state("AXIS MONITOR", CONFIG.axis_monitor)
 end
 
-function citationx_set_view_pan(on)
-    CONFIG.view_pan_enabled = (on == true)
-    if not CONFIG.view_pan_enabled then
-        view_pan_was_held = false
-        view_pan_wait_center = false
-        view_pan_axis_x, view_pan_axis_y = -1, -1
-        -- Hand the camera back to X-Plane looking straight ahead, otherwise a
-        -- pan that was active when the feature was switched off leaves the
-        -- pilot's head parked at the old offset.
-        view_head_psi = 0.0
-        view_head_the = 0.0
+-- Textures ---------------------------------------------------------------
+-- You asked for a toggle between the installed textures; X-Plane already
+-- knows how to load a livery, so the suite just steps its list.
+function citationx_texture_next()
+    if not CONFIG.texture_cycle_enabled then return end
+    command_once("sim/operation/next_livery")
+    livery_label_stamp = -1.0
+    toast("TEXTURE: " .. livery_label(true))
+end
+
+function citationx_texture_prev()
+    if not CONFIG.texture_cycle_enabled then return end
+    command_once("sim/operation/prev_livery")
+    livery_label_stamp = -1.0
+    toast("TEXTURE: " .. livery_label(true))
+end
+
+function citationx_texture_report()
+    logMsg("Citation X Suite: texture = " .. livery_label(true))
+end
+
+-- ------------------------------------------------------------- AVITAB OPS ---
+-- Every AviTab command the suite forwards. AviTab is a separate plugin; if it
+-- is not installed these are silent no-ops plus a toast, never an error.
+local function avitab_command(cmd, label)
+    if not avitab_present() then
+        toast("AVITAB NOT INSTALLED")
+        return
     end
-    toast_state("COCKPIT LOOK", CONFIG.view_pan_enabled)
+    command_once(cmd)
+    if label then toast(label) end
+end
+
+function citationx_avitab_charts()  avitab_command("AviTab/app_charts",  "AVITAB: CHARTS") end
+function citationx_avitab_maps()    avitab_command("AviTab/app_maps",    "AVITAB: MAPS") end
+function citationx_avitab_routes()  avitab_command("AviTab/app_routes",  "AVITAB: ROUTES") end
+function citationx_avitab_airports() avitab_command("AviTab/app_airports", "AVITAB: AIRPORTS") end
+function citationx_avitab_home()    avitab_command("AviTab/Home",        "AVITAB: HOME") end
+function citationx_avitab_recentre() avitab_command("AviTab/recentre",   "AVITAB: RECENTRE") end
+function citationx_avitab_zoom_in()  avitab_command("AviTab/zoom_in",    nil) end
+function citationx_avitab_zoom_out() avitab_command("AviTab/zoom_out",   nil) end
+function citationx_avitab_toggle()  avitab_command("AviTab/toggle_tablet", "AVITAB") end
+
+-- Text report (Log.txt) of what AviTab is showing, for the status command.
+function citationx_avitab_report()
+    if not avitab_present() then
+        logMsg("Citation X Suite: AviTab is not installed")
+        return
+    end
+    local function getf(name)
+        local r = XPLMFindDataRef(name)
+        return r and XPLMGetDataf(r) or 0
+    end
+    logMsg(string.format(
+        "Citation X Suite: AviTab %s, map %.4f/%.4f zoom %.2f, brightness %.2f",
+        avitab_state(), getf("avitab/map/latitude"), getf("avitab/map/longitude"),
+        getf("avitab/map/zoom"), getf("avitab/brightness")))
+end
+
+-- ------------------------------------------------------ MOUSE SELECTORS ----
+-- The wheel is the one pilot input the suite touches, and it only moves the
+-- two autopilot selectors. Every action is also a real X-Plane command, so a
+-- middle click, a gesture or a thumbwheel can be pointed at it from X-Plane's
+-- joystick screen (or the mouse driver) without the suite grabbing anything.
+function citationx_set_wheel_altitude(on)
+    CONFIG.mouse_wheel_altitude = (on == true)
+    toast_state("WHEEL = ALT SEL", CONFIG.mouse_wheel_altitude)
+end
+
+local function alt_sel_write(feet)
+    feet = math.floor(feet / 100 + 0.5) * 100
+    if feet < CONFIG.alt_min_ft then feet = CONFIG.alt_min_ft end
+    if feet > CONFIG.alt_max_ft then feet = CONFIG.alt_max_ft end
+    citationx_alt_sel_ft    = feet
+    citationx_alt_legacy_ft = feet
+    return feet
+end
+
+function citationx_alt_up()
+    local feet = alt_sel_write((citationx_alt_sel_ft or 0) + CONFIG.alt_step_ft)
+    toast(string.format("ALT SEL %d FT", feet))
+end
+
+function citationx_alt_down()
+    local feet = alt_sel_write((citationx_alt_sel_ft or 0) - CONFIG.alt_step_ft)
+    toast(string.format("ALT SEL %d FT", feet))
+end
+
+function citationx_hdg_up()
+    local deg = ((citationx_hdg_sel_deg or 0) + CONFIG.hdg_step_deg) % 360
+    citationx_hdg_sel_deg = deg
+    toast(string.format("HDG %03.0f", deg))
+end
+
+function citationx_hdg_down()
+    local deg = ((citationx_hdg_sel_deg or 0) - CONFIG.hdg_step_deg) % 360
+    if deg < 0 then deg = deg + 360 end
+    citationx_hdg_sel_deg = deg
+    toast(string.format("HDG %03.0f", deg))
+end
+
+-- Taxi light and both landing lights: X-Plane's own switches, so the cockpit
+-- annunciation follows automatically.
+function citationx_taxi_light()
+    command_once("sim/lights/taxi_lights_toggle")
+    toast("TAXI LIGHT")
+end
+
+function citationx_landing_lights()
+    command_once("sim/lights/landing_lights_toggle")
+    toast("LANDING LIGHTS")
+end
+
+-- Two wheels, two selectors:
+--   main wheel forward/back  -> ALT SEL up/down
+--   thumbwheel forward/back  -> heading bug right/left
+-- X-Plane tells us which wheel moved in MOUSE_WHEEL_NUMBER. RESUME_MOUSE_WHEEL
+-- keeps the notch from also zooming the view. No key is ever read.
+local wheel_last_number, wheel_last_clicks = nil, 0
+
+function citationx_mouse_wheel()
+    local clicks = MOUSE_WHEEL_CLICKS or 0
+    local wheel  = MOUSE_WHEEL_NUMBER or 1
+    wheel_last_number, wheel_last_clicks = wheel, clicks
+    if clicks == 0 then return end
+
+    if wheel == CONFIG.wheel_heading_number then
+        if not CONFIG.wheel_heading_enabled then return end
+        local n = math.min(math.abs(clicks), 10)
+        for _ = 1, n do
+            if clicks > 0 then citationx_hdg_up() else citationx_hdg_down() end
+        end
+    else
+        if not CONFIG.mouse_wheel_altitude then return end
+        local n = math.min(math.abs(clicks), 10)
+        for _ = 1, n do
+            if clicks > 0 then citationx_alt_up() else citationx_alt_down() end
+        end
+    end
+    RESUME_MOUSE_WHEEL = true
+end
+
+-- Which physical wheel is which? Turn one notch and run the report.
+function citationx_wheel_report()
+    logMsg(string.format(
+        "Citation X Suite: last wheel event = number %s, %d click(s); ALT SEL wheel %d, heading wheel %d",
+        tostring(wheel_last_number), wheel_last_clicks or 0,
+        CONFIG.wheel_altitude_number, CONFIG.wheel_heading_number))
+end
+
+function citationx_wheel_map_swap()
+    local a, h = CONFIG.wheel_altitude_number, CONFIG.wheel_heading_number
+    CONFIG.wheel_altitude_number, CONFIG.wheel_heading_number = h, a
+    logMsg(string.format("Citation X Suite: ALT SEL wheel = %d, heading wheel = %d",
+        CONFIG.wheel_altitude_number, CONFIG.wheel_heading_number))
+    toast("WHEEL MAP SWAPPED")
 end
 
 function citationx_test_emergency()
@@ -1047,7 +721,11 @@ function citationx_toggle_module(key)
     for i = 1, #SUITE_MODULES do
         local m = SUITE_MODULES[i]
         if m.key == key then
-            m.set(not m.get())
+            if m.cycle then
+                m.set(true)
+            else
+                m.set(not m.get())
+            end
             return
         end
     end
@@ -1058,159 +736,275 @@ end
 function citationx_set_all(on)
     for i = 1, #SUITE_MODULES do
         local m = SUITE_MODULES[i]
-        if m.key ~= "status" then m.set(on == true) end
-    end
-end
-
--- Fill JOY_BINDINGS from the buttons X-Plane reports as UNASSIGNED. Face and
--- shoulder buttons only (8..17 per device): 0..7 are the D-pad hat on the DS4
--- and 18+ are not physical. Both device slots are scanned because the pad
--- enumerates twice (USB + Bluetooth), so the same action lands on both and
--- survives a reconnect. Nothing already mapped by the pilot is overwritten.
--- Each device owns 160 slots (sim/joystick/joystick_button_values is int[3200]
--- = 20 devices x 160, and initial_assignments.txt uses the same (dev*160)+btn
--- numbering), so slot * 160 is the device base.
-function citationx_autobind_joy()
-    if not CONFIG.joy_autobind_enabled then return end
-    JOY_BINDINGS = {}
-
-    local free = {}
-    for slot = 0, 1 do
-        for b = 8, 17 do
-            local idx = slot * 160 + b
-            if b ~= CONFIG.view_pan_button and (joy_btn_assign[idx] or 0) == 0 then
-                free[b] = free[b] or {}
-                free[b][#free[b] + 1] = idx
-            end
-        end
-    end
-
-    local bound = 0
-    for b = 8, 17 do
-        local slots = free[b]
-        if slots and bound < #JOY_AUTOBIND_ACTIONS then
-            bound = bound + 1
-            local a = JOY_AUTOBIND_ACTIONS[bound]
-            for i = 1, #slots do
-                JOY_BINDINGS[slots[i]] = { label = a.label, action = a.action }
-                logMsg(string.format(
-                    "Citation X Suite: free joy button %d -> %s",
-                    slots[i], a.label))
-            end
-        end
-    end
-    if bound == 0 then
-        logMsg("Citation X Suite: no free controller buttons to bind")
+        if m.key ~= "status" and not m.cycle then m.set(on == true) end
     end
 end
 
 function citationx_status_report()
     logMsg("Citation X Suite: status report ----------------------------------")
     logMsg(string.format("  aircraft = %s (C750=%s)", tostring(PLANE_ICAO), tostring(is_c750)))
+    logMsg("  input layer = mouse wheel -> ALT SEL (no keystrokes, no buttons)")
     for i = 1, #SUITE_MODULES do
         local m = SUITE_MODULES[i]
-        local text = m.state()
-        logMsg(string.format("  %-16s : %s", m.label, text))
-    end
-    local n = 0
-    for _ in pairs(JOY_BINDINGS) do n = n + 1 end
-    logMsg(string.format("  joystick autobind: %d free button(s)", n))
-end
-
--- ------------------------------------------------------------ INPUT MAPPER --
-local function probe_path()
-    local home = os.getenv("HOME")
-    if CONFIG.input_probe_to_desktop and home and home ~= "" then
-        return home .. "/Desktop/CitationX_InputProbe.txt"
-    end
-    if SCRIPT_DIRECTORY and SCRIPT_DIRECTORY ~= "" then
-        return SCRIPT_DIRECTORY .. "CitationX_InputProbe.txt"
-    end
-    return "CitationX_InputProbe.txt"
-end
-
-local function probe_log(line)
-    learn_last_event = line
-    learn_events     = learn_events + 1
-    local fd = io.open(probe_path(), "a")
-    if fd then
-        fd:write(os.date("%Y-%m-%d %H:%M:%S") .. "  " .. line .. "\n")
-        fd:close()
+        logMsg(string.format("  %-18s : %s", m.label, m.state()))
     end
 end
 
-local function fire_binding(binding)
-    if binding.action then binding.action() end
-    if binding.command then command_once(binding.command) end
-    toast(binding.label)
-    logMsg("Citation X Suite: input -> " .. binding.label)
-end
+-- ------------------------------------------------------------- FRAME LOOP ---
+function citationx_frame()
+    local now = citationx_sim_time or 0.0
+    local dt  = now - last_frame_time
+    if dt < 0.0 then dt = 0.0 end
+    last_frame_time = now
 
-local function binding_matches(b, vkey, ctrl, opt, shift)
-    return b.vkey == vkey
-        and (b.ctrl == true) == ctrl
-        and (b.opt == true) == opt
-        and (b.shift == true) == shift
-end
+    is_c750 = (PLANE_ICAO == "C750")
 
-local function find_binding(vkey)
-    local ctrl  = (CONTROL_KEY == true)
-    local opt   = (OPTION_KEY == true)
-    local shift = (SHIFT_KEY == true)
-    for i = 1, #INPUT_BINDINGS do
-        local b = INPUT_BINDINGS[i]
-        if binding_matches(b, vkey, ctrl, opt, shift) then return b end
-    end
-    for i = 1, #CITX_BINDINGS do
-        local b = CITX_BINDINGS[i]
-        if binding_matches(b, vkey, ctrl, opt, shift) then return b end
-    end
-    return nil
-end
-
-local function yn(value)
-    if value == true then return "1" end
-    return "0"
-end
-
-function citationx_keystroke()
-    local vkey = (VKEY or 0) % 256
-    if CONFIG.input_learn_mode then
-        probe_log(string.format("KEY vkey=%d (0x%02X) ctrl=%s opt=%s shift=%s action=%s char=%q",
-            vkey, vkey, yn(CONTROL_KEY), yn(OPTION_KEY), yn(SHIFT_KEY),
-            tostring(KEY_ACTION), CKEY or ""))
-    end
-
-    -- Held arrow keys tilt the cockpit view. Capture press AND release, and
-    -- consume the key so X-Plane's own momentary hat binding cannot fight it.
-    -- Only while the tilt feature is switched on: otherwise the keys pass
-    -- straight through to X-Plane's own keyboard map.
-    if CONFIG.view_tilt_enabled
-        and (vkey == 0x26 or vkey == 0x28)
-        and not (CONTROL_KEY or OPTION_KEY or SHIFT_KEY) then
-        if vkey == 0x26 then
-            view_tilt_up = (KEY_ACTION == "pressed")
-        else
-            view_tilt_down = (KEY_ACTION == "pressed")
+    -- 1. Axis optimizer. Only pitch/roll: yaw, brakes, throttle and every
+    --    button stay exactly as X-Plane has them.
+    if CONFIG.axis_optimizer_enabled and joy_avail_pitch == 1 and joy_avail_roll == 1 then
+        if not optimizer_active then
+            ovr_joystick_pitch = 1
+            ovr_joystick_roll  = 1
+            optimizer_active   = true
+            logMsg("Citation X Suite: axis optimizer engaged")
         end
-        RESUME_KEY = true
-        if KEY_ACTION ~= "pressed" then return end
+        local k = CONFIG.smoothing_factor
+        local target_pitch = shaped_axis(joy_pitch)
+        local target_roll  = shaped_axis(joy_roll)
+        smooth_pitch = smooth_pitch + k * (target_pitch - smooth_pitch)
+        smooth_roll  = smooth_roll  + k * (target_roll  - smooth_roll)
+        yoke_pitch_ratio = smooth_pitch
+        yoke_roll_ratio  = smooth_roll
+    elseif optimizer_active then
+        ovr_joystick_pitch = 0
+        ovr_joystick_roll  = 0
+        optimizer_active   = false
+        logMsg("Citation X Suite: axis optimizer released")
     end
 
-    -- Mouse thumb buttons and every other keystroke belong to X-Plane's own
-    -- mapping. No key is captured while the input map is OFF.
-    if KEY_ACTION ~= "pressed" or not CONFIG.input_map_enabled then return end
-    local binding = find_binding(vkey)
-    if binding then
-        RESUME_KEY = true
-        fire_binding(binding)
+    -- 2. Once-per-second tasks.
+    if now - last_tick_time >= 1.0 then
+        last_tick_time = now
+        write_log_line(now)
+        maybe_start_emergency()
+    end
+
+    if emergency_left > 0.0 then
+        emergency_left = emergency_left - dt
+        if emergency_left <= 0.0 then
+            emergency_left  = 0.0
+            emergency_armed = true
+            logMsg("Citation X Suite: emergency condition cleared")
+            toast("BLEED AIR WARNING CLEARED")
+        end
     end
 end
 
-function citationx_mouse_click()
-    if CONFIG.input_learn_mode then
-        probe_log("CLICK status=" .. tostring(MOUSE_STATUS))
+-- --------------------------------------------------------- ON-SCREEN PANEL ----
+-- The only thing the suite draws is the control panel (plus the opt-in axis
+-- monitor and a 2 s toast). No telemetry, no systems mirror.
+local function draw_bar(x, y_bottom, y_top, w, color, alpha)
+    glColor4f(color[1], color[2], color[3], alpha or color[4] or 1.0)
+    glRectf(x, y_bottom, x + w, y_top)
+end
+
+local function fit_text(text, max_px)
+    if measure_string(text) <= max_px then return text end
+    local trimmed = text
+    while #trimmed > 1 and measure_string(trimmed .. "...") > max_px do
+        trimmed = trimmed:sub(1, -2)
     end
+    return trimmed .. "..."
+end
+
+-- Helvetica faces; 18 for titles, 12 for rows, 10 for captions.
+local function suite_font(size)
+    if size == 18 then return draw_string_Helvetica_18 or draw_string end
+    if size == 10 then return draw_string_Helvetica_10 or draw_string end
+    return draw_string_Helvetica_12 or draw_string
+end
+
+local function suite_text(x, y, text, size, color)
+    glColor4f(color[1], color[2], color[3], color[4] or 1.0)
+    suite_font(size)(x, y, tostring(text or ""))
+end
+
+local function suite_text_right(right_x, y, text, size, color)
+    local s = tostring(text or "")
+    local w = measure_string(s, "Helvetica_" .. tostring(size)) or measure_string(s)
+    suite_text(right_x - w, y, s, size, color)
+end
+
+-- Black shell: body, 1 px border, 2 px header rule, title and right caption.
+local function draw_shell(x, top, w, h, title, sub)
+    local st = SUITE_STYLE
+    local bottom = top - h
+    draw_bar(x, bottom, top, w, st.bg)
+    draw_bar(x, top - 1, top, w, st.border)
+    draw_bar(x, bottom, top, 1, st.border)
+    draw_bar(x + w - 1, bottom, top, 1, st.border)
+    draw_bar(x, bottom, bottom + 1, w, st.border)
+    draw_bar(x, top - st.header_h, top, w, st.header_bg)
+    -- inner hairline under the header: reads crisper than a thick border
+    draw_bar(x, top - st.header_h, top - st.header_h + 1, w, st.border)
+    draw_bar(x, top - st.header_h - 1, top - st.header_h, w, st.hairline)
+    suite_text(x + st.pad, top - 27, title, 18, st.title)
+    if sub and sub ~= "" then
+        suite_text_right(x + w - st.pad, top - 24, sub, 10, st.sub)
+    end
+end
+
+local function draw_footer_button(x, bottom, w, label)
+    local st = SUITE_STYLE
+    local by0 = bottom + 7
+    local by1 = by0 + st.footer_h - 12
+    draw_bar(x + st.pad, by0, by1, w - 2 * st.pad, st.btn)
+    draw_bar(x + st.pad, by1 - 1, by1, w - 2 * st.pad, st.border)
+    local tw = measure_string(label, "Helvetica_10") or measure_string(label)
+    suite_text(x + (w - tw) / 2, by0 + 7, label, 10, st.value)
+    return { x0 = x + st.pad, x1 = x + w - st.pad, y0 = by0, y1 = by1 }
+end
+
+-- header (38) + sub-header (22) + rows + footer + padding
+function control_panel_height()
+    local st = SUITE_STYLE
+    return st.header_h + st.sub_h + 14
+        + #SUITE_MODULES * st.row_h + st.footer_h + 8
+end
+
+-- Public mirror of the panel height (the local forward declaration above
+-- shadows the function inside this file; other suite scripts and the tests
+-- ask through this name).
+function citationx_panel_height()
+    return control_panel_height()
+end
+
+local function draw_control_panel(screen_h)
+    local st = SUITE_STYLE
+    local w, pad = st.width, st.pad
+    local x = st.x
+
+    if st.top == nil then st.top = screen_h - 24 end
+    x = math.max(8, math.min(x, (SCREEN_WIDTH or 1920) - w - 8))
+    st.x = x
+    local h = control_panel_height()
+    local top = math.max(h + 8, math.min(st.top, screen_h - 8))
+    st.top = top
+    local bottom = top - h
+    local body_top = top - st.header_h
+
+    status_rects = {}
+
+    draw_shell(x, top, w, h, "CITATION X", "MASTER SUITE 3.0")
+
+    -- sub-header: what the hub is, so the intent is visible in the cockpit
+    suite_text(x + pad, body_top - 15, "SUITE CONTROL", 10, st.sub)
+    local note = "MOUSE ONLY - NO KEYBINDS"
+    local nw = measure_string(note, "Helvetica_10") or measure_string(note)
+    suite_text(x + w - pad - nw, body_top - 15, note, 10, st.dim)
+    draw_bar(x, body_top - st.sub_h, body_top, w, st.hairline, 0.45)
+
+    local first_y = body_top - st.sub_h - 15
+    for i = 1, #SUITE_MODULES do
+        local m = SUITE_MODULES[i]
+        local row_top = first_y + st.row_h - (i - 1) * st.row_h
+        local y = row_top - 15
+        local text = m.state()
+        local col  = m.cycle and st.value or state_color(text)
+
+        -- alternating body tone keeps 11 rows readable at a glance
+        if i % 2 == 0 then
+            draw_bar(x + 1, row_top - st.row_h, row_top, w - 2, st.bg_alt, 0.55)
+        end
+
+        -- status dot (a 5x5 square reads sharper than a circle at this size)
+        glColor4f(col[1], col[2], col[3], 1.0)
+        glRectf(x + pad, y - 1, x + pad + 5, y + 8)
+
+        suite_text(x + pad + 12, y, m.label, 12, st.label)
+        local value_max = w - pad * 2 - 12 - measure_string(m.label) - 16
+        local shown = fit_text(tostring(text), math.max(60, value_max))
+        suite_text_right(x + w - pad, y, shown, 12, col)
+
+        status_rects[#status_rects + 1] = {
+            key = m.key,
+            x0 = x, x1 = x + w,
+            y0 = row_top - st.row_h, y1 = row_top,
+        }
+    end
+
+    panel_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
+    panel_footer_rect = draw_footer_button(x, bottom, w, "HIDE PANEL")
+end
+
+local function draw_axis_monitor()
+    local st = SUITE_STYLE
+    local rows = {}
+    for i = 0, 63 do
+        local a = joy_raw_assign[i] or 0
+        local v = joy_raw_axes[i]
+        if v ~= nil and (a ~= 0 or math.abs((v or 0.5) - 0.5) > 0.05) then
+            rows[#rows + 1] = { idx = i, assign = a, raw = v }
+        end
+    end
+
+    local box_w = 336
+    local box_x = 20
+    local box_y = 20
+    local box_h = 48 + (#rows + 1) * 18
+    draw_bar(box_x, box_y, box_y + box_h, box_w, st.mon_bg)
+    draw_bar(box_x, box_y + box_h - 1, box_y + box_h, box_w, st.border)
+    draw_bar(box_x, box_y, box_x + 1, box_h, st.border)
+    draw_bar(box_x + box_w - 1, box_y, box_x + box_w, box_h, st.border)
+    draw_bar(box_x, box_y, box_x + box_w, box_y + 1, st.border)
+    suite_text(box_x + 12, box_y + box_h - 22, "AXIS MONITOR", 10, st.mon)
+    suite_text(box_x + 12, box_y + box_h - 38, "RAW  FUNCTION                 VALUE",
+        10, st.sub)
+
+    local ry = box_y + box_h - 58
+    for _, a in ipairs(rows) do
+        suite_text(box_x + 12, ry, string.format("%3d", a.idx), 12, st.label)
+        suite_text(box_x + 56, ry, fit_text(axis_assign_name(a.assign), 120),
+            12, st.label)
+        local cx = box_x + 196
+        draw_bar(cx - 40, ry + 3, ry + 6, 80, st.dim, 1.0)
+        glColor4f(st.mon[1], st.mon[2], st.mon[3], 1.0)
+        glRectf(cx - 40, ry + 2, cx - 40 + (a.raw or 0.0) * 80, ry + 7)
+        suite_text(box_x + 244, ry, string.format("%.2f", a.raw or 0.0), 12, st.mon)
+        ry = ry - 18
+    end
+end
+
+function citationx_overlay()
+    local screen_w = SCREEN_WIDTH  or 1920
+    local screen_h = SCREEN_HIGHT or 1080
+
+    if CONFIG.status_enabled then
+        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
+        draw_control_panel(screen_h)
+    end
+
+    if CONFIG.axis_monitor then
+        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
+        draw_axis_monitor()
+    end
+
+    if toast_text and (citationx_sim_time or 0.0) < toast_until then
+        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
+        local text_w = measure_string(toast_text)
+        local box_w  = text_w + 34
+        local box_x  = (screen_w - box_w) / 2
+        local box_y  = screen_h - 96
+        draw_bar(box_x, box_y - 8, box_y + 22, box_w, {0.00, 0.00, 0.00}, 0.92)
+        draw_bar(box_x, box_y - 8, box_x + 3, box_y + 22, SUITE_STYLE.accent, 1.0)
+        suite_text(box_x + 16, box_y + 3, toast_text, 12, SUITE_STYLE.value)
+    end
+end
+
+-- ------------------------------------------------------------- MOUSE (UI) ---
+-- Panel dragging and clickable rows only. No keystroke and no wheel handler is
+-- registered at all, so every key and scroll belongs to X-Plane.
+function citationx_mouse_click()
     if not CONFIG.status_enabled then
         panel_drag.active = false
         return
@@ -1220,7 +1014,6 @@ function citationx_mouse_click()
     local my = MOUSE_Y or -1.0
     local st = SUITE_STYLE
 
-    -- Drag by the header: down starts, drag moves, up ends.
     if MOUSE_STATUS == "down" then
         local r = panel_header_rect
         if r and mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
@@ -1257,7 +1050,6 @@ function citationx_mouse_click()
         return
     end
 
-    -- Click a row to toggle that subsystem.
     for i = 1, #status_rects do
         local r = status_rects[i]
         if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
@@ -1265,576 +1057,6 @@ function citationx_mouse_click()
             RESUME_MOUSE_CLICK = true
             return
         end
-    end
-end
-
-function citationx_altitude(delta_ft)
-    local target = (alt_sel_ft or 0.0) + delta_ft
-    if target < 0.0 then target = 0.0 end
-    if target > 60000.0 then target = 60000.0 end
-    alt_sel_ft    = target
-    alt_legacy_ft = target
-    toast(string.format("ALT SEL  %.0f ft", target))
-end
-
-function citationx_heading(delta_deg)
-    local target = ((hdg_sel_deg or 0.0) + delta_deg) % 360.0
-    hdg_sel_deg = target
-    toast(string.format("HDG SEL  %03.0f", target))
-end
-
--- Both landing lights on one input (mouse wheel click / gesture button).
--- The C750 has two independent switches, so read them and drive both to the
--- same target instead of firing two blind toggles that can drift apart.
-local landing_refs = nil
-function citationx_toggle_landing_lights()
-    if not landing_refs then
-        landing_refs = {
-            left  = XPLMFindDataRef("laminar/CitX/lights/landing_left"),
-            right = XPLMFindDataRef("laminar/CitX/lights/landing_right"),
-        }
-    end
-    local l = landing_refs.left  and XPLMGetDatai(landing_refs.left)  or nil
-    local r = landing_refs.right and XPLMGetDatai(landing_refs.right) or nil
-
-    if l ~= nil and r ~= nil then
-        local target = (l == 1 and r == 1) and 0 or 1
-        if l ~= target then command_once("laminar/CitX/lights/cmd_landing_left_toggle") end
-        if r ~= target then command_once("laminar/CitX/lights/cmd_landing_right_toggle") end
-        citationx_toast(target == 1 and "LANDING LIGHTS ON" or "LANDING LIGHTS OFF")
-    else
-        command_once("laminar/CitX/lights/cmd_landing_left_toggle")
-        command_once("laminar/CitX/lights/cmd_landing_right_toggle")
-        citationx_toast("LANDING LIGHTS")
-    end
-end
-
-function citationx_mouse_wheel()
-    if CONFIG.input_learn_mode then
-        probe_log(string.format("WHEEL wheel=%s clicks=%s",
-            tostring(MOUSE_WHEEL_NUMBER), tostring(MOUSE_WHEEL_CLICKS)))
-    end
-    if MOUSE_WHEEL_NUMBER ~= 1 then return end
-    local clicks = MOUSE_WHEEL_CLICKS or 0
-    if clicks == 0 then return end
-    if CONFIG.thumbwheel_heading then
-        RESUME_MOUSE_WHEEL = true
-        local direction = CONFIG.heading_wheel_invert and -1 or 1
-        citationx_heading(clicks * CONFIG.heading_step_deg * direction)
-    elseif CONFIG.thumbwheel_altitude then
-        RESUME_MOUSE_WHEEL = true
-        local direction = CONFIG.altitude_wheel_invert and -1 or 1
-        citationx_altitude(clicks * CONFIG.altitude_step_deg * direction)
-    end
-end
-
-function citationx_set_input_learn(on)
-    local was_on = (CONFIG.input_learn_mode == true)
-    CONFIG.input_learn_mode = (on == true)
-    learn_last_event = "(waiting for input)"
-    learn_events     = 0
-    if CONFIG.input_learn_mode then
-        probe_log("=== LEARN MODE START ===")
-        logMsg("Citation X Suite: input learn mode ON -> " .. probe_path())
-        toast("LEARN MODE: ON")
-    elseif was_on then
-        -- Only close a session that was really open. FlyWithLua runs the
-        -- macro's deactivate chunk on every script load, which used to append
-        -- a STOP line each reload and made the probe look like it had run.
-        probe_log("=== LEARN MODE STOP ===")
-        logMsg("Citation X Suite: input learn mode OFF")
-        toast("LEARN MODE: OFF")
-    end
-end
-
--- Analog L2/R2 triggers. The DS4 reports them as axes 4/5 (USB) and 29/30
--- (Bluetooth); X-Plane's button map only sees the digital end-stop. Read the
--- analog deflection from its learned rest and issue throttle_down/up at a
--- steady repeat rate instead.
-local function trigger_throttle_tick()
-    if not CONFIG.trigger_throttle_enabled then return end
-
-    local function axis_value(list)
-        local best = nil
-        for i = 1, #list do
-            local v = joy_raw_axes[list[i]]
-            if v ~= nil and (best == nil or v > best) then best = v end
-        end
-        return best
-    end
-
-    local l2 = axis_value(CONFIG.trigger_l2_axes)
-    local r2 = axis_value(CONFIG.trigger_r2_axes)
-    if l2 == nil and r2 == nil then return end
-
-    if l2 ~= nil and trigger_l2_base == nil then trigger_l2_base = l2 end
-    if r2 ~= nil and trigger_r2_base == nil then trigger_r2_base = r2 end
-
-    local now = citationx_sim_time or 0.0
-    if now < trigger_next then return end
-
-    local down = l2 ~= nil
-        and math.abs(l2 - trigger_l2_base) >= CONFIG.trigger_threshold
-    local up   = r2 ~= nil
-        and math.abs(r2 - trigger_r2_base) >= CONFIG.trigger_threshold
-
-    if down then
-        command_once("sim/engines/throttle_down")
-        trigger_next = now + CONFIG.trigger_repeat_s
-    end
-    if up then
-        command_once("sim/engines/throttle_up")
-        trigger_next = now + CONFIG.trigger_repeat_s
-    end
-end
-
--- ------------------------------------------------------------- FRAME LOOP ---
-function citationx_frame()
-    local now = citationx_sim_time or 0.0
-    local dt  = now - last_frame_time
-    if dt < 0.0 then dt = 0.0 end
-    last_frame_time = now
-
-    is_c750 = (PLANE_ICAO == "C750")
-
-    -- Fill the free-button map once X-Plane has published assignments (or
-    -- after 5 s on a virgin config where none exist yet).
-    if not joy_autobind_done then
-        local ready = (now >= 5.0)
-        if not ready then
-            for i = 0, 319 do
-                if (joy_btn_assign[i] or 0) ~= 0 then
-                    ready = true
-                    break
-                end
-            end
-        end
-        if ready then
-            joy_autobind_done = true
-            citationx_autobind_joy()
-        end
-    end
-
-    -- 2. axis optimizer
-    if CONFIG.axis_optimizer_enabled and joy_avail_pitch == 1 and joy_avail_roll == 1 then
-        if not optimizer_active then
-            ovr_joystick_pitch = 1
-            ovr_joystick_roll  = 1
-            optimizer_active   = true
-            logMsg("Citation X Suite: axis optimizer engaged")
-        end
-        local k = CONFIG.smoothing_factor
-        local target_pitch = shaped_axis(joy_pitch)
-        local target_roll  = shaped_axis(joy_roll)
-        smooth_pitch = smooth_pitch + k * (target_pitch - smooth_pitch)
-        smooth_roll  = smooth_roll  + k * (target_roll  - smooth_roll)
-        yoke_pitch_ratio = smooth_pitch
-        yoke_roll_ratio  = smooth_roll
-    elseif optimizer_active then
-        ovr_joystick_pitch = 0
-        ovr_joystick_roll  = 0
-        optimizer_active   = false
-        logMsg("Citation X Suite: axis optimizer released")
-    end
-
-    -- R3 + right stick pans the 3-D cockpit. While it is held the same stick
-    -- must not also drive the heading bug, so the knob block is skipped.
-    local look_held = citationx_view_pan(dt)
-
-    -- Held arrow keys tilt the view. The offset is kept after release; the
-    -- default view key (W) or a reload recentres it.
-    if CONFIG.view_tilt_enabled and dt > 0.0
-        and (view_tilt_up or view_tilt_down) then
-        local dir = 0
-        if view_tilt_up   then dir = dir + 1 end
-        if view_tilt_down then dir = dir - 1 end
-        if CONFIG.view_tilt_invert then dir = -dir end
-        local the = (view_head_the or 0.0) + dir * CONFIG.view_tilt_rate_dps * dt
-        local lim = CONFIG.view_tilt_limit_deg
-        if the >  lim then the =  lim end
-        if the < -lim then the = -lim end
-        view_head_the = the
-    end
-
-    -- Spring-centered stick axis -> rate-based heading bug. Deflection is
-    -- measured against each axis' learned rest value, so a parked axis (idle
-    -- trigger at raw 0, stale pad slot, drift) never drives the bug.
-    if CONFIG.stick_hdg_enabled and dt > 0.0 and not look_held then
-        -- Revive a vetoed slot once it reports a sane centered value again.
-        for idx in pairs(stick_dead_axis) do
-            local raw = joy_raw_axes[idx]
-            if raw and math.abs(raw - CONFIG.stick_hdg_center) < 0.10 then
-                stick_dead_axis[idx] = nil
-            end
-        end
-
-        -- A locked axis that turns out to be a flight control must be dropped.
-        -- At aircraft load X-Plane can still report an empty assignment table,
-        -- which made detection latch onto the roll axis before it was filled;
-        -- the sticky lock then kept the heading bug on the left stick.
-        if stick_hdg_live_axis >= 0 then
-            local a = joy_raw_assign[stick_hdg_live_axis] or 0
-            if a == 1 or a == 2 or a == 3 or a == 4 then
-                stick_hdg_live_axis = -1
-                stick_hdg_hold_s    = 0.0
-            end
-        end
-
-        local axis = CONFIG.stick_hdg_axis
-        local candidates = CONFIG.stick_hdg_axes
-        local use_list = (type(candidates) == "table" and #candidates > 0)
-        if use_list then
-            -- Deterministic: ONLY the listed raw axes may move the bug. The
-            -- most-deflected one wins, so whichever device slot X-Plane is
-            -- actually reading (USB 3 / Bluetooth 28) drives the knob. The
-            -- learned-rest guard keeps a dead interface parked at raw 0 out.
-            axis = nil
-            local best_mag = CONFIG.stick_hdg_deadzone
-            for k = 1, #candidates do
-                local idx = candidates[k]
-                if stick_base_raw[idx] ~= nil and not stick_dead_axis[idx] then
-                    local mag = math.abs(stick_axis_deflection(idx))
-                    if mag > best_mag then axis, best_mag = idx, mag end
-                end
-            end
-        elseif axis < 0 then
-            -- Drop a pinned axis whose slot went silent (the pad switched from
-            -- USB to Bluetooth, was unplugged) so detection can start over.
-            if stick_hdg_live_axis >= 0
-                and joy_raw_axes[stick_hdg_live_axis] == nil then
-                stick_hdg_live_axis = -1
-            end
-            if stick_hdg_live_axis >= 0 then
-                axis = stick_hdg_live_axis
-            else
-                -- Never autodetect before X-Plane has published the axis
-                -- assignments: an empty table makes every axis look free.
-                local assignments_ready = false
-                for i = 0, 63 do
-                    local a = joy_raw_assign[i] or 0
-                    if a == 1 or a == 2 or a == 3 or a == 4 then
-                        assignments_ready = true
-                        break
-                    end
-                end
-                axis = assignments_ready and detect_stick_hdg_axis() or nil
-                if axis then
-                    stick_hdg_live_axis = axis
-                    if CONFIG.stick_hdg_sticky then
-                        logMsg("Citation X Suite: heading knob locked to raw axis "
-                            .. axis .. " (right stick)")
-                    end
-                elseif now >= stick_hdg_diag_at then
-                    -- Nothing eligible yet. Log every live axis (raw index,
-                    -- deflection, assignment enum, learned rest) once every
-                    -- 10 s so a bad pick can be pinned without guessing.
-                    stick_hdg_diag_at = now + 10.0
-                    local parts = {}
-                    for i = 0, 31 do
-                        local raw = joy_raw_axes[i]
-                        if raw ~= nil then
-                            parts[#parts + 1] = string.format("%d:d%.2f/a%d/b%.2f",
-                                i, math.abs(stick_axis_deflection(i)),
-                                joy_raw_assign[i] or 0, stick_base_raw[i] or -1)
-                        end
-                    end
-                    logMsg("Citation X Suite: HDG scan " .. table.concat(parts, " "))
-                end
-            end
-        end
-
-        if axis and axis >= 0 then
-            stick_hdg_live_axis = axis
-            local d   = stick_axis_deflection(axis)
-            local mag = math.abs(d)
-            local raw = joy_raw_axes[axis] or CONFIG.stick_hdg_center
-
-            -- A slot pinned at a hard extreme for a long time is usually the
-            -- pad's *other* interface (USB vs Bluetooth) going silent, not a
-            -- held stick. Veto it so the bug cannot free-run; the next live
-            -- interface then takes over.
-            if mag >= 0.9 and (raw <= 0.02 or raw >= 0.98) then
-                stick_hdg_hold_s = stick_hdg_hold_s + dt
-                if (use_list or CONFIG.stick_hdg_axis < 0)
-                    and stick_hdg_hold_s >= CONFIG.stick_hdg_stale_hold_s then
-                    stick_dead_axis[axis] = true
-                    stick_hdg_live_axis   = -1
-                    stick_hdg_hold_s      = 0.0
-                    axis                  = -1
-                end
-            else
-                stick_hdg_hold_s = 0.0
-            end
-
-            if axis and axis >= 0 then
-                if mag > CONFIG.stick_hdg_deadzone then
-                    local sign = (d > 0.0) and 1 or -1
-                    local scaled = (mag - CONFIG.stick_hdg_deadzone)
-                                 / (1.0 - CONFIG.stick_hdg_deadzone)
-                    citationx_heading(sign * scaled
-                        * CONFIG.stick_hdg_rate_dps * dt)
-                elseif not use_list and CONFIG.stick_hdg_axis < 0
-                    and not CONFIG.stick_hdg_sticky then
-                    -- Non-sticky auto mode: forget the axis when it is back at
-                    -- rest so the next push re-detects. In sticky (default)
-                    -- mode the right stick stays locked for the whole session.
-                    stick_hdg_live_axis = -1
-                end
-            end
-        end
-    end
-    if (CONFIG.stick_hdg_enabled or CONFIG.view_pan_enabled
-        or CONFIG.stick_alt_enabled) and dt > 0.0 then
-        stick_baseline_update()
-        stick_alt_tick(dt)
-    end
-
-    -- 3. + 4. once-per-second tasks
-    if now - last_tick_time >= 1.0 then
-        last_tick_time = now
-        write_log_line(now)
-        maybe_start_emergency()
-    end
-
-    if emergency_left > 0.0 then
-        emergency_left = emergency_left - dt
-        if emergency_left <= 0.0 then
-            emergency_left  = 0.0
-            emergency_armed = true
-            logMsg("Citation X Suite: emergency condition cleared")
-            toast("BLEED AIR WARNING CLEARED")
-        end
-    end
-
-    -- 5. joystick buttons: learn logging + mapped actions.
-    -- 160 slots per device (sim/joystick/joystick_button_values is int[3200]
-    -- = 20 devices x 160). The DS4 enumerates twice, USB and Bluetooth, so
-    -- scan both device blocks (0..319) or the pad goes silent when it
-    -- reconnects on the other interface.
-    for i = 0, 319 do
-        local value = joy_buttons[i] or 0
-        if value ~= (prev_joy_buttons[i] or 0) then
-            prev_joy_buttons[i] = value
-            if CONFIG.input_learn_mode then
-                probe_log(string.format("JOY btn=%d %s", i, (value == 1) and "down" or "up"))
-            end
-            if value == 1 and (CONFIG.input_map_enabled or CONFIG.joy_map_enabled)
-                and JOY_BINDINGS[i] then
-                fire_binding(JOY_BINDINGS[i])
-            end
-        end
-    end
-
-    trigger_throttle_tick()
-
-    -- 6. raw axes: learn logging (find the physical index for a stick).
-    -- The DS4's six axes arrive at raw 25..30 (left stick 25/26, yaw 27,
-    -- right stick 28, triggers 29/30), so scan past the first two devices.
-    if CONFIG.input_learn_mode then
-        for i = 0, 31 do
-            local v = joy_raw_axes[i] or 0.0
-            if math.abs(v - (prev_raw_axes[i] or 0.0)) > 0.05 then
-                prev_raw_axes[i] = v
-                probe_log(string.format("AXIS idx=%d value=%.3f assign=%s",
-                    i, v, tostring(joy_raw_assign[i] or 0)))
-            end
-        end
-    end
-end
-
--- --------------------------------------------------------- ON-SCREEN PANEL ----
--- The only thing the suite draws is the control panel (plus the axis monitor,
--- the learn-mode box and a 2 s toast while those are switched on). There is no
--- telemetry readout and no aircraft-systems mirror: the cockpit already has
--- airspeed, altitude, heading, Mach, G, fuel flow, electrics, fuel and ice.
-local function draw_text_right(right_x, y, text, r, g, b)
-    draw_string(right_x - measure_string(text), y, text, r, g, b)
-end
-
-local function draw_bar(x, y_bottom, y_top, w, color, alpha)
-    glColor4f(color[1], color[2], color[3], alpha or color[4] or 1.0)
-    glRectf(x, y_bottom, x + w, y_top)
-end
-
-local function fit_text(text, max_px)
-    if measure_string(text) <= max_px then return text end
-    local trimmed = text
-    while #trimmed > 1 and measure_string(trimmed .. "...") > max_px do
-        trimmed = trimmed:sub(1, -2)
-    end
-    return trimmed .. "..."
-end
-
--- Helvetica faces and the realism panel's text metrics.
-local function suite_font(size)
-    if size == 18 then return draw_string_Helvetica_18 or draw_string end
-    if size == 10 then return draw_string_Helvetica_10 or draw_string end
-    return draw_string_Helvetica_12 or draw_string
-end
-
-local function suite_text(x, y, text, size, color)
-    glColor4f(color[1], color[2], color[3], color[4] or 1.0)
-    suite_font(size)(x, y, tostring(text or ""))
-end
-
-local function suite_text_right(right_x, y, text, size, color)
-    local s = tostring(text or "")
-    local w = measure_string(s, "Helvetica_" .. tostring(size)) or measure_string(s)
-    suite_text(right_x - w, y, s, size, color)
-end
-
--- Shared black-shell drawing: body, 1 px border, 34 px header, divider.
-local function draw_shell(x, top, w, h, title, sub)
-    local st = SUITE_STYLE
-    local bottom = top - h
-    draw_bar(x, bottom, top, w, st.bg)
-    draw_bar(x, top - 1, top, w, st.border)
-    draw_bar(x, bottom, top, 1, st.border)
-    draw_bar(x + w - 1, bottom, top, 1, st.border)
-    draw_bar(x, bottom, bottom + 1, w, st.border)
-    draw_bar(x, top - st.header_h, top, w, st.header_bg)
-    draw_bar(x, top - st.header_h, top - st.header_h + 2, w, st.border)
-    suite_text(x + st.pad, top - 25, title, 18, st.title)
-    if sub and sub ~= "" then
-        suite_text_right(x + w - st.pad, top - 22, sub, 10, st.sub)
-    end
-end
-
--- Footer button, returns its clickable rectangle.
-local function draw_footer_button(x, bottom, w, label)
-    local st = SUITE_STYLE
-    local by0 = bottom + 8
-    local by1 = by0 + st.footer_h - 12
-    draw_bar(x + st.pad, by0, by1, w - 2 * st.pad, st.btn)
-    local tw = measure_string(label, "Helvetica_10") or measure_string(label)
-    suite_text(x + (w - tw) / 2, by0 + 6, label, 10, st.value)
-    return { x0 = x + st.pad, x1 = x + w - st.pad, y0 = by0, y1 = by1 }
-end
-
--- header (34) + sub-header (20) + rows + footer + padding
-function control_panel_height()
-    local st = SUITE_STYLE
-    return st.header_h + st.sub_h + 16
-        + #SUITE_MODULES * st.row_h + st.footer_h + 8
-end
-
-local function draw_control_panel(screen_h)
-    local st = SUITE_STYLE
-    local w, pad = st.width, st.pad
-    local x = st.x
-
-    -- first draw: park the hub to the right of the realism panel
-    if st.top == nil then st.top = screen_h - 24 end
-    x = math.max(8, math.min(x, (SCREEN_WIDTH or 1920) - w - 8))
-    st.x = x
-    local top = math.max(control_panel_height() + 8,
-        math.min(st.top, screen_h - 8))
-    st.top = top
-    local bottom = top - control_panel_height()
-
-    status_rects = {}
-
-    draw_shell(x, top, w, control_panel_height(), "CITATION X", "MASTER SUITE")
-    suite_text(x + pad, top - st.header_h - 14, "CONTROL PANEL", 10, st.sub)
-
-    local first_y = top - st.header_h - st.sub_h - 14
-    for i = 1, #SUITE_MODULES do
-        local m = SUITE_MODULES[i]
-        local y = first_y - (i - 1) * st.row_h
-        local text = m.state()
-        local col  = state_color(text)
-
-        glColor4f(col[1], col[2], col[3], 1.0)
-        glRectf(x + pad, y - 1, x + pad + 5, y + 8)
-        suite_text(x + pad + 11, y, m.label, 12, st.label)
-        suite_text_right(x + w - pad, y, text, 12, col)
-
-        status_rects[#status_rects + 1] = {
-            key = m.key,
-            x0 = x, x1 = x + w,
-            y0 = y - 4, y1 = y + st.row_h - 4,
-        }
-    end
-
-    panel_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
-    panel_footer_rect = draw_footer_button(x, bottom, w, "HIDE PANEL")
-end
-
-function citationx_overlay()
-    local screen_w = SCREEN_WIDTH  or 1920
-    local screen_h = SCREEN_HIGHT or 1080
-
-    local st = SUITE_STYLE
-
-    if CONFIG.status_enabled then
-        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
-        draw_control_panel(screen_h)
-    end
-
-    if CONFIG.axis_monitor then
-        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
-        local rows = {}
-        for i = 0, 63 do
-            local a = joy_raw_assign[i] or 0
-            local c = stick_axis_centered(i)
-            if a ~= 0 or math.abs(c) > 0.05 or i == stick_hdg_live_axis then
-                rows[#rows + 1] = { idx = i, assign = a, c = c }
-            end
-        end
-        local box_w = 300
-        local box_x = 20
-        local box_y = 20
-        local box_h = 44 + (#rows + 2) * 18
-        glColor4f(st.learn_bg[1], st.learn_bg[2], st.learn_bg[3], st.learn_bg[4])
-        glRectf(box_x, box_y, box_x + box_w, box_y + box_h)
-        suite_text(box_x + 10, box_y + box_h - 20, "AXIS MONITOR", 10, st.learn)
-        local ry = box_y + box_h - 42
-        for _, a in ipairs(rows) do
-            local live = (a.idx == stick_hdg_live_axis)
-            local r, g, b = st.label[1], st.label[2], st.label[3]
-            if live then r, g, b = st.ok[1], st.ok[2], st.ok[3] end
-            suite_text(box_x + 10, ry, string.format("AX%3d", a.idx), 12, { r, g, b })
-            suite_text(box_x + 48, ry, fit_text(axis_assign_name(a.assign), 90), 12, { r, g, b })
-            local cx = box_x + 190
-            glColor4f(st.dim[1], st.dim[2], st.dim[3], 1.0)
-            glRectf(cx - 40, ry + 2, cx + 40, ry + 5)
-            glColor4f(r, g, b, 1.0)
-            glRectf(cx, ry + 1, cx + a.c * 40, ry + 7)
-            suite_text(box_x + 238, ry, string.format("%+.2f", a.c), 12, { r, g, b })
-            ry = ry - 18
-        end
-        suite_text(box_x + 10, ry, "Push the right stick; triggers (L2/R2) are ignored.", 10, st.sub)
-        suite_text(box_x + 10, ry - 18, "Green = locked heading-knob axis.", 10, st.sub)
-    end
-
-    if toast_text and (citationx_sim_time or 0.0) < toast_until then
-        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
-        local text_w = measure_string(toast_text)
-        local box_w  = text_w + 32
-        local box_x  = (screen_w - box_w) / 2
-        local box_y  = screen_h - 96
-        glColor4f(0.00, 0.00, 0.00, 0.92)
-        glRectf(box_x, box_y - 8, box_x + box_w, box_y + 22)
-        glColor4f(SUITE_STYLE.accent[1], SUITE_STYLE.accent[2], SUITE_STYLE.accent[3], 1.0)
-        glRectf(box_x, box_y - 8, box_x + 4, box_y + 22)
-        suite_text(box_x + 16, box_y + 3, toast_text, 12, SUITE_STYLE.value)
-    end
-
-    if CONFIG.input_learn_mode then
-        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
-        local box_w = math.min(560, screen_w - 40)
-        local box_x = screen_w - box_w - 20
-        local box_y = screen_h - 260
-        local box_h = 134
-        glColor4f(st.learn_bg[1], st.learn_bg[2], st.learn_bg[3], st.learn_bg[4])
-        glRectf(box_x, box_y - box_h, box_x + box_w, box_y + 10)
-        draw_string(box_x + 10, box_y - 4, "INPUT LEARN MODE  ->  CitationX_InputProbe.txt",
-            st.learn[1], st.learn[2], st.learn[3])
-        draw_string(box_x + 10, box_y - 26, "LAST : " .. fit_text(learn_last_event, box_w - 24), 1, 1, 1)
-        draw_string(box_x + 10, box_y - 44, string.format("EVENT COUNT : %d", learn_events), 0.85, 0.85, 0.85)
-        draw_string(box_x + 10, box_y - 62, "Press every MX / PS4 control once, one at a time.", 0.85, 0.85, 0.85)
-        draw_string(box_x + 10, box_y - 80, "Map: Ctrl+Shift 1-5 lights, 6 AP, 7 HDG, 8 REV, 9/0 ALT.", 0.60, 0.80, 0.90)
-        draw_string(box_x + 10, box_y - 98, "C750 systems: Ctrl+Shift letters, Ctrl+Opt digit/letters.", 0.60, 0.80, 0.90)
     end
 end
 
@@ -1851,12 +1073,6 @@ function citationx_init()
     ovr_joystick_pitch = 0
     ovr_joystick_roll  = 0
 
-    -- Clear any head offset left by the old R3 cockpit-look feature.
-    if not CONFIG.view_pan_enabled then
-        view_head_psi = 0.0
-        view_head_the = 0.0
-    end
-
     if CONFIG.log_enabled then
         arm_recorder()
     end
@@ -1870,24 +1086,32 @@ citationx_init()
 do_every_frame("citationx_frame()")
 do_every_draw("citationx_overlay()")
 do_on_exit("citationx_shutdown()")
-do_on_keystroke("citationx_keystroke()")
 do_on_mouse_click("citationx_mouse_click()")
 do_on_mouse_wheel("citationx_mouse_wheel()")
 
 -- ------------------------------------------------ COMMANDS + MACRO MENU -----
--- Register each subsystem toggle as a real X-Plane command (so it can be
--- bound to a key or joystick button in Settings > Joystick) and as a
--- FlyWithLua menu switch (so the menu shows an on/off checkmark).
+-- Each subsystem is a real X-Plane command (bind it yourself if you ever want
+-- to) and a FlyWithLua menu switch. Nothing here is pre-bound.
 for _, m in ipairs(SUITE_MODULES) do
     create_command("CitationXSuite/toggle_" .. m.key,
-        "CitationX Suite: toggle " .. m.label,
+        "CitationX Suite: " .. (m.cycle and "next " or "toggle ") .. m.label,
         "citationx_toggle_module('" .. m.key .. "')", "", "")
-    add_macro("CitationX Suite: " .. m.macro,
-        "citationx_set_module('" .. m.key .. "', true)",
-        "citationx_set_module('" .. m.key .. "', false)",
-        m.get() and "activate" or "deactivate")
+    if m.cycle then
+        add_macro("CitationX Suite: " .. m.macro, "citationx_set_module('" .. m.key .. "', true)")
+    else
+        add_macro("CitationX Suite: " .. m.macro,
+            "citationx_set_module('" .. m.key .. "', true)",
+            "citationx_set_module('" .. m.key .. "', false)",
+            m.get() and "activate" or "deactivate")
+    end
 end
 
+create_command("CitationXSuite/texture_next",
+    "CitationX Suite: next aircraft texture",
+    "citationx_texture_next()", "", "")
+create_command("CitationXSuite/texture_prev",
+    "CitationX Suite: previous aircraft texture",
+    "citationx_texture_prev()", "", "")
 create_command("CitationXSuite/test_emergency",
     "CitationX Suite: preview the emergency warning",
     "citationx_test_emergency()", "", "")
@@ -1895,7 +1119,54 @@ create_command("CitationXSuite/status_report",
     "CitationX Suite: write the active-system report to Log.txt",
     "citationx_status_report()", "", "")
 
+-- Mouse actions as real commands: point a middle click, a gesture or the
+-- thumbwheel at these from X-Plane's joystick screen (or the mouse driver).
+create_command("CitationXSuite/alt_sel_up",
+    "CitationX Suite: altitude selector up", "citationx_alt_up()", "", "")
+create_command("CitationXSuite/alt_sel_down",
+    "CitationX Suite: altitude selector down", "citationx_alt_down()", "", "")
+create_command("CitationXSuite/hdg_bug_up",
+    "CitationX Suite: heading bug right", "citationx_hdg_up()", "", "")
+create_command("CitationXSuite/hdg_bug_down",
+    "CitationX Suite: heading bug left", "citationx_hdg_down()", "", "")
+create_command("CitationXSuite/taxi_light_toggle",
+    "CitationX Suite: taxi light toggle", "citationx_taxi_light()", "", "")
+create_command("CitationXSuite/landing_lights_toggle",
+    "CitationX Suite: both landing lights toggle", "citationx_landing_lights()", "", "")
+
+add_macro("CitationX Suite: previous aircraft texture", "citationx_texture_prev()")
 add_macro("CitationX Suite: preview emergency warning", "citationx_test_emergency()")
 add_macro("CitationX Suite: log status report", "citationx_status_report()")
-add_macro("CitationX Suite: enable all modules", "citationx_set_all(true)")
-add_macro("CitationX Suite: disable all modules", "citationx_set_all(false)")
+add_macro("CitationX Suite: altitude selector up", "citationx_alt_up()")
+add_macro("CitationX Suite: altitude selector down", "citationx_alt_down()")
+add_macro("CitationX Suite: heading bug right", "citationx_hdg_up()")
+add_macro("CitationX Suite: heading bug left", "citationx_hdg_down()")
+add_macro("CitationX Suite: taxi light toggle", "citationx_taxi_light()")
+add_macro("CitationX Suite: both landing lights", "citationx_landing_lights()")
+-- AviTab is a separate plugin; these commands only forward to its own API.
+create_command("CitationXSuite/avitab_charts",
+    "CitationX Suite: AviTab charts app", "citationx_avitab_charts()", "", "")
+create_command("CitationXSuite/avitab_maps",
+    "CitationX Suite: AviTab map app", "citationx_avitab_maps()", "", "")
+create_command("CitationXSuite/avitab_routes",
+    "CitationX Suite: AviTab route app", "citationx_avitab_routes()", "", "")
+create_command("CitationXSuite/avitab_airports",
+    "CitationX Suite: AviTab airport app", "citationx_avitab_airports()", "", "")
+create_command("CitationXSuite/avitab_toggle",
+    "CitationX Suite: show/hide the AviTab tablet", "citationx_avitab_toggle()", "", "")
+create_command("CitationXSuite/avitab_recentre",
+    "CitationX Suite: recentre the AviTab map", "citationx_avitab_recentre()", "", "")
+create_command("CitationXSuite/avitab_zoom_in",
+    "CitationX Suite: zoom the AviTab map in", "citationx_avitab_zoom_in()", "", "")
+create_command("CitationXSuite/avitab_zoom_out",
+    "CitationX Suite: zoom the AviTab map out", "citationx_avitab_zoom_out()", "", "")
+add_macro("CitationX Suite: AviTab map", "citationx_avitab_maps()")
+add_macro("CitationX Suite: AviTab routes", "citationx_avitab_routes()")
+add_macro("CitationX Suite: AviTab report", "citationx_avitab_report()")
+create_command("CitationXSuite/wheel_report",
+    "CitationX Suite: log which mouse wheel moved last",
+    "citationx_wheel_report()", "", "")
+create_command("CitationXSuite/wheel_map_swap",
+    "CitationX Suite: swap the ALT SEL and heading wheels",
+    "citationx_wheel_map_swap()", "", "")
+add_macro("CitationX Suite: mouse wheel report", "citationx_wheel_report()")

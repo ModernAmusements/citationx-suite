@@ -1,35 +1,52 @@
 # Citation X Suite for FlyWithLua (X-Plane 12)
 
-Five FlyWithLua NG+ scripts for the Laminar Research Cessna Citation X (C750), plus a
+Four FlyWithLua NG+ scripts for the Laminar Research Cessna Citation X (C750), plus a
 standalone landing-performance scorer.
+
+**Version 3.0 has no keyboard layer.** The suite reads exactly one pilot input — the mouse
+wheel — and everything else is a panel, a diagnostic or a command you can bind yourself.
 
 ## Scripts
 
 | File | Purpose |
 | --- | --- |
-| `Scripts/CitationX_MasterSuite.lua` | 1 Hz flight recorder CSV, axis optimizer, key/button input mapper, spring-loaded heading-bug knob on the PS4 right stick (L2/R2 triggers explicitly ignored), 3-D cockpit look on right-stick click (R3) + right-stick movement, free-controller-button autobind (only buttons X-Plane reports unassigned), simulated bleed-air/pressurization emergency, and the draggable control panel that toggles every suite subsystem. No telemetry HUD. |
+| `Scripts/CitationX_MasterSuite.lua` | The hub. Axis optimizer (pitch/roll deadzone, expo, smoothing), 1 Hz flight recorder CSV, simulated bleed-air/pressurization emergency, opt-in axis monitor, aircraft texture cycler (X-Plane's own next/previous livery), AviTab app shortcuts, and the draggable control panel. The mouse wheel moves ALT SEL (main wheel) and the heading bug (thumbwheel); taxi and landing lights are published as commands. No keystrokes, no button map, no telemetry HUD. |
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
-| `Scripts/CitationX_EFB.lua` | Electronic flight bag panel: PERF (density altitude, wind components, V1/VR/V2/Vref, takeoff and landing distance by runway condition), CHECK (interactive 8-phase checklists) and FUEL (trip/contingency/alternate/reserve/endurance). Advisory data only. |
-| `Scripts/CitationX_Realism.lua` | Realism pack with one black, sans-serif (Helvetica) panel: live state of every realism subsystem plus clickable toggles. Behind it: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable, fuel imbalance, crosswind, overweight) on FlyWithLua's FMOD master bus; pilot-input handling curve (deadzone/expo/smoothing); flight-controls check; takeoff trim/flap gate; fuel-balance monitor; MTOW/MLW weight limits; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing, cabin-altitude and crosswind advisories (each also raises a 2 s toast). |
+| `Scripts/CitationX_EFB.lua` | Electronic flight bag panel: PERF (density altitude, wind components, V1/VR/V2/Vref, takeoff and landing distance by runway condition), CHECK (your own Xchecklist `clist.txt`, read live from the same file the plugin loads), ROUTE (flight-plan maker with an on-screen keypad that writes an X-Plane `.fms`) and FUEL (trip/contingency/alternate/reserve/endurance). Advisory data only. |
+| `Scripts/CitationX_Realism.lua` | Realism pack: one black panel of LEDs and bar gauges (trim band, fuel balance, weight against MTOW/MLW, crosswind against the demonstrated limit, brake energy, bus voltage) with clickable toggles. Behind it: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable, fuel imbalance, crosswind, overweight) on FlyWithLua's FMOD master bus; flight-controls check; takeoff trim/flap gate; fuel-balance monitor; MTOW/MLW limits; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing, cabin-altitude and crosswind advisories (each also raises a 2 s toast). |
 | `Scripts/LandingPerformance.lua` | Standalone landing scoring and debrief card (third-party, untracked in git). |
 
 ## Control panel
 
 **Two panels are on screen at load: the black realism panel and the Master Suite hub.**
-The suite does not touch the pilot's input map — no keystroke is consumed at load, so every key
-binding belongs to X-Plane's own profile. The one exception is the DS4 right-stick **STICK HDG
-KNOB** (X-Plane "Axis 3"), which turns the heading bug and draws nothing. The keyboard mapper,
-the joystick-button map, the mouse thumb-button ALT SEL keys, the R3 cockpit look, the axis
-optimizer and the realism handling curve all start OFF. Every panel starts hidden and is opened
-from a hub row, the FlyWithLua macro menu or the commands below.
-Two macros flip the whole suite: `CitationX Suite: enable all modules` /
-`disable all modules`.
+The suite registers no keystroke handler and no controller-button map, so every key and every
+button belongs to X-Plane's own profiles. It reads exactly one pilot input — the mouse wheel —
+and only to move the two autopilot selectors:
 
-All five panels share the realism panel's language: black body, grey 1 px border, white
-Helvetica 18 title, grey 10 px sub-header, 12 px rows, 21 px row pitch and a 34 px footer with
-a **HIDE PANEL** button. **Drag any panel by its header** to move it; the position is kept for
-the session. The hub and the realism panel start side by side at the top-left.
+| Mouse | Action |
+| --- | --- |
+| main wheel forward / back | ALT SEL up / down (100 ft per notch) |
+| thumbwheel forward / back | heading bug right / left (1° per notch) |
+| middle click | *bind `CitationXSuite/taxi_light_toggle` in your mouse driver* |
+| gesture | *bind `CitationXSuite/landing_lights_toggle` in your mouse driver* |
+
+X-Plane reports which wheel moved in `MOUSE_WHEEL_NUMBER`; if your mouse enumerates them the
+other way round run `CitationXSuite/wheel_map_swap`, and `CitationXSuite/wheel_report` logs what
+the last notch reported. The **WHEEL = ALT SEL** row switches the wheel off entirely, leaving
+the view zoom with X-Plane.
+
+FlyWithLua cannot see individual mouse buttons, so middle click and gestures cannot be captured
+by the suite. Both actions exist as real X-Plane commands — point the mouse driver (Logi
+Options+, SteerMouse, …) at `CitationXSuite/taxi_light_toggle` and
+`CitationXSuite/landing_lights_toggle`, or bind them to any controller button in X-Plane. If
+your driver can only send a keystroke, bind that keystroke **in X-Plane** to the command; the
+suite never reads a key.
+
+All panels share the realism panel's language: black body, grey 1 px border, white Helvetica 18
+title, grey 10 px sub-header, 12 px rows, 22 px row pitch and a 34 px footer with a **HIDE
+PANEL** button. **Drag any panel by its header** to move it; the position is kept for the
+session. The hub starts at the top-left, the realism panel beside it.
 
 The hub lists every subsystem with a live state. Click a row to toggle it.
 The same toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as
@@ -38,7 +55,7 @@ FlyWithLua macro menu entries.
 The MasterSuite panel is the only surface *it* draws. There is no telemetry HUD and no C750
 systems readback: the aircraft's PFD, EICAS and synoptics already show airspeed, altitude,
 heading, Mach, G, fuel flow, electrics, fuel and anti-ice, so duplicating them on screen adds
-nothing. The realism pack's own black panel is separate and is described above.
+nothing.
 
 | Row | Key | What it toggles |
 | --- | --- | --- |
@@ -46,29 +63,40 @@ nothing. The realism pack's own black panel is separate and is described above.
 | AXIS OPTIMIZER | `axis` | Custom pitch/roll response curve |
 | FLIGHT RECORDER | `log` | 1 Hz CSV recorder |
 | EMERGENCY GEN | `emerg` | Bleed-air / pressurization emergency triggers |
-| INPUT MAPPER | `input` | Keyboard/mouse/joystick binding engine |
-| LEARN MODE | `learn` | Input probe overlay |
-| STICK HDG KNOB | `stick` | Heading bug on the right stick |
 | AXIS MONITOR | `axmon` | Raw axis overlay |
-| COCKPIT LOOK | `look` | R3 + right stick 3-D cockpit look |
+| AIRCRAFT TEXTURE | `texture` | Next installed livery (X-Plane reloads the art) |
+| WHEEL = ALT SEL | `wheel` | Mouse wheel drives the altitude selector |
+| AVITAB CHARTS | `avitab` | Opens AviTab's charts app |
 | CABIN OPS | `cabin` | `CitationX_CabinOps` panel |
 | QRH TRAINER | `qrh` | `CitationX_FailureTrainer` panel |
 | LANDING PERF | `landperf` | `LandingPerformance` result card |
-| EFB | `efb` | `CitationX_EFB` panel (PERF / CHECK / FUEL) |
+| EFB | `efb` | `CitationX_EFB` panel (PERF / CHECK / ROUTE / FUEL) |
 | REALISM PACK | `realism` | `CitationX_Realism` callouts and load manager |
 
 The sibling rows are nil-guarded: if that script is not installed the row shows
 `ABSENT` and clicking it does nothing.
 
-### 3-D cockpit look
+### AviTab
 
-Hold the right stick click (DS4 **R3**, button 11) and move the right stick: the view pans in
-the 3-D cockpit, and pressing R3 from a 2-D view switches to the 3-D cockpit first. While R3 is
-held the stick does **not** move the heading bug; release it and the knob resumes exactly where
-it was. The look axes are auto-detected as the spring-centred pair the stick belongs to
-(DS4 raw 2/3); pin them with `view_pan_axis_x` / `view_pan_axis_y` if your pad differs.
-`view_pan_button` selects a different button, and `view_pan_invert_x` / `view_pan_invert_y`
-flip the direction. R3 is excluded from free-button autobind.
+[AviTab](https://github.com/fpw/avitab) 0.7.1 is installed in
+`Resources/plugins/AviTab/`. The suite only forwards to AviTab's own API — it never draws or
+replaces it:
+
+| Command | Effect |
+| --- | --- |
+| `CitationXSuite/avitab_charts` | AviTab → Charts |
+| `CitationXSuite/avitab_maps` | AviTab → Maps |
+| `CitationXSuite/avitab_routes` | AviTab → Routes |
+| `CitationXSuite/avitab_airports` | AviTab → Airports |
+| `CitationXSuite/avitab_toggle` | show/hide the tablet |
+| `CitationXSuite/avitab_recentre` | recentre the map |
+| `CitationXSuite/avitab_zoom_in` / `_out` | map zoom |
+
+AviTab has no API to host or drive a third-party application, so **FlyCharts cannot be
+controlled from AviTab**. FlyCharts is a separate Electron app that reads X-Plane over UDP
+port 49000; run it beside the sim. What the two can share is data, not control: AviTab 0.7.1
+publishes `avitab/map/latitude`, `avitab/map/longitude`, `avitab/map/zoom` and
+`avitab/map/vertical_range`, and `CitationXSuite/avitab_report` logs them.
 
 ## Requirements
 
@@ -96,14 +124,11 @@ stays untracked via `.gitignore`.
 
 ## Configuration
 
-- `CitationX_MasterSuite.lua` — `CONFIG` table: flight recorder, axis optimizer,
-  emergency generator, input mapper, `joy_autobind_enabled` / `joy_map_enabled` (the
-  free-controller-button map), the right-stick heading knob
-  (`stick_hdg_*`: `stick_hdg_axes = { 3, 28 }` pins DS4 Axis 3 over USB/Bluetooth,
-  `stick_hdg_exclude_axes` adds vetoes) and the 3-D cockpit look
-  (`view_pan_*`: button, axis pair, rate, inversion, 3-D switch). No keystroke is
-  captured while the input mapper is off.
-  Panel layout lives in `SUITE_STYLE` (`row_h`, `header_h`, `footer_h`, `pad`, `x`/`top`).
+- `CitationX_MasterSuite.lua` — `CONFIG` table: flight recorder, axis optimizer
+  (`axis_optimizer_enabled`, `deadzone`, `curve_exponent`, `smoothing_factor`), emergency
+  generator, the mouse wheel (`mouse_wheel_altitude`, `wheel_altitude_number`,
+  `wheel_heading_number`, `alt_step_ft`, `hdg_step_deg`), texture cycling and the opt-in axis
+  monitor. Panel layout lives in `SUITE_STYLE` (`row_h`, `header_h`, `footer_h`, `pad`, `x`/`top`).
 - `CitationX_CabinOps.lua` — `CAB_CONFIG` (`row_h` controls row spacing).
 - `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG` (`row_h` controls row spacing).
 - `CitationX_Realism.lua` — `REAL_CONFIG`: callout speeds (V1/Vr/Vref/Vfe/Vle), Vmo/Mmo,
@@ -118,15 +143,26 @@ stays untracked via `.gitignore`.
 ## Bindable commands
 
 ```
-CitationXSuite/toggle_status
-CitationXSuite/toggle_axis     CitationXSuite/toggle_log      CitationXSuite/toggle_emerg
-CitationXSuite/toggle_input    CitationXSuite/toggle_learn    CitationXSuite/toggle_stick
-CitationXSuite/toggle_axmon    CitationXSuite/toggle_look     CitationXSuite/toggle_cabin
-CitationXSuite/toggle_qrh      CitationXSuite/toggle_landperf CitationXSuite/toggle_efb
-CitationXSuite/toggle_realism
+CitationXSuite/toggle_status     CitationXSuite/toggle_axis     CitationXSuite/toggle_log
+CitationXSuite/toggle_emerg      CitationXSuite/toggle_axmon    CitationXSuite/toggle_wheel
+CitationXSuite/toggle_texture    CitationXSuite/toggle_cabin    CitationXSuite/toggle_qrh
+CitationXSuite/toggle_landperf   CitationXSuite/toggle_efb      CitationXSuite/toggle_realism
+
+CitationXSuite/texture_next      CitationXSuite/texture_prev
+CitationXSuite/alt_sel_up        CitationXSuite/alt_sel_down
+CitationXSuite/hdg_bug_up        CitationXSuite/hdg_bug_down
+CitationXSuite/taxi_light_toggle CitationXSuite/landing_lights_toggle
+CitationXSuite/wheel_report      CitationXSuite/wheel_map_swap
+CitationXSuite/avitab_charts     CitationXSuite/avitab_maps     CitationXSuite/avitab_routes
+CitationXSuite/avitab_airports   CitationXSuite/avitab_toggle   CitationXSuite/avitab_recentre
+CitationXSuite/avitab_zoom_in    CitationXSuite/avitab_zoom_out
+CitationXSuite/efb_page_perf     CitationXSuite/efb_page_check  CitationXSuite/efb_page_route
+CitationXSuite/efb_page_fuel     CitationXSuite/efb_route_build CitationXSuite/efb_route_here
+CitationXSuite/efb_check_prev    CitationXSuite/efb_check_page_next
+CitationXSuite/efb_check_page_prev
+CitationXSuite/status_report     CitationXSuite/test_emergency
 
 CitationXQRH/*                 CabinOps/*                    CitationXRealism/*
-```
 
 ## Development and validation
 
@@ -142,11 +178,17 @@ done
 # every require() reachable for the C750 resolves on disk (--all sweeps every aircraft)
 lua tests/check_kpcrew_modules.lua C750
 
-# mock-FlyWithLua smoke tests
+# the authoritative load test: every script in one shared LuaJIT state
+luajit tests/probe_load_order.lua ../../plugins/DataRefs.txt Scripts
+
+# mock-FlyWithLua smoke tests (luajit, never lua: the suite is Lua 5.1)
 export TMPDIR="$(mktemp -d)/"
-HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
-HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
-HOME="$TMPDIR" TMPDIR="$TMPDIR" lua tests/smoke_realism.lua Scripts/CitationX_Realism.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_efb.lua Scripts/CitationX_EFB.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_checklist.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_realism.lua Scripts/CitationX_Realism.lua
+luajit tests/smoke_panel_geometry.lua
 ```
 
 Every DataRef used by the scripts must exist in

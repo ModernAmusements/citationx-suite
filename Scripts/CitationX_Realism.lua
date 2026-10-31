@@ -1114,14 +1114,17 @@ function real_test_callout()
 end
 
 -- ------------------------------------------------------------------- HUD -----
--- The pack's one on-screen surface: a black, sans-serif panel listing every
--- realism control and its live state. Everything else stays audio/Log.txt.
+-- The pack's one on-screen surface. Every row is an *instrument*, not a
+-- readout: on/off states are LEDs, and the four measured quantities (trim,
+-- fuel balance, weight, crosswind) are bar gauges with a green band and a red
+-- limit tick. Nothing here is a bare number.
 REAL_STYLE = {
-    x = 24, top = 24, width = 430, pad = 14,
-    header_h = 34, row_h = 21, footer_h = 34,
+    x = 24, top = 24, width = 470, pad = 14,
+    header_h = 34, row_h = 22, footer_h = 34,
     bg        = {0.00, 0.00, 0.00, 0.90},
     header_bg = {0.04, 0.04, 0.04, 0.96},
     border    = {0.32, 0.32, 0.32, 1.00},
+    track     = {0.14, 0.14, 0.14, 1.00},
     title     = {1.00, 1.00, 1.00, 1.00},
     sub       = {0.55, 0.55, 0.55, 1.00},
     label     = {0.80, 0.80, 0.80, 1.00},
@@ -1158,6 +1161,61 @@ local function hud_text_right(x_right, y, text, size, col)
     hud_text(x_right - w, y, text, size, col)
 end
 
+-- ------------------------------------------------------------- INSTRUMENTS --
+-- LEDs and bar gauges. A row either shows a state light or a needle on a
+-- track; neither prints a raw number at the pilot.
+local function hud_led(x, y, col, on)
+    local st = REAL_STYLE
+    if on then
+        hud_bar(x, y, x + 6, y + 6, col, 1.0)
+    else
+        hud_bar(x, y, x + 6, y + 6, st.track, 1.0)
+        hud_bar(x, y, x + 6, y + 1, st.border, 1.0)
+        hud_bar(x, y + 5, x + 6, y + 6, st.border, 1.0)
+        hud_bar(x, y, x + 1, y + 6, st.border, 1.0)
+        hud_bar(x + 5, y, x + 6, y + 6, st.border, 1.0)
+    end
+end
+
+local function hud_clamp01(v)
+    if v < 0 then return 0 end
+    if v > 1 then return 1 end
+    return v
+end
+
+local function hud_frac(v, lo, hi)
+    if v == nil or hi == lo then return 0 end
+    return hud_clamp01((v - lo) / (hi - lo))
+end
+
+-- spec = { at, lo, hi, band = {a,b}, limit, color, ticks = {a,b,...} }
+local function hud_gauge(x, y, w, spec)
+    local st  = REAL_STYLE
+    local y0  = y + 3
+    local h   = 8
+    local col = spec.color or st.value
+
+    hud_bar(x, y0, x + w, y0 + h, st.track, 1.0)
+    if spec.band then
+        local a = hud_frac(spec.band[1], spec.lo, spec.hi)
+        local b = hud_frac(spec.band[2], spec.lo, spec.hi)
+        hud_bar(x + a * w, y0, x + b * w, y0 + h, st.ok, 0.30)
+    end
+
+    local f = hud_frac(spec.at, spec.lo, spec.hi)
+    hud_bar(x, y0, x + f * w, y0 + h, col, 0.80)
+
+    if spec.limit then
+        local l = hud_frac(spec.limit, spec.lo, spec.hi)
+        hud_bar(x + l * w - 1, y0 - 2, x + l * w + 1, y0 + h + 2, st.bad, 1.0)
+    end
+
+    -- hairline frame + a 3 px needle so the eye finds the value first
+    hud_bar(x, y0 - 1, x + w, y0, st.border, 1.0)
+    hud_bar(x, y0 + h, x + w, y0 + h + 1, st.border, 1.0)
+    hud_bar(x + f * w - 1, y0 - 1, x + f * w + 1, y0 + h + 1, st.value, 1.0)
+end
+
 local function hud_fit(text, max_chars)
     text = tostring(text or "")
     if #text <= max_chars then return text end
@@ -1179,9 +1237,8 @@ local function hud_brakes()
         local j = real_brake_j[i] or 0.0
         if j > hottest then hottest = j end
     end
-    local text = string.format("FAN %s  %.1f MJ",
-        S.brake_hot and "ON" or "OFF", hottest / 1e6)
-    return text, S.brake_hot and REAL_STYLE.warn or REAL_STYLE.value
+    if S.brake_hot then return "HOT", REAL_STYLE.warn end
+    return "COOL", REAL_STYLE.ok
 end
 
 local function hud_icing()
@@ -1203,34 +1260,107 @@ local function hud_trim()
     local tol  = REAL_CONFIG.to_trim_tolerance
     local tmin, tmax = takeoff_trim_band(flap)
     if not tmin then
-        return string.format("%.2f  --", trim), REAL_STYLE.dim
+        return "--", REAL_STYLE.dim
     end
     local ok = trim >= tmin - tol and trim <= tmax + tol
         and math.abs(real_ail_trim or 0.0) <= tol
         and math.abs(real_rud_trim or 0.0) <= tol
-    return string.format("%.2f  %s", trim, ok and "GREEN" or "OUT"),
-        ok and REAL_STYLE.ok or REAL_STYLE.warn
+    return ok and "GREEN" or "OUT", ok and REAL_STYLE.ok or REAL_STYLE.warn
 end
 
 local function hud_fuel()
     local lb = fuel_imbalance_lb()
-    return string.format("%.0f LB", lb),
-        (lb > REAL_CONFIG.fuel_imbalance_lb) and REAL_STYLE.warn or REAL_STYLE.value
+    if lb > REAL_CONFIG.fuel_imbalance_lb then
+        return "IMBAL", REAL_STYLE.bad
+    end
+    return "BAL", REAL_STYLE.ok
 end
 
 local function hud_weight()
     local lb = kg_to_lb(real_weight_kg)
-    local airborne = (real_on_ground == 0)
-    local limit = airborne and REAL_CONFIG.mlw_lb or REAL_CONFIG.mtow_lb
-    local tag = airborne and "LDG" or "TO"
-    return string.format("%.1fK  %s", lb / 1000.0, tag),
-        (lb > limit) and REAL_STYLE.warn or REAL_STYLE.value
+    local limit = (real_on_ground == 0) and REAL_CONFIG.mlw_lb or REAL_CONFIG.mtow_lb
+    if lb > limit then return "OVER", REAL_STYLE.bad end
+    return "OK", REAL_STYLE.ok
 end
 
 local function hud_xwind()
     local xw = crosswind_kt()
-    return string.format("%.0f KT", xw),
-        (xw > REAL_CONFIG.crosswind_limit_kt) and REAL_STYLE.warn or REAL_STYLE.value
+    if xw > REAL_CONFIG.crosswind_limit_kt then
+        return "XWIND", REAL_STYLE.bad
+    end
+    return "OK", REAL_STYLE.ok
+end
+
+-- ---------------------------------------------------------- GAUGE SPECS ----
+-- One spec per measured row: where the needle is, the scale, the green band
+-- and the red limit. The panel draws these as bars, never as numbers.
+local function gauge_trim()
+    local flap = real_flap_rat or 0.0
+    local trim = real_elev_trim or 0.0
+    local tmin, tmax = takeoff_trim_band(flap)
+    if not tmin then
+        return { at = trim, lo = -1, hi = 1, color = REAL_STYLE.dim }
+    end
+    local tol = REAL_CONFIG.to_trim_tolerance
+    local ok = trim >= tmin - tol and trim <= tmax + tol
+        and math.abs(real_ail_trim or 0.0) <= tol
+        and math.abs(real_rud_trim or 0.0) <= tol
+    return {
+        at = trim, lo = -1, hi = 1,
+        band = { tmin - tol, tmax + tol },
+        color = ok and REAL_STYLE.ok or REAL_STYLE.warn,
+    }
+end
+
+local function gauge_fuel()
+    local lb  = fuel_imbalance_lb()
+    local lim = REAL_CONFIG.fuel_imbalance_lb
+    return {
+        at = lb, lo = 0, hi = lim * 1.6, limit = lim,
+        color = (lb > lim) and REAL_STYLE.bad or REAL_STYLE.ok,
+    }
+end
+
+local function gauge_weight()
+    local lb = kg_to_lb(real_weight_kg)
+    local limit = (real_on_ground == 0) and REAL_CONFIG.mlw_lb or REAL_CONFIG.mtow_lb
+    return {
+        at = lb, lo = 0, hi = limit * 1.2, limit = limit,
+        band = { 0, limit },
+        color = (lb > limit) and REAL_STYLE.bad or REAL_STYLE.ok,
+    }
+end
+
+local function gauge_xwind()
+    local xw  = crosswind_kt()
+    local lim = REAL_CONFIG.crosswind_limit_kt
+    return {
+        at = xw, lo = 0, hi = lim * 1.6, limit = lim,
+        color = (xw > lim) and REAL_STYLE.bad or REAL_STYLE.ok,
+    }
+end
+
+local function gauge_bus()
+    local v = real_bus_v[0] or 0.0
+    local low = (v > 0.1 and v < 24.0)
+    return {
+        at = v, lo = 15, hi = 30, band = { 24.0, 28.5 },
+        color = (v < 0.1) and REAL_STYLE.dim
+            or (low and REAL_STYLE.warn or REAL_STYLE.ok),
+    }
+end
+
+local function gauge_brake()
+    local hottest = 0.0
+    for i = 0, 9 do
+        local j = real_brake_j[i] or 0.0
+        if j > hottest then hottest = j end
+    end
+    local lim = REAL_CONFIG.brake_hot_j
+    return {
+        at = hottest, lo = 0, hi = lim * 1.6, limit = lim,
+        color = (hottest >= lim) and REAL_STYLE.bad or REAL_STYLE.ok,
+    }
 end
 
 REAL_HUD_ROWS = {
@@ -1276,14 +1406,16 @@ REAL_HUD_ROWS = {
     },
     {
         label = "LOAD SHED",
+        gauge = gauge_bus,
         value = function()
-            local text = string.format("%d/%d  %.1f V",
-                S.shed_steps, REAL_CONFIG.elec_max_sheds, real_bus_v[0] or 0.0)
-            return text, S.shed_steps > 0 and REAL_STYLE.warn or REAL_STYLE.value
+            if S.shed_steps > 0 then
+                return "SHED", REAL_STYLE.warn
+            end
+            return "BUS", REAL_STYLE.ok
         end,
     },
-    { label = "BRAKES", value = hud_brakes },
-    { label = "ICING", value = hud_icing },
+    { label = "BRAKES", gauge = gauge_brake, value = hud_brakes },
+    { label = "ICING", value = hud_icing, led = true },
     {
         label = "OVERSPEED",
         value = function()
@@ -1298,10 +1430,10 @@ REAL_HUD_ROWS = {
             return "OK", REAL_STYLE.ok
         end,
     },
-    { label = "TAKEOFF TRIM", value = hud_trim },
-    { label = "FUEL BAL", value = hud_fuel },
-    { label = "WEIGHT", value = hud_weight },
-    { label = "CROSSWIND", value = hud_xwind },
+    { label = "TAKEOFF TRIM", gauge = gauge_trim, value = hud_trim },
+    { label = "FUEL BAL", gauge = gauge_fuel, value = hud_fuel },
+    { label = "WEIGHT", gauge = gauge_weight, value = hud_weight },
+    { label = "CROSSWIND", gauge = gauge_xwind, value = hud_xwind },
     {
         label = "APPROACH",
         value = function()
@@ -1360,13 +1492,26 @@ function real_draw()
     hud_text_right(x + w - pad, top - 22, "CITATION X", 10, st.sub)
     real_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
 
-    local y = top - st.header_h - 20
+    local y = top - st.header_h - 18
     for i = 1, #REAL_HUD_ROWS do
         local row = REAL_HUD_ROWS[i]
         local text, col = row.value()
         col = col or st.value
-        hud_text(x + pad, y, row.label, 12, st.label)
-        hud_text_right(x + w - pad, y, text, 12, col)
+
+        -- every row leads with a state light, then the caption
+        local lit = (col == st.ok or col == st.warn or col == st.bad)
+        hud_led(x + pad, y + 3, col, lit)
+        hud_text(x + pad + 12, y, row.label, 12, st.label)
+
+        if row.gauge then
+            local gx = x + pad + 12 + 132
+            local gw = (x + w - pad - 66) - gx
+            local spec = row.gauge()
+            spec.color = spec.color or col
+            hud_gauge(gx, y, math.max(gw, 40), spec)
+        end
+        hud_text_right(x + w - pad, y, text, 10, col)
+
         if row.act then
             hud_bar(x + 4, y + 5, x + 6, y + 8, st.border)
             hud_hits[#hud_hits + 1] = {

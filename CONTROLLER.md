@@ -4,9 +4,13 @@ X-Plane profile: `Output/preferences/control profiles/citX - Joysticks.prf`
 Device: DUALSHOCK 4 Wireless Controller (VID 054c, PID 09cc) — the same map is written
 into **both** device slots, so it behaves identically over USB and Bluetooth.
 
-Axes: left stick = pitch/roll, right stick X = yaw, right stick Y = heading bug.
-X-Plane lists the right stick Y as **Axis 3** and leaves it unassigned; the suite reads it
-(the only input it reads).
+Axes: left stick = pitch/roll, right stick X = yaw, right stick Y is **free** — the
+suite no longer reads it (v3.0 removed the Lua axis-to-heading knob on 2026-10-31). The
+heading bug is on the **mouse thumbwheel** now, and the altitude selector on the mouse wheel;
+see `README.md`.
+
+The suite registers no keystroke handler and no button map, so every binding below is
+X-Plane's own. `tools/joymap.py` can edit this profile with the sim closed.
 
 ## Buttons (PS4 notation)
 
@@ -27,10 +31,9 @@ X-Plane lists the right stick Y as **Axis 3** and leaves it unassigned; the suit
 | **Touchpad** | Landing lights |
 | **PS** | Quick look 0 |
 
-> **L2 / R2 are analog on the DS4.** The suite reads the trigger axes directly
-> (USB axes 4/5, Bluetooth 29/30) and steps the throttle while a trigger is
-> held, through `sim/engines/throttle_down` / `throttle_up`. The profile's
-> button 6/7 entries only cover the digital end-stop.
+> **L2 / R2 are analog on the DS4.** The suite does not touch them in v3.0;
+> the profile's own axis assignments drive the throttles. (The old Lua
+> trigger-stepped throttle layer was removed with the rest of the input map.)
 
 ## D-pad (8-way hat)
 | Direction | Action |
@@ -186,9 +189,10 @@ is duplicated between the PS4 profile and the keyboard.
 ### Free inputs
 
 - **PS4 buttons:** every physical control is assigned.
-- **PS4 axes:** right stick Y drives the heading bug (the only input the suite reads); every
-  other axis belongs to the profile.
-- **Mouse wheel:** X-Plane view zoom — deliberately not used by the suite.
+- **PS4 axes:** right stick Y is free; every axis belongs to the profile.
+- **Mouse wheel:** main wheel → ALT SEL, thumbwheel → heading bug (the only pilot input the
+  suite reads). `CitationXSuite/wheel_map_swap` if your mouse enumerates them differently;
+  the **WHEEL = ALT SEL** row turns it off and gives the wheel back to X-Plane's view zoom.
 - **Free keystrokes** (no duplicate of the pad): `Ctrl+Shift+6`, `Ctrl+Shift+8`, `Ctrl+Shift+↑/↓/←/→`, `Ctrl+Shift+E/F`, `Ctrl+Opt+E/F`, all `Ctrl+Opt` arrows, and any MX button not mapped in Logi Options+.
 
 ## View

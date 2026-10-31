@@ -3,13 +3,17 @@
 --  X-Plane 12  |  FlyWithLua NG+ (2.8+)
 -- ----------------------------------------------------------------------------
 --  The Zibo-style tablet pages the Citation X was missing, in one clickable
---  panel. Three pages:
+--  panel. Four pages:
 --
 --    PERF   gross weight, field/pressure/density altitude, wind components,
 --           V1/VR/V2, Vref, takeoff and landing distance for the current
 --           runway condition.
---    CHECK  interactive checklists (before start -> shutdown) with progress
---           and a per-phase reset.
+--    CHECK  the pilot's own checklist, read straight out of the Xchecklist
+--           file the sim already loads (clist.txt), with live ticks from the
+--           datarefs the checklist declares. Same panel language as the hub.
+--    ROUTE  flight-plan maker: pick departure/destination ICAO on the on-screen
+--           keypad, get distance/track/time/fuel and write a .fms the sim can
+--           load from its own flight-plan dialog.
 --    FUEL   route distance, cruise level, wind and taxi fuel in; trip,
 --           contingency, alternate, final reserve, total and endurance out.
 --
@@ -32,10 +36,10 @@
 -- ------------------------------------------------------------------ CONFIG --
 EFB_CONFIG = {
     panel_enabled   = false,   -- hidden at load; the Master Suite hub opens it
-    panel_w         = 470,
+    panel_w         = 500,
     panel_x         = nil,     -- nil = bottom-centre on first draw; drag writes here
     panel_top       = nil,     -- absolute top edge (bottom-left origin)
-    row_h           = 21,
+    row_h           = 22,
 
     -- Performance reference data (C750, advisory only)
     mtow_kg         = 16374,
@@ -57,6 +61,15 @@ EFB_CONFIG = {
     reserve_min     = 45,
     alternate_min   = 10,
     contingency_pct = 0.05,
+
+    -- Flight-plan maker (ROUTE page)
+    route_dep       = "",
+    route_dest      = "",
+    route_field     = 1,       -- 1 = departure is being typed, 2 = destination
+    route_max_len   = 4,
+    route_msg       = "TYPE AN ICAO CODE",
+    route_out_dir   = nil,     -- nil = <X-Plane>/Output/FMS plans/
+    route_cycle     = 2601,    -- AIRAC cycle stamped into the .fms header
 }
 
 -- Same black / Helvetica language as the realism panel.
@@ -92,102 +105,283 @@ dataref("efb_hdg_mag",    "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_
 dataref("efb_elev_m",     "sim/flightmodel/position/elevation", "readonly")
 dataref("efb_gs_ms",      "sim/flightmodel/position/groundspeed", "readonly")
 dataref("efb_sim_time",   "sim/time/total_running_time_sec", "readonly")
+dataref("efb_lat_deg",    "sim/flightmodel/position/latitude", "readonly")
+dataref("efb_lon_deg",    "sim/flightmodel/position/longitude", "readonly")
+
+-- The checklist source is the Xchecklist plugin's own file for this aircraft,
+-- so the EFB and the plugin can never drift apart. acf_relative_path tells us
+-- which folder that is (byte[] string).
+local efb_acf_rel = dataref_table("sim/aircraft/view/acf_relative_path")
 
 -- ------------------------------------------------------------------ STATE ---
 local EFB_PAGE_PERF  = 1
 local EFB_PAGE_CHECK = 2
-local EFB_PAGE_FUEL  = 3
+local EFB_PAGE_ROUTE = 3
+local EFB_PAGE_FUEL  = 4
+local EFB_PAGE_LAST  = 4
 
 local efb_page        = EFB_PAGE_PERF
 local efb_rows        = {}
 local efb_toast_text  = nil
 local efb_toast_until = 0
 local efb_chk_phase   = 1
+local efb_chk_page    = 1
+local efb_chk_per_page = 9
 
 local efb_chk_state = {}
+local efb_checklist_loaded = false
 
-local EFB_CHECKS = {
-    { name = "BEFORE START", items = {
-        "Battery switch ON",
-        "Avionics master OFF",
-        "Fuel quantity checked",
-        "Parking brake SET",
-        "Seats / belts / doors",
-        "GPU or APU available",
-        "Altimeters set",
-        "Flight plan loaded",
-    }},
-    { name = "START", items = {
-        "Beacon ON",
-        "Throttles IDLE",
-        "Start LEFT engine",
-        "Oil pressure rising",
-        "Start RIGHT engine",
-        "N1 / N2 stable",
-        "Generators ON",
-        "Anti-ice as required",
-    }},
-    { name = "TAXI", items = {
-        "Flight controls free",
-        "Brakes checked",
-        "Flight instruments alive",
-        "APU OFF",
-        "Taxi clearance",
-        "Transponder ALT",
-        "Landing lights ON",
-        "Takeoff briefing done",
-    }},
-    { name = "TAKEOFF", items = {
-        "Flaps SET",
-        "Pitch trim SET",
-        "V-speeds set",
-        "Baro set / cross-checked",
-        "Runway verified",
-        "Strobes ON",
-        "TOGA armed",
-        "Brakes released",
-    }},
-    { name = "CLIMB", items = {
-        "Gear UP",
-        "Flaps UP",
-        "Climb power SET",
-        "Autopilot ON",
-        "Pressurisation checked",
-        "Anti-ice as required",
-        "Seatbelt sign ON",
-        "Altimeters cross-checked",
-    }},
-    { name = "APPROACH", items = {
-        "ATIS / altimeter set",
-        "Approach briefed",
-        "Minimums SET",
-        "Vref SET",
-        "Speedbrakes armed",
-        "Gear DOWN",
-        "Flaps APPROACH",
-        "Landing lights ON",
-    }},
-    { name = "LANDING", items = {
-        "Flaps LAND",
-        "Vref bugged",
-        "Autopilot OFF",
-        "Crosswind corrected",
-        "Touchdown zone",
-        "Thrust reversers",
-        "Brakes as required",
-        "Speedbrakes out",
-    }},
-    { name = "SHUTDOWN", items = {
-        "Parking brake SET",
-        "Avionics OFF",
-        "Generators OFF",
-        "Engines OFF",
-        "Beacon OFF",
-        "Landing lights OFF",
-        "Fuel pumps OFF",
-        "GPU / APU OFF",
-    }},
+-- ---------------------------------------------------------- CHECKLIST DATA --
+-- Read the pilot's real checklist. Xchecklist loads <aircraft>/clist.txt; we
+-- parse the same file, keep the sw_checklist / sw_item lines and carry each
+-- item's dataref so the box ticks itself exactly like the plugin does.
+local EFB_CHECKS_FALLBACK = {
+    { name = "BEFORE START", items = { { text = "Battery switch ON" },
+        { text = "Fuel quantity checked" }, { text = "Parking brake SET" },
+        { text = "Flight plan loaded" } } },
+    { name = "BEFORE TAKEOFF", items = { { text = "Flaps SET" },
+        { text = "Pitch trim SET" }, { text = "Baro set" },
+        { text = "Landing lights ON" } } },
+    { name = "APPROACH", items = { { text = "Approach briefed" },
+        { text = "Gear DOWN" }, { text = "Flaps APPROACH" },
+        { text = "Landing lights ON" } } },
+    { name = "SHUTDOWN", items = { { text = "Parking brake SET" },
+        { text = "Avionics OFF" }, { text = "Engines OFF" } } },
 }
+
+local EFB_CHECKS = EFB_CHECKS_FALLBACK
+
+local function efb_trim(s)
+    return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- FlyWithLua is at Resources/plugins/FlyWithLua/, so three levels up is the
+-- X-Plane root.
+local function efb_root_dir()
+    local s = SCRIPT_DIRECTORY
+    if not s or s == "" then return nil end
+    return s .. "../../../"
+end
+
+local function efb_byte_string(tbl, max_len)
+    local chars = {}
+    for i = 0, (max_len or 511) do
+        local b = tbl[i]
+        if b == nil or b == 0 then break end
+        chars[#chars + 1] = string.char(b)
+    end
+    return table.concat(chars)
+end
+
+local function efb_aircraft_dir()
+    local root = efb_root_dir()
+    local rel  = efb_byte_string(efb_acf_rel, 511)
+    if not root or rel == "" then return nil end
+    local dir = rel:match("^(.*)/[^/]+$")
+    if not dir then return nil end
+    return root .. dir
+end
+
+local function efb_checklist_candidates()
+    local list = {}
+    local dir  = efb_aircraft_dir()
+    if dir then
+        list[#list + 1] = dir .. "/clist.txt"
+        local acf = efb_byte_string(efb_acf_rel, 511):match("([^/]+)%.acf$")
+        if acf then list[#list + 1] = dir .. "/" .. acf .. "_clist.txt" end
+    end
+    local root = efb_root_dir()
+    if root then
+        list[#list + 1] = root .. "Resources/plugins/Xchecklist/Citation_X_clist.txt"
+    end
+    return list
+end
+
+-- ------------------------------------------------------- CONDITION ENGINE --
+-- A practical subset of the Xchecklist dataref grammar, which is what the
+-- pilot's clist.txt is written in:
+--
+--     ref:1     ref:=1    ref:!1    ref:<1   ref:>1   ref:<=1   ref:>=1
+--     ref:10|20                       (value inside an interval)
+--     (a:1) && (b:0)   ||   ...       (parentheses, &&, ||)
+--
+-- Anything that needs history (+, -, ><, ":10:20") cannot be evaluated from a
+-- single sample, so it is reported as false and the pilot ticks the item by
+-- hand - exactly what the checklist intends for a "watch the needle" step.
+local function efb_split_logic(s, op)
+    local parts, depth, start = {}, 0, 1
+    local i = 1
+    while i <= #s do
+        local c = s:sub(i, i)
+        if c == "(" then
+            depth = depth + 1
+        elseif c == ")" then
+            depth = depth - 1
+        elseif depth == 0 and s:sub(i, i + 1) == op then
+            parts[#parts + 1] = s:sub(start, i - 1)
+            i = i + 2
+            start = i
+        end
+        i = i + 1
+    end
+    parts[#parts + 1] = s:sub(start)
+    return parts
+end
+
+local function efb_eval_term(term)
+    term = efb_trim(term)
+    local name, cond = term:match("^([%w_]+/[%w_/%.%-]+)%s*:%s*(.*)$")
+    if not name or cond == "" then return false end
+    local h = XPLMFindDataRef(name)
+    if not h then return false end
+    local v = XPLMGetDataf(h)
+    if v == nil then return false end
+
+    cond = efb_trim(cond)
+    -- history-based tests: never auto-tick
+    if cond:find("%+>") or cond:find("%->") or cond:find("%><") then
+        return false
+    end
+    if cond:find(":") and not cond:find("|") then return false end
+
+    cond = cond:gsub("^%(%a+%)", "")      -- (float)1 -> 1
+    local lo, hi = cond:match("^(%-?[%d%.]+)|(%-?[%d%.]+)$")
+    if lo then
+        local a, b = tonumber(lo), tonumber(hi)
+        return a ~= nil and b ~= nil and v >= a and v <= b
+    end
+
+    -- Lua patterns have no alternation, so peel the operator by hand.
+    local op, num
+    local two = cond:sub(1, 2)
+    if two == "<=" or two == ">=" then
+        op, num = two, cond:sub(3)
+    else
+        local one = cond:sub(1, 1)
+        if one == "<" or one == ">" or one == "=" or one == "!" then
+            op, num = one, cond:sub(2)
+        else
+            op, num = "=", cond
+        end
+    end
+    num = tonumber((num:gsub("%s+", "")))
+    if num == nil then return false end
+    if op == "=" then return math.abs(v - num) < 0.001 end
+    if op == "!" then return math.abs(v - num) >= 0.001 end
+    if op == "<" then return v < num end
+    if op == ">" then return v > num end
+    if op == "<=" then return v <= num end
+    if op == ">=" then return v >= num end
+    return false
+end
+
+function efb_eval_expr(expr)
+    expr = efb_trim(expr or "")
+    if expr == "" then return false end
+    expr = expr:gsub("∥", "||"):gsub("&amp;&amp;", "&&")
+
+    -- peel redundant outer parentheses
+    while true do
+        local inner = expr:match("^%((.*)%)$")
+        if not inner then break end
+        local depth, balanced = 0, true
+        for i = 1, #inner do
+            local c = inner:sub(i, i)
+            if c == "(" then depth = depth + 1
+            elseif c == ")" then
+                depth = depth - 1
+                if depth < 0 then balanced = false break end
+            end
+        end
+        if not balanced or depth ~= 0 then break end
+        expr = efb_trim(inner)
+    end
+
+    local ors = efb_split_logic(expr, "||")
+    if #ors > 1 then
+        for _, part in ipairs(ors) do
+            if efb_eval_expr(part) then return true end
+        end
+        return false
+    end
+
+    local ands = efb_split_logic(expr, "&&")
+    if #ands > 1 then
+        for _, part in ipairs(ands) do
+            if not efb_eval_expr(part) then return false end
+        end
+        return true
+    end
+
+    return efb_eval_term(expr)
+end
+
+-- "sw_item:TEXT|RIGHT:dataref expression" -> text + optional live check.
+local function efb_parse_item(line)
+    local body = line:match("^sw_item:(.*)$")
+    if not body then return nil end
+    local label, condition = body:match("^(.-)%s*:%s*([%w_]+/.*)$")
+    local text = label or body
+    text = text:gsub("\\[%a]+\\", "")   -- Xchecklist colour tags
+    text = text:gsub("|.*$", "")        -- right-hand "value" column
+    text = efb_trim(text)
+    if text == "" then return nil end
+    local item = { text = text }
+    if condition then
+        item.condition = condition
+        item.live = true
+        item.handle = XPLMFindDataRef(condition:match("^([%w_]+/[%w_/%.%-]+)"))
+    end
+    return item
+end
+
+local function efb_parse_checklist(path)
+    local fd = io.open(path, "r")
+    if not fd then return nil end
+    local phases = {}
+    for raw in fd:lines() do
+        local line = efb_trim(raw)
+        local phase = line:match("^sw_checklist:(.*)$")
+        if phase and phase ~= "" then
+            local name, display = phase:match("^([^:]+):(.+)$")
+            phases[#phases + 1] = {
+                name  = efb_trim(display or name or phase),
+                items = {},
+            }
+        elseif line:match("^sw_item:") and #phases > 0 then
+            local item = efb_parse_item(line)
+            if item then
+                local p = phases[#phases]
+                p.items[#p.items + 1] = item
+            end
+        end
+    end
+    fd:close()
+
+    -- Drop the cover/spec page and any phase that only held sw_itemvoid art.
+    local kept = {}
+    for i = 1, #phases do
+        local p = phases[i]
+        if #p.items > 0 then kept[#kept + 1] = p end
+    end
+    if #kept == 0 then return nil end
+    return kept
+end
+
+local function efb_load_checklist()
+    if efb_checklist_loaded then return end
+    efb_checklist_loaded = true
+    for _, path in ipairs(efb_checklist_candidates()) do
+        local phases = efb_parse_checklist(path)
+        if phases then
+            EFB_CHECKS = phases
+            logMsg(string.format("Citation X EFB: checklist loaded from %s (%d phases)",
+                path, #phases))
+            return
+        end
+    end
+    logMsg("Citation X EFB: no clist.txt found, using built-in checklist")
+end
 
 -- --------------------------------------------------------------- HELPERS ----
 local function efb_clamp(v, lo, hi)
@@ -226,6 +420,21 @@ local function efb_txt_right(right_x, y, text, color, size)
     local sz = size or 12
     local tw = measure_string(s, "Helvetica_" .. tostring(sz)) or measure_string(s)
     efb_txt(right_x - tw, y, s, color, sz)
+end
+
+local function efb_fit(text, max_px)
+    local s = tostring(text or "")
+    if measure_string(s) <= max_px then return s end
+    local trimmed = s
+    while #trimmed > 1 and measure_string(trimmed .. "...") > max_px do
+        trimmed = trimmed:sub(1, -2)
+    end
+    return trimmed .. "..."
+end
+
+local function efb_atan2(y, x)
+    if math.atan2 then return math.atan2(y, x) end
+    return math.atan(y, x)
 end
 
 local function efb_register_row(x1, y1, x2, y2, fn)
@@ -331,7 +540,7 @@ function efb_toggle_panel(on)
 end
 
 function efb_set_page(page)
-    efb_page = efb_clamp(page, EFB_PAGE_PERF, EFB_PAGE_FUEL)
+    efb_page = efb_clamp(page, EFB_PAGE_PERF, EFB_PAGE_LAST)
 end
 
 function efb_cycle_condition()
@@ -340,20 +549,48 @@ function efb_cycle_condition()
 end
 
 function efb_check_next()
+    efb_load_checklist()
     efb_chk_phase = efb_chk_phase % #EFB_CHECKS + 1
+    efb_chk_page  = 1
     efb_toast("EFB CHECK: " .. EFB_CHECKS[efb_chk_phase].name)
 end
 
 function efb_check_prev()
+    efb_load_checklist()
     efb_chk_phase = efb_chk_phase - 1
     if efb_chk_phase < 1 then efb_chk_phase = #EFB_CHECKS end
+    efb_chk_page  = 1
     efb_toast("EFB CHECK: " .. EFB_CHECKS[efb_chk_phase].name)
+end
+
+local function efb_check_pages()
+    local phase = EFB_CHECKS[efb_chk_phase]
+    local n = phase and #phase.items or 0
+    return math.max(1, math.ceil(n / efb_chk_per_page))
+end
+
+function efb_check_page_next()
+    local pages = efb_check_pages()
+    efb_chk_page = efb_chk_page % pages + 1
+end
+
+function efb_check_page_prev()
+    local pages = efb_check_pages()
+    efb_chk_page = efb_chk_page - 1
+    if efb_chk_page < 1 then efb_chk_page = pages end
+end
+
+-- Read-only view of the parsed checklist (tests + the status command).
+function efb_checklists()
+    efb_load_checklist()
+    return EFB_CHECKS
 end
 
 function efb_reset_checklist()
     local phase = EFB_CHECKS[efb_chk_phase]
     efb_chk_state[efb_chk_phase] = {}
     for i = 1, #phase.items do efb_chk_state[efb_chk_phase][i] = false end
+    efb_chk_page = 1
     efb_toast("EFB CHECK: " .. phase.name .. " RESET")
 end
 
@@ -362,6 +599,162 @@ function efb_toggle_check_item(index)
     if not phase or not phase.items[index] then return end
     efb_chk_state[efb_chk_phase] = efb_chk_state[efb_chk_phase] or {}
     efb_chk_state[efb_chk_phase][index] = not efb_chk_state[efb_chk_phase][index]
+end
+
+-- A checklist item that declares a dataref expression ticks itself, exactly
+-- like the Xchecklist plugin does from the same file.
+function efb_item_live(item)
+    if not item.live then return false end
+    local ok, result = pcall(efb_eval_expr, item.condition)
+    return ok and result == true
+end
+
+-- ----------------------------------------------------------- ROUTE (fpln) ---
+-- Airport index generated from the sim's apt.dat. Kept out of the load path:
+-- the table is built the first time the ROUTE page or a route command is used.
+local efb_airports = nil
+
+local function efb_load_airports()
+    if efb_airports then return efb_airports end
+    efb_airports = {}
+    local dir = SCRIPT_DIRECTORY
+    if not dir or dir == "" then return efb_airports end
+    local fd = io.open(dir .. "CitationX_Airports.csv", "r")
+    if not fd then
+        logMsg("Citation X EFB: CitationX_Airports.csv missing - ROUTE lookup disabled")
+        return efb_airports
+    end
+    for line in fd:lines() do
+        local code, lat, lon, elev = line:match("^([%w]+),([%-%d%.]+),([%-%d%.]+),([%-%d%.]+)$")
+        if code then
+            efb_airports[code] = { lat = tonumber(lat), lon = tonumber(lon),
+                elev = tonumber(elev) or 0 }
+        end
+    end
+    fd:close()
+    local n = 0
+    for _ in pairs(efb_airports) do n = n + 1 end
+    logMsg("Citation X EFB: airport index loaded (" .. tostring(n) .. ")")
+    return efb_airports
+end
+
+local function efb_gc_distance_nm(lat1, lon1, lat2, lon2)
+    local r = 3440.065
+    local dlat = efb_rad(lat2 - lat1)
+    local dlon = efb_rad(lon2 - lon1)
+    local a = math.sin(dlat / 2) ^ 2
+        + math.cos(efb_rad(lat1)) * math.cos(efb_rad(lat2)) * math.sin(dlon / 2) ^ 2
+    if a > 1 then a = 1 end
+    return 2 * r * math.asin(math.sqrt(a))
+end
+
+local function efb_gc_track(lat1, lon1, lat2, lon2)
+    local y = math.sin(efb_rad(lon2 - lon1)) * math.cos(efb_rad(lat2))
+    local x = math.cos(efb_rad(lat1)) * math.sin(efb_rad(lat2))
+        - math.sin(efb_rad(lat1)) * math.cos(efb_rad(lat2)) * math.cos(efb_rad(lon2 - lon1))
+    return (math.deg(efb_atan2(y, x)) + 360) % 360
+end
+
+local function efb_route_data()
+    local aps = efb_load_airports()
+    local dep = aps[EFB_CONFIG.route_dep]
+    local dst = aps[EFB_CONFIG.route_dest]
+    if not dep or not dst then return nil end
+    local dist = efb_gc_distance_nm(dep.lat, dep.lon, dst.lat, dst.lon)
+    local track = efb_gc_track(dep.lat, dep.lon, dst.lat, dst.lon)
+    local plan = efb_fuel_plan()
+    return {
+        dist = dist, track = track, dep = dep, dst = dst,
+        ete_h = dist / math.max(plan.gs, 100),
+        fuel = plan.burn * (dist / math.max(plan.gs, 100)),
+    }
+end
+
+-- Write an X-Plane .fms with the two airports, so the pilot can load it from
+-- Flight > Edit Flight Plan (X-Plane has no "load flight plan" command).
+function efb_route_build()
+    local data = efb_route_data()
+    if not data then
+        EFB_CONFIG.route_msg = "UNKNOWN ICAO - CHECK CODE"
+        efb_toast("EFB ROUTE: " .. EFB_CONFIG.route_msg)
+        return
+    end
+    local out_dir = EFB_CONFIG.route_out_dir
+    if not out_dir then
+        local root = efb_root_dir()
+        if not root then
+            EFB_CONFIG.route_msg = "NO OUTPUT PATH"
+            return
+        end
+        out_dir = root .. "Output/FMS plans/"
+    end
+    if out_dir:sub(-1) ~= "/" then out_dir = out_dir .. "/" end
+
+    local path = out_dir .. EFB_CONFIG.route_dep .. "-" .. EFB_CONFIG.route_dest .. ".fms"
+    local fd = io.open(path, "w")
+    if not fd then
+        EFB_CONFIG.route_msg = "COULD NOT WRITE FILE"
+        efb_toast("EFB ROUTE: WRITE FAILED")
+        return
+    end
+    -- 1100 format, exactly as the sim writes it (airports are row type 1).
+    fd:write("I\n1100 Version\nCYCLE " .. tostring(EFB_CONFIG.route_cycle) .. "\n")
+    fd:write("ADEP " .. EFB_CONFIG.route_dep .. "\n")
+    fd:write("ADES " .. EFB_CONFIG.route_dest .. "\n")
+    fd:write("NUMENR 2\n")
+    fd:write(string.format("1 %s ADEP %.6f %.6f %.6f\n", EFB_CONFIG.route_dep,
+        data.dep.elev, data.dep.lat, data.dep.lon))
+    fd:write(string.format("1 %s ADES %.6f %.6f %.6f\n", EFB_CONFIG.route_dest,
+        data.dst.elev, data.dst.lat, data.dst.lon))
+    fd:close()
+    EFB_CONFIG.route_msg = EFB_CONFIG.route_dep .. "-" .. EFB_CONFIG.route_dest .. ".FMS WRITTEN"
+    efb_toast("EFB ROUTE: " .. EFB_CONFIG.route_msg)
+    logMsg("Citation X EFB: flight plan written -> " .. path)
+end
+
+function efb_route_set_field(n)
+    EFB_CONFIG.route_field = n
+    EFB_CONFIG.route_msg = (n == 1) and "EDITING DEPARTURE" or "EDITING DESTINATION"
+end
+
+local function efb_route_key(ch)
+    local field = EFB_CONFIG.route_field == 1 and "route_dep" or "route_dest"
+    local v = EFB_CONFIG[field] or ""
+    if #v >= EFB_CONFIG.route_max_len then return end
+    EFB_CONFIG[field] = v .. ch
+    EFB_CONFIG.route_msg = "EDITING " .. (EFB_CONFIG.route_field == 1 and "DEP" or "DEST")
+end
+
+local function efb_route_back()
+    local field = EFB_CONFIG.route_field == 1 and "route_dep" or "route_dest"
+    local v = EFB_CONFIG[field] or ""
+    EFB_CONFIG[field] = v:sub(1, math.max(0, #v - 1))
+end
+
+local function efb_route_swap()
+    EFB_CONFIG.route_dep, EFB_CONFIG.route_dest =
+        EFB_CONFIG.route_dest, EFB_CONFIG.route_dep
+end
+
+-- Nearest airport to the aircraft, used to pre-fill the departure field.
+local function efb_route_nearest()
+    local aps = efb_load_airports()
+    local lat, lon = efb_lat_deg or 0, efb_lon_deg or 0
+    if lat == 0 and lon == 0 then return nil end
+    local best, best_d = nil, 1e9
+    for code, a in pairs(aps) do
+        local d = math.abs(a.lat - lat) + math.abs(a.lon - lon)
+        if d < best_d then best, best_d = code, d end
+    end
+    return best
+end
+
+function efb_route_here()
+    local code = efb_route_nearest()
+    if code then
+        EFB_CONFIG.route_dep = code
+        EFB_CONFIG.route_msg = "DEPARTURE = NEAREST AIRPORT"
+    end
 end
 
 function efb_dist(delta)
@@ -386,12 +779,16 @@ end
 
 -- --------------------------------------------------------------- DRAWING ----
 local function efb_draw_tabs(x, y, w)
-    local labels = { "PERF", "CHECK", "FUEL" }
-    local tab_w  = (w - 16) / 3
-    for i = 1, 3 do
+    local labels = { "PERF", "CHECK", "ROUTE", "FUEL" }
+    local n      = #labels
+    local tab_w  = (w - 16) / n
+    for i = 1, n do
         local tx = x + 8 + (i - 1) * tab_w
         local on = (efb_page == i)
         efb_bar(tx, y - 20, y, tab_w - 4, on and EFB_STYLE.tab_on or EFB_STYLE.tab_off, 0.95)
+        if on then
+            efb_bar(tx, y - 20, y - 18, tab_w - 4, EFB_STYLE.accent, 1.0)
+        end
         local tw = measure_string(labels[i])
         efb_txt(tx + (tab_w - 4 - tw) / 2, y - 15, labels[i],
             on and EFB_STYLE.accent or EFB_STYLE.label)
@@ -457,41 +854,144 @@ local function efb_draw_perf(x, y, w)
 end
 
 local function efb_draw_check(x, y, w)
+    efb_load_checklist()
     local phase = EFB_CHECKS[efb_chk_phase]
     local state = efb_chk_state[efb_chk_phase] or {}
-    local done  = 0
-    for i = 1, #phase.items do if state[i] then done = done + 1 end end
+    local pages = efb_check_pages()
+    if efb_chk_page > pages then efb_chk_page = pages end
+
+    local done = 0
+    for i = 1, #phase.items do
+        if state[i] or efb_item_live(phase.items[i]) then done = done + 1 end
+    end
 
     efb_row_label(x, y, w, "PHASE " .. efb_chk_phase .. " / " .. #EFB_CHECKS,
         phase.name, EFB_STYLE.accent,
         function() efb_check_next() end)
     y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "PROGRESS",
-        string.format("%d / %d", done, #phase.items),
+        string.format("%d / %d   PAGE %d / %d", done, #phase.items, efb_chk_page, pages),
         (done == #phase.items) and EFB_STYLE.ok or EFB_STYLE.value)
     y = y - EFB_CONFIG.row_h
 
-    for i = 1, #phase.items do
-        local on  = state[i] == true
+    local first = (efb_chk_page - 1) * efb_chk_per_page + 1
+    local last  = math.min(first + efb_chk_per_page - 1, #phase.items)
+    for i = first, last do
+        local item = phase.items[i]
+        local on   = state[i] == true or efb_item_live(item)
         local box_x = x + 12
         glColor4f(on and EFB_STYLE.ok[1] or EFB_STYLE.dim[1],
                   on and EFB_STYLE.ok[2] or EFB_STYLE.dim[2],
                   on and EFB_STYLE.ok[3] or EFB_STYLE.dim[3], 1.0)
         glRectf(box_x, y - 14, box_x + 8, y - 6)
-        efb_txt(box_x + 14, y - 14, phase.items[i],
-            on and EFB_STYLE.ok or EFB_STYLE.value)
-        local item = i
+        local text = efb_fit(item.text, w - 44)
+        efb_txt(box_x + 14, y - 14, text, on and EFB_STYLE.ok or EFB_STYLE.value)
+        local index = i
         efb_register_row(x + 6, y - 19, x + w - 6, y + 1,
-            function() efb_toggle_check_item(item) end)
+            function() efb_toggle_check_item(index) end)
         y = y - EFB_CONFIG.row_h
     end
 
-    efb_row_label(x, y, w, "NEXT PHASE", "CLICK / CMD", EFB_STYLE.label,
-        function() efb_check_next() end)
+    -- keep the page height stable even on a short phase
+    for _ = last + 1, first + efb_chk_per_page - 1 do
+        y = y - EFB_CONFIG.row_h
+    end
+
+    efb_row_label(x, y, w, "PREV PAGE", "NEXT PAGE  >", EFB_STYLE.label,
+        function() efb_check_page_next() end)
+    efb_register_row(x + 6, y - 19, x + w / 2 - 6, y + 1,
+        function() efb_check_page_prev() end)
     y = y - EFB_CONFIG.row_h
     efb_row_label(x, y, w, "RESET THIS PHASE", "CLICK", EFB_STYLE.warn,
         function() efb_reset_checklist() end)
     return y - 22
+end
+
+-- ROUTE page: ICAO entry on an on-screen keypad, great-circle numbers, and a
+-- one-click .fms writer. Nothing here touches the keyboard.
+function efb_route_press(key)
+    if key == "DEL" then
+        efb_route_back()
+    elseif key == "DEP" then
+        efb_route_set_field(1)
+    elseif key == "DEST" then
+        efb_route_set_field(2)
+    elseif key == "HERE" then
+        efb_route_here()
+    elseif key == "SWAP" then
+        efb_route_swap()
+    elseif key == "BUILD" then
+        efb_route_build()
+    else
+        efb_route_key(key)
+    end
+end
+
+local function efb_route_keypad(x, y, w)
+    local rows = {
+        { "A", "B", "C", "D", "E", "F", "G", "H", "I" },
+        { "J", "K", "L", "M", "N", "O", "P", "Q", "R" },
+        { "S", "T", "U", "V", "W", "X", "Y", "Z", "9" },
+        { "0", "1", "2", "3", "4", "5", "6", "7", "8" },
+        { "DEL", "DEP", "DEST", "HERE", "SWAP", "BUILD" },
+    }
+    local key_h = 17
+    local gap   = 4
+    for r = 1, #rows do
+        local row = rows[r]
+        local kw  = (w - 24 - (#row - 1) * gap) / #row
+        local ry  = y - (r - 1) * (key_h + 3)
+        for c = 1, #row do
+            local key = row[c]
+            local kx  = x + 12 + (c - 1) * (kw + gap)
+            local on  = (key == "DEP" and EFB_CONFIG.route_field == 1)
+                     or (key == "DEST" and EFB_CONFIG.route_field == 2)
+            efb_bar(kx, ry - key_h, ry, kw, on and EFB_STYLE.tab_on or EFB_STYLE.btn, 0.95)
+            efb_bar(kx, ry - key_h, ry - key_h + 1, kw, EFB_STYLE.border)
+            local tw = measure_string(key, "Helvetica_10") or measure_string(key)
+            efb_txt(kx + (kw - tw) / 2, ry - key_h + 5, key,
+                on and EFB_STYLE.accent or EFB_STYLE.label, 10)
+            efb_register_row(kx, ry - key_h, kx + kw, ry,
+                function() efb_route_press(key) end)
+        end
+    end
+    return y - #rows * (key_h + 3)
+end
+
+local function efb_draw_route(x, y, w)
+    local cfg  = EFB_CONFIG
+    local data = efb_route_data()
+
+    efb_row_label(x, y, w, "DEPARTURE",
+        cfg.route_dep ~= "" and cfg.route_dep or "----",
+        (cfg.route_field == 1) and EFB_STYLE.accent or EFB_STYLE.value,
+        function() efb_route_set_field(1) end)
+    y = y - cfg.row_h
+    efb_row_label(x, y, w, "DESTINATION",
+        cfg.route_dest ~= "" and cfg.route_dest or "----",
+        (cfg.route_field == 2) and EFB_STYLE.accent or EFB_STYLE.value,
+        function() efb_route_set_field(2) end)
+    y = y - cfg.row_h
+    efb_row_label(x, y, w, "DISTANCE / TRACK",
+        data and string.format("%.0f NM / %03.0f T", data.dist, data.track)
+             or "----",
+        data and EFB_STYLE.value or EFB_STYLE.dim)
+    y = y - cfg.row_h
+    efb_row_label(x, y, w, "TIME / TRIP FUEL",
+        data and string.format("%.1f H / %.0f KG", data.ete_h, data.fuel)
+             or "----",
+        data and EFB_STYLE.value or EFB_STYLE.dim)
+    y = y - cfg.row_h
+    efb_row_label(x, y, w, "PLAN FILE", cfg.route_msg or "", EFB_STYLE.warn,
+        function() efb_route_build() end)
+    y = y - cfg.row_h - 2
+
+    y = efb_route_keypad(x, y, w)
+    efb_txt(x + 12, y - 14, "BUILD WRITES Output/FMS plans/<DEP>-<DEST>.fms",
+        EFB_STYLE.dim)
+    efb_txt(x + 12, y - 30, "LOAD IT ONCE IN FLIGHT > EDIT FLIGHT PLAN",
+        EFB_STYLE.dim)
+    return y - 38
 end
 
 local function efb_draw_fuel(x, y, w)
@@ -558,7 +1058,7 @@ function efb_draw()
     local sw  = SCREEN_WIDTH or 1920
     local sh  = SCREEN_HIGHT or 1080
 
-    local h = st.header_h + 30 + 12 * rh + st.footer_h + 8
+    local h = st.header_h + 30 + 13 * rh + st.footer_h + 8
 
     local x = cfg.panel_x or ((sw - w) / 2)
     x = math.max(0, math.min(x, sw - w))
@@ -578,7 +1078,7 @@ function efb_draw()
     efb_bar(x, top - st.header_h, top, w, st.header_bg)
     efb_bar(x, top - st.header_h, top - st.header_h + 2, w, st.border)
 
-    local page_name = ({ "PERFORMANCE", "CHECKLISTS", "FUEL PLANNING" })[efb_page]
+    local page_name = ({ "PERFORMANCE", "CHECKLISTS", "FLIGHT PLAN", "FUEL PLANNING" })[efb_page]
     efb_txt(x + st.pad, top - 25, "CITATION X EFB", st.title, 18)
     efb_txt_right(x + w - st.pad, top - 22, page_name, st.sub, 10)
     efb_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
@@ -591,6 +1091,8 @@ function efb_draw()
         efb_draw_perf(x, y, w)
     elseif efb_page == EFB_PAGE_CHECK then
         efb_draw_check(x, y, w)
+    elseif efb_page == EFB_PAGE_ROUTE then
+        efb_draw_route(x, y, w)
     else
         efb_draw_fuel(x, y, w)
     end
@@ -688,7 +1190,25 @@ create_command("CitationXSuite/efb_page_check",
     "efb_set_page(2)", "", "")
 create_command("CitationXSuite/efb_page_fuel",
     "CitationX Suite: EFB fuel page",
+    "efb_set_page(4)", "", "")
+create_command("CitationXSuite/efb_page_route",
+    "CitationX Suite: EFB flight-plan page",
     "efb_set_page(3)", "", "")
+create_command("CitationXSuite/efb_route_build",
+    "CitationX Suite: write the EFB flight plan .fms",
+    "efb_route_build()", "", "")
+create_command("CitationXSuite/efb_route_here",
+    "CitationX Suite: EFB departure = nearest airport",
+    "efb_route_here()", "", "")
+create_command("CitationXSuite/efb_check_prev",
+    "CitationX Suite: EFB previous checklist phase",
+    "efb_check_prev()", "", "")
+create_command("CitationXSuite/efb_check_page_next",
+    "CitationX Suite: EFB next checklist page",
+    "efb_check_page_next()", "", "")
+create_command("CitationXSuite/efb_check_page_prev",
+    "CitationX Suite: EFB previous checklist page",
+    "efb_check_page_prev()", "", "")
 create_command("CitationXSuite/efb_condition",
     "CitationX Suite: EFB cycle runway condition",
     "efb_cycle_condition()", "", "")
@@ -733,4 +1253,4 @@ add_macro("CitationX Suite: EFB reset checklist", "efb_reset_checklist()")
 do_every_draw("efb_draw()")
 do_on_mouse_click("efb_mouse_click()")
 
-logMsg("Citation X EFB loaded (PERF / CHECK / FUEL)")
+logMsg("Citation X EFB loaded (PERF / CHECK / ROUTE / FUEL)")

@@ -1437,3 +1437,61 @@ head-offset datarefs actually pan in 12.4.3.
   8K panel (and every removed livery panel DDS) is in
   `_texture_backups/2026-10-26_dark_panel/`; pre-sharpening originals are in
   `_original_textures/`. Restore a set and reload the aircraft to undo.
+
+## 2026-10-31 — v3.0: no keyboard layer, EFB checklist/route, AviTab
+
+### What changed
+- **Every Lua input path is gone.** `CitationX_MasterSuite.lua` v3.0 has no
+  `do_on_keystroke`, no controller-button map, no mouse-thumb-button ALT SEL layer, no
+  autobind, no R3 view pan and no axis-to-heading-bug knob. `CONFIG.stick_hdg_*`,
+  `INPUT_BINDINGS`, `CITX_BINDINGS`, `JOY_BINDINGS`, `joy_autobind_enabled`,
+  `alt_keys_enabled`, `input_map_enabled` and `learn_mode` no longer exist; the smoke tests
+  assert their absence so they cannot creep back.
+- **The one input the suite reads is the mouse wheel** (`do_on_mouse_wheel`), because the
+  pilot asked for it explicitly: main wheel → `sim/cockpit2/autopilot/altitude_dial_ft`
+  (±100 ft), thumbwheel → `sim/cockpit2/autopilot/heading_dial_deg_mag_pilot` (±1°). X-Plane
+  reports which wheel moved in `MOUSE_WHEEL_NUMBER`; `wheel_altitude_number` /
+  `wheel_heading_number` (1 / 2 by default) plus `CitationXSuite/wheel_map_swap` and
+  `CitationXSuite/wheel_report` cover a mouse that enumerates them the other way round.
+  `RESUME_MOUSE_WHEEL = true` stops the notch from also zooming the view.
+- **Mouse actions are commands, not captures.** `CitationXSuite/taxi_light_toggle` and
+  `CitationXSuite/landing_lights_toggle` run `sim/lights/taxi_lights_toggle` /
+  `sim/lights/landing_lights_toggle`. FlyWithLua cannot see individual mouse buttons, so a
+  middle click or gesture has to be pointed at these commands by the mouse driver (Logi
+  Options+, SteerMouse) or bound in X-Plane. Do not add a keystroke handler for them.
+- **Aircraft texture cycler.** Panel row `texture` runs X-Plane's own
+  `sim/operation/next_livery` / `prev_livery`; the label comes from `acf_livery_path`, which is
+  a *slow* dataref, so it is cached and refreshed at 1 Hz (`livery_label(true)` forces it).
+- **EFB v2.** Four pages. CHECK parses the pilot's real `clist.txt`
+  (`Aircraft/Cessna Citation X_mods/clist.txt`, the file Xchecklist loads): 188 `sw_item`
+  lines → 15 phases, 128 items carry a dataref expression. `efb_eval_expr` is a small
+  recursive evaluator for the Xchecklist grammar (`&&`, `||`, parentheses, `= ! < > <= >=`,
+  `a|b` intervals); history tests (`+>`, `-<`, `><`, `a:b`) deliberately never auto-tick.
+  ROUTE is the flight-plan maker: on-screen 40-key ICAO keypad (`efb_route_press`), great-circle
+  distance/track/time, and `efb_route_build` writes a 1100-format `.fms` to
+  `Output/FMS plans/<DEP>-<DEST>.fms` (or `EFB_CONFIG.route_out_dir`). The airport index is
+  `Scripts/CitationX_Airports.csv`, 16,398 rows generated from
+  `Global Scenery/Global Airports/Earth nav data/apt.dat` (`ICAO,lat,lon,elev`); it is loaded
+  lazily on the first ROUTE use, not at script load.
+- **Realism panel is instruments, not numbers.** Every row leads with a state LED; trim, fuel
+  balance, weight, crosswind, brake energy and bus voltage draw a bar gauge (`hud_gauge`) with
+  a green band and a red limit tick. The words are status only (`GREEN`, `OUT`, `BAL`,
+  `IMBAL`, `OK`, `OVER`, `XWIND`, `HOT`, `COOL`, `SHED`); the numbers moved to Log.txt.
+- **AviTab 0.7.1 installed** in `Resources/plugins/AviTab/` (universal binary, arm64 OK). The
+  suite only forwards to AviTab's API (`AviTab/app_charts|app_maps|app_routes|app_airports`,
+  `AviTab/toggle_tablet|recentre|zoom_in|zoom_out`) and reports its map position/zoom from
+  `avitab/map/*`. There is **no** AviTab API to host or control a third-party app, so FlyCharts
+  (an Electron app that reads X-Plane over UDP 49000) can only run beside the sim.
+
+### Gotchas found this session
+- `luac` (Lua 5.5) rejects `for line in fd:lines() do line = ...` — loop variables are const
+  from 5.2. Rename the loop variable (`for raw in ... do local line = trim(raw)`).
+- `line:sub(1, 9) == "sw_item:"` can never match: the prefix is 8 characters. Use
+  `line:match("^sw_item:")`.
+- `byte[]` datarefs (`acf_livery_path`, `acf_relative_path`) are read with `dataref_table`
+  but never need an index; `tests/probe_load_order.lua` now treats `byte[]` as table-able
+  (`needs_index` only matches `[N]`).
+- `function control_panel_height()` assigned to a `local control_panel_height` forward
+  declaration stays local. The public mirror is `citationx_panel_height()`.
+- A toast stays on screen for 2 s of *sim* time; tests that assert "nothing is drawn" must
+  advance `citationx_sim_time` first.
