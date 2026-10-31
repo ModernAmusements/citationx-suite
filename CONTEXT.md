@@ -1488,10 +1488,79 @@ head-offset datarefs actually pan in 12.4.3.
   from 5.2. Rename the loop variable (`for raw in ... do local line = trim(raw)`).
 - `line:sub(1, 9) == "sw_item:"` can never match: the prefix is 8 characters. Use
   `line:match("^sw_item:")`.
-- `byte[]` datarefs (`acf_livery_path`, `acf_relative_path`) are read with `dataref_table`
-  but never need an index; `tests/probe_load_order.lua` now treats `byte[]` as table-able
-  (`needs_index` only matches `[N]`).
+- `byte[]` datarefs (`acf_livery_path`, `acf_relative_path`) cannot be bound at all —
+  `dataref_table("sim/aircraft/view/acf_livery_path")` makes FlyWithLua fail in
+  `CopyDataRefsToLua()` and quarantines the whole script (happened 2026-10-31 18:37, see §33).
+  The texture row's label therefore comes from the livery index only.
 - `function control_panel_height()` assigned to a `local control_panel_height` forward
   declaration stays local. The public mirror is `citationx_panel_height()`.
 - A toast stays on screen for 2 s of *sim* time; tests that assert "nothing is drawn" must
   advance `citationx_sim_time` first.
+
+## 33. Quarantine fix, AviTab cockpit restore, public repo (2026-10-31)
+
+Three threads closed in one session:
+
+### MasterSuite quarantine (CopyDataRefsToLua)
+
+At 18:37 a Lua reload quarantined `CitationX_MasterSuite.lua`:
+`FlyWithLua Error: CopyDataRefsToLua() failed`. The culprit was the v3.0 texture label —
+`local livery_path = dataref_table("sim/aircraft/view/acf_livery_path")` on a `byte[512]`
+dataref. FlyWithLua cannot copy that table; the whole script died and was moved to
+`Scripts (Quarantine)/CitationX_MasterSuite.lua.bak-2026-10-31` (the quarantine popup then
+re-appeared on every later reload, because FlyWithLua warns whenever the folder is non-empty
+at the end of a load — §17).
+
+Fixed in place: the binding is gone (`livery_path = nil`, English comments), and
+`livery_label_now()` falls back to the livery index (`LIVERY N`). The stale `.bak` went to the
+Trash so the popup stops. LUA_RUN=6 in `Log.txt` shows the fixed script loading cleanly; the
+full harness suite passes (`luac`, `check_datarefs` 0 problems across 5 scripts,
+`check_kpcrew_modules` 0 missing, `probe_load_order` 0/0, all five smoke tests).
+
+### AviTab cockpit screen restored
+
+The tablet had been missing from the cockpit since the aircraft copy was consolidated
+(`Aircraft/Cessna Citation X AviTab_mods` → `Cessna Citation X_mods`, undocumented rename
+between 2026-10-26 and 2026-10-30): the folder kept the texture work but lost the entire §16
+AviTab layer — no `AviTab.json`, no `objects/ipad/`, no acf attachment, no screen quad.
+`AviTab.log` said `No panel config - window only mode`, i.e. AviTab ran as a floating window.
+
+Rebuilt from the stock `Laminar Research/Cessna Citation X` copy (which still has the six
+`objects/ipad/*` files) and the geometry of `Ipad.obj` itself:
+
+- `AviTab.json` — panel rect **679, 208, 344×288** (1024-space), `"enabled": true`. The §16
+  rect was 344×206; the quad now covers the whole tablet face (213.3×178.4 mm, aspect 1.196,
+  plane normal ≈ (0.771, 0.269, 0.578), measured from the iPad mesh), so height 288 keeps the
+  pixels square-ish.
+- `objects/ipad/` — the six files copied from stock; `xPad_arm.obj` got the same
+  `ANIM_hide 0 0 avitab/panel_enabled` wrap as `Ipad.obj` already had, so the arm hides with
+  the tablet instead of floating bare when the panel is off.
+- `objects/cockpit_panel/cockpit_panel_interactive.obj` — a screen quad appended at the end:
+  `TEXTURE ../../cockpit_3d/-PANELS-/Panel.png`, `ATTR_light_level 0 1 avitab/brightness`,
+  six VTs (face corners, offset 1 mm along the face normal against z-fighting) with UVs
+  679..1023 × 208..496, `TRIS 57627 6`, `ANIM_hide 0 0 avitab/panel_enabled`.
+  `POINT_COUNTS` updated 16793→16799 verts, 57627→57633 indices.
+- `Cessna_CitationX.acf` — `_obja/26 = ipad/xPad_arm.obj`, `_obja/27 = ipad/Ipad.obj`
+  (flags 13, `_v10_is_internal` 32770, copied from the primus-screens object).
+- The GTN-era `avitab_guard` xlua script was not rebuilt: `Ipad.obj`'s ANIM_hide reads
+  `avitab/panel_enabled` directly, which AviTab publishes and `"enabled": true` sets to 1 —
+  nothing else to guard.
+- Backups of every modified file: `Cessna Citation X_mods/_mod_backups/2026-10-31_*_avitab_restore/`.
+
+**Still pending in-sim** (the sim was running with the old aircraft loaded): *Developer →
+Reload Aircraft* (not a Lua reload), then check the tablet on the console arm shows AviTab.
+If it stays black, toggle AviTab off/on in Plugin Admin to force `createPanel()` (§29
+fallback). If the UI comes up mirrored, flip the quad's v coordinates.
+
+### Repo went public + README screenshots
+
+- Visibility flipped private → public (`gh repo edit --visibility public`); no secrets in any
+  tracked file.
+- `README.md` rewritten: WIP banner, panel screenshots and texture before/after galleries
+  (`docs/img/panels/`, `docs/img/textures/`).
+- `tools/render_panels.lua` + `tools/render_panels.py` — new offline renderer: the Lua side
+  runs each panel script in a mock FlyWithLua and dumps every primitive **with the colour the
+  script set**, the Python side paints them into PNGs via ImageMagick's MVG format (no
+  rsvg delegate). The README's panel images are produced from the actual draw calls, not
+  hand-drawn. The texture images are copies of the §29 gallery
+  (`~/Desktop/CitationX_textures_before_after/img/`).

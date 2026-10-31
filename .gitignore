@@ -33,3 +33,16 @@
 !/tools/
 /tools/*
 !/tools/*.py
+!/tools/render_panels.lua
+
+# README screenshots (panel renders + texture before/after captures)
+!/docs/
+/docs/*
+!/docs/img/
+/docs/img/*
+!/docs/img/panels/
+/docs/img/panels/*
+!/docs/img/panels/*.png
+!/docs/img/textures/
+/docs/img/textures/*
+!/docs/img/textures/*.png

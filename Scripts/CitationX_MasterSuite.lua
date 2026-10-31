@@ -148,7 +148,10 @@ dataref("citationx_alt_legacy_ft", "sim/cockpit/autopilot/altitude", "writable")
 -- Texture / livery readout. Both are read-only; the switches themselves are
 -- X-Plane's own sim/operation/next_livery / prev_livery commands.
 dataref("citationx_livery_index", "sim/aircraft/view/acf_livery_index", "readonly")
-local livery_path = dataref_table("sim/aircraft/view/acf_livery_path")
+-- sim/aircraft/view/acf_livery_path is a byte[512] dataref; binding it as a
+-- dataref_table makes FlyWithLua fail in CopyDataRefsToLua() and quarantine
+-- the script. The panel label therefore comes from the livery index only.
+local livery_path = nil
 
 local fuel_flow_kg_sec = dataref_table("sim/cockpit2/engine/indicators/fuel_flow_kg_sec")
 local joy_raw_axes     = dataref_table("sim/joystick/joystick_axis_values")
@@ -182,17 +185,8 @@ local livery_label_cache = nil
 local livery_label_stamp = -1.0
 
 local function livery_name()
-    local chars = {}
-    for i = 0, 511 do
-        local b = livery_path[i]
-        if b == nil or b == 0 then break end
-        chars[#chars + 1] = string.char(b)
-    end
-    local path = table.concat(chars)
-    local name = path:match("([^/]+)/*$")
-    if name and name ~= "" then
-        return (name:gsub("%%20", " "):gsub("_", " "))
-    end
+    -- acf_livery_path cannot be read as a table (see above), so there is no
+    -- string to parse here; livery_label_now() falls back to the index.
     return nil
 end
 

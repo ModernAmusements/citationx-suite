@@ -3,8 +3,50 @@
 Four FlyWithLua NG+ scripts for the Laminar Research Cessna Citation X (C750), plus a
 standalone landing-performance scorer.
 
+> ⚠️ **WORK IN PROGRESS** — v3.0 is being verified in-sim. What has never been seen in
+> X-Plane yet: the restored AviTab cockpit screen (2026-10-31), callout timing in flight,
+> the 16-row black realism panel, and the 8K dark cockpit textures under the simulator's
+> texture cap. Every script passes the offline harnesses (see *Development and validation*);
+> the remaining items are recorded in `CONTEXT.md`.
+
 **Version 3.0 has no keyboard layer.** The suite reads exactly one pilot input — the mouse
 wheel — and everything else is a panel, a diagnostic or a command you can bind yourself.
+
+## Screenshots
+
+### The panels (rendered offline from the actual draw calls)
+
+The suite's on-screen surfaces: the Master Suite hub and the realism pack panel at load,
+plus the EFB, cabin-ops and QRH panels opened from the hub. There is no telemetry HUD —
+airspeed, altitude, heading, Mach, G, fuel flow, electrics, fuel and anti-ice stay on the
+aircraft's own PFD, EICAS and synoptics.
+
+| Load view (hub + realism panel) | Hub | Realism panel |
+| --- | --- | --- |
+| [![load](docs/img/panels/load.png)](docs/img/panels/load.png) | [![hub](docs/img/panels/hub.png)](docs/img/panels/hub.png) | [![realism](docs/img/panels/realism.png)](docs/img/panels/realism.png) |
+
+| EFB (PERF) | Cabin ops | QRH trainer |
+| --- | --- | --- |
+| [![efb](docs/img/panels/efb.png)](docs/img/panels/efb.png) | [![cabin](docs/img/panels/cabin.png)](docs/img/panels/cabin.png) | [![qrh](docs/img/panels/qrh.png)](docs/img/panels/qrh.png) |
+
+### Upscaled cockpit textures (work in progress)
+
+The cockpit panel was shipped only as a compressed 4K DXT1 texture; the 8K Cascade 3 panel
+was on disk but unused. The panel is now an **8192² PNG** (X-Plane's cockpit-object texture is
+exempt from compression) with an 8192² DXT5 fallback, and the interior atlases run 8192² /
+4096². Before/after pairs:
+
+| Stock (4K DXT1) | Upscaled (8K, current) |
+| --- | --- |
+| [![stock](docs/img/textures/panel_full_stock.png)](docs/img/textures/panel_full_stock.png) | [![dark](docs/img/textures/panel_full_dark.png)](docs/img/textures/panel_full_dark.png) |
+| [![gear stock](docs/img/textures/panel_gear_stock.png)](docs/img/textures/panel_gear_stock.png) | [![gear dark](docs/img/textures/panel_gear_dark.png)](docs/img/textures/panel_gear_dark.png) |
+| [![overall stock](docs/img/textures/int_overall_stock.png)](docs/img/textures/int_overall_stock.png) | [![overall new](docs/img/textures/int_overall_new.png)](docs/img/textures/int_overall_new.png) |
+| [![cabin stock](docs/img/textures/int_cabin_stock.png)](docs/img/textures/int_cabin_stock.png) | [![cabin new](docs/img/textures/int_cabin_new.png)](docs/img/textures/int_cabin_new.png) |
+| [![seat stock](docs/img/textures/seat_crop_stock.png)](docs/img/textures/seat_crop_stock.png) | [![seat new](docs/img/textures/seat_crop_new.png)](docs/img/textures/seat_crop_new.png) |
+
+The dark panel is a deliberate finish change, not just a resolution upgrade; the light 8K
+transplant is backed up. **The textures themselves live in the aircraft mod**
+(`Aircraft/Cessna Citation X_mods/`), outside this repo — the images above are captures.
 
 ## Scripts
 
@@ -92,6 +134,11 @@ replaces it:
 | `CitationXSuite/avitab_recentre` | recentre the map |
 | `CitationXSuite/avitab_zoom_in` / `_out` | map zoom |
 
+The in-cockpit AviTab screen (the iPad on the console arm, restored 2026-10-31) is part of the
+aircraft mod `Aircraft/Cessna Citation X_mods/`: `AviTab.json` carries the corrected 1024-space
+panel rect and the screen quad lives in `cockpit_panel_interactive.obj`. See `CONTEXT.md` §16
+and §33.
+
 AviTab has no API to host or drive a third-party application, so **FlyCharts cannot be
 controlled from AviTab**. FlyCharts is a separate Electron app that reads X-Plane over UDP
 port 49000; run it beside the sim. What the two can share is data, not control: AviTab 0.7.1
@@ -163,6 +210,7 @@ CitationXSuite/efb_check_page_prev
 CitationXSuite/status_report     CitationXSuite/test_emergency
 
 CitationXQRH/*                 CabinOps/*                    CitationXRealism/*
+```
 
 ## Development and validation
 
@@ -189,6 +237,10 @@ HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_efb.lua Scripts/CitationX_EFB
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_checklist.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_realism.lua Scripts/CitationX_Realism.lua
 luajit tests/smoke_panel_geometry.lua
+
+# re-render the README panel screenshots from the actual draw calls
+luajit tools/render_panels.lua > /tmp/panels.json
+python3 tools/render_panels.py /tmp/panels.json docs/img/panels
 ```
 
 Every DataRef used by the scripts must exist in
@@ -246,4 +298,4 @@ refuses to write while the sim runs.
 
 ## Repository
 
-Private: <https://github.com/ModernAmusements/citationx-suite>
+Public: <https://github.com/ModernAmusements/citationx-suite>

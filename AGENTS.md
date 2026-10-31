@@ -30,6 +30,10 @@ tests/smoke_panel_geometry.lua
 tests/smoke_realism.lua
 tools/joymap.py
 tools/joymap_gui.py
+tools/render_panels.lua
+tools/render_panels.py
+docs/img/panels/*.png
+docs/img/textures/*.png
 README.md  AGENTS.md  CONTEXT.md  SCRIPT_STATUS.md  CONTROLLER.md
 .opencode/agents/citationx.md
 ```
