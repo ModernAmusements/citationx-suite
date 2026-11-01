@@ -1655,3 +1655,25 @@ the generated `.fms` carries it.
 
 **Pending in-sim:** the repaired AviTab quad, the wheel mapping on the MX Master, and the EFB
 checklist/route paths after the root fix.
+
+## 35. AviTab in-sim check: still window-only (2026-11-01)
+
+The repaired quad now loads cleanly — no `IDX10` and no aircraft-package error in the 02:24
+`Log.txt`, and the installed object is the 16799-vert / 57633-index version. But the tablet is
+still not on the cockpit panel:
+
+- `Resources/plugins/AviTab/AviTab.log` at 01:26 says **`No panel config - window only mode`**,
+  then `Showing tablet` at 01:30 (the floating window, not the panel).
+- `Aircraft/Cessna Citation X_mods/AviTab.json` is present with the fixed rect
+  (`679, 208, 344×288`, `"enabled": true`).
+- `objects/ipad/*` and the ACF attachments (`_obja/26 = ipad/xPad_arm.obj`) are present.
+- The repaired quad is in `objects/cockpit_panel/cockpit_panel_interactive.obj` with
+  `POINT_COUNTS 16799 0 0 57633`.
+
+So the remaining failure is in AviTab's **config discovery**, not the OBJ. Next test: start
+X-Plane with the Citation X already selected (or use Developer → Reload Aircraft after AviTab
+initialises) and re-read `AviTab.log`; if it still says "window only", investigate why 0.7.1
+does not pick up the JSON on aircraft load. ChartFox separately reports `Login required`, so
+online charts are a login issue, not the panel.
+
+Do not treat the in-cockpit tablet as verified until that log line changes.
