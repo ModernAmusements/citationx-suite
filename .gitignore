@@ -3,17 +3,9 @@
 /*
 !/.gitignore
 !/README.md
-!/AGENTS.md
 !/CONTEXT.md
 !/SCRIPT_STATUS.md
 !/CONTROLLER.md
-
-# OpenCode project agent
-!/.opencode/
-/.opencode/*
-!/.opencode/agents/
-/.opencode/agents/*
-!/.opencode/agents/*.md
 
 # Citation X Lua scripts (live in the sim's Scripts folder)
 !/Scripts/
@@ -46,3 +38,51 @@
 !/docs/img/textures/
 /docs/img/textures/*
 !/docs/img/textures/*.png
+
+# Credentials, tokens and machine-local secrets — never published.
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.jks
+id_rsa*
+id_ed25519*
+id_ecdsa*
+.netrc
+.npmrc
+.pypirc
+.git-credentials
+credentials
+credentials.*
+secrets
+secrets.*
+*.token
+*.secret
+auth.json
+service.json
+cli.json
+opencode.json
+opencode.json.*
+*.local
+
+# AI agent / assistant configuration — local only, never published.
+.opencode/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.cursor/
+.cursorrules
+.claude/
+.aider*
+.windsurf/
+.mcp.json
+.github/copilot-instructions.md
+
+# Editor and OS local state.
+.vscode/
+.idea/
+.DS_Store

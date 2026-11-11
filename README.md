@@ -250,7 +250,7 @@ aircraft's xlua plugin). A single invalid DataRef makes FlyWithLua quarantine th
 If X-Plane is available, load a flight and check `Log.txt` for `FlyWithLua Error`. The
 "DataRef ... is already handled in variable ..." lines are informational, not errors.
 
-See `CONTEXT.md` for the engineering history and `AGENTS.md` for contribution rules.
+See `CONTEXT.md` for the engineering history and the validation notes above.
 
 ## Offline joystick mapper
 

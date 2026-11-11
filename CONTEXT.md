@@ -1397,11 +1397,13 @@ head-offset datarefs actually pan in 12.4.3.
 
 ## Repo, agent & deployment
 - Git initialized in place in the FlyWithLua folder; `.gitignore` tracks only the five
-  Citation X scripts, `CitationX_Callouts/*.wav`, `tests/`, docs (`README.md`, `AGENTS.md`,
-  `CONTEXT.md`) and the project agent. Plugin binaries, Modules, Internals, Documentation and
-  runtime files stay untracked.
-- Private remote: <https://github.com/ModernAmusements/citationx-suite>
-- Project agent: `.opencode/agents/citationx.md` (mode `all`), rules in `AGENTS.md`.
+  Citation X scripts, `CitationX_Callouts/*.wav`, `tests/`, `tools/`, `docs/` and the
+  documentation (`README.md`, `CONTEXT.md`, `SCRIPT_STATUS.md`, `CONTROLLER.md`). Plugin
+  binaries, Modules, Internals, Documentation, runtime files, credentials and agent/editor
+  configuration stay untracked.
+- Public remote: <https://github.com/ModernAmusements/citationx-suite>
+- Project agent (local only, not published): `.opencode/agents/citationx.md` (mode `all`),
+  local rules in `AGENTS.md`. Both are ignored by git.
 - Test harnesses (all under `tests/`): `check_datarefs.lua`, `check_kpcrew_modules.lua`,
   `probe_kpcrew.lua`, `probe_kpcrew_run.lua`, `probe_load_order.lua`,
   `smoke_mastersuite.lua`, `smoke_hud_toggles.lua`, `smoke_realism.lua`,
