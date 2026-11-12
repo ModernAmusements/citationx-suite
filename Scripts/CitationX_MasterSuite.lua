@@ -23,7 +23,7 @@
 --    5. Emergency gen    - rare bleed-air / pressurisation warning at altitude
 --    6. Axis monitor     - opt-in diagnostic readout of the live raw axes
 --    7. Texture cycler   - steps through the installed liveries from the panel
---    8. Panel hub        - opens the sibling panels (EFB, QRH, cabin, realism)
+--    8. Panel hub        - opens the sibling panels (QRH, cabin, realism)
 --
 --  There is deliberately NO telemetry overlay and NO C750 systems readback:
 --  the aircraft's own PFD, EICAS and synoptics already show airspeed, altitude,
@@ -88,8 +88,9 @@ CONFIG = {
 }
 
 -- ----------------------------------------------------------- PANEL STYLE ----
--- Shared black/Helvetica language. 38 px header, 22 px rows, hairline
--- separators and a two-tone body so a 1600-wide screen still reads cleanly.
+-- Geometry only; every colour is the shared MA dark field in
+-- CitationX_00_Core.lua (CX). 38 px header, 22 px rows, hairline separators,
+-- green bottom bar.
 SUITE_STYLE = {
     x            = 470,
     top          = nil,          -- nil = top-right on first draw
@@ -99,24 +100,26 @@ SUITE_STYLE = {
     sub_h        = 22,
     row_h        = 22,
     footer_h     = 34,
-    bg           = {0.00, 0.00, 0.00, 0.92},
-    bg_alt       = {0.06, 0.06, 0.06, 0.92},
-    header_bg    = {0.05, 0.05, 0.05, 0.97},
-    border       = {0.36, 0.36, 0.36, 1.00},
-    hairline     = {0.22, 0.22, 0.22, 1.00},
-    title        = {1.00, 1.00, 1.00, 1.00},
-    sub          = {0.58, 0.58, 0.58, 1.00},
-    label        = {0.86, 0.86, 0.86, 1.00},
-    value        = {1.00, 1.00, 1.00, 1.00},
-    dim          = {0.46, 0.46, 0.46, 1.00},
-    ok           = {0.45, 0.88, 0.52, 1.00},
-    warn         = {0.96, 0.74, 0.26, 1.00},
-    alert        = {0.96, 0.36, 0.32, 1.00},
-    btn          = {0.11, 0.11, 0.11, 1.00},
-    accent       = {1.00, 1.00, 1.00, 1.00},
-    subhdr       = {0.58, 0.58, 0.58, 1.00},
-    mon_bg       = {0.03, 0.05, 0.03, 0.90},
-    mon          = {0.62, 0.95, 0.66, 1.00},
+    bg           = CX.bg,
+    bg_alt       = CX.bg_alt,
+    header_bg    = CX.header_bg,
+    border       = CX.border,
+    hairline     = CX.hairline,
+    title        = CX.title,
+    sub          = CX.sub,
+    label        = CX.label,
+    value        = CX.value,
+    dim          = CX.dim,
+    ok           = CX.ok,
+    warn         = CX.warn,
+    alert        = CX.alert,
+    btn          = CX.btn,
+    accent       = CX.accent,
+    subhdr       = CX.sub,
+    footer_bg    = CX.footer_bg,
+    footer_fg    = CX.footer_fg,
+    mon_bg       = CX.mon_bg,
+    mon          = CX.mon,
 }
 
 -- --------------------------------------------------------------- DATAREFS ---
@@ -338,19 +341,6 @@ SUITE_MODULES = {
         state = function()
             if la_show_last_result == nil then return "ABSENT" end
             return la_displayOn == true and "SHOWN" or "HIDDEN"
-        end,
-    },
-    {
-        key = "efb", label = "EFB", macro = "EFB panel",
-        get = function()
-            return (type(EFB_CONFIG) == "table") and EFB_CONFIG.panel_enabled or false
-        end,
-        set = function(on)
-            if type(efb_toggle_panel) == "function" then efb_toggle_panel(on) end
-        end,
-        state = function()
-            if type(EFB_CONFIG) ~= "table" then return "ABSENT" end
-            return EFB_CONFIG.panel_enabled and "ON" or "OFF"
         end,
     },
     {
@@ -816,38 +806,22 @@ end
 -- The only thing the suite draws is the control panel (plus the opt-in axis
 -- monitor and a 2 s toast). No telemetry, no systems mirror.
 local function draw_bar(x, y_bottom, y_top, w, color, alpha)
-    glColor4f(color[1], color[2], color[3], alpha or color[4] or 1.0)
-    glRectf(x, y_bottom, x + w, y_top)
+    cx_bar_w(x, y_bottom, y_top, w, color, alpha)
 end
 
 local function fit_text(text, max_px)
-    if measure_string(text) <= max_px then return text end
-    local trimmed = text
-    while #trimmed > 1 and measure_string(trimmed .. "...") > max_px do
-        trimmed = trimmed:sub(1, -2)
-    end
-    return trimmed .. "..."
-end
-
--- Helvetica faces; 18 for titles, 12 for rows, 10 for captions.
-local function suite_font(size)
-    if size == 18 then return draw_string_Helvetica_18 or draw_string end
-    if size == 10 then return draw_string_Helvetica_10 or draw_string end
-    return draw_string_Helvetica_12 or draw_string
+    return cx_fit(text, max_px)
 end
 
 local function suite_text(x, y, text, size, color)
-    glColor4f(color[1], color[2], color[3], color[4] or 1.0)
-    suite_font(size)(x, y, tostring(text or ""))
+    cx_text(x, y, text, size, color)
 end
 
 local function suite_text_right(right_x, y, text, size, color)
-    local s = tostring(text or "")
-    local w = measure_string(s, "Helvetica_" .. tostring(size)) or measure_string(s)
-    suite_text(right_x - w, y, s, size, color)
+    cx_text_right(right_x, y, text, size, color)
 end
 
--- Black shell: body, 1 px border, 2 px header rule, title and right caption.
+-- Shell: body, 1 px border, 2 px header rule, title and right caption.
 local function draw_shell(x, top, w, h, title, sub)
     local st = SUITE_STYLE
     local bottom = top - h
@@ -868,13 +842,7 @@ end
 
 local function draw_footer_button(x, bottom, w, label)
     local st = SUITE_STYLE
-    local by0 = bottom + 7
-    local by1 = by0 + st.footer_h - 12
-    draw_bar(x + st.pad, by0, by1, w - 2 * st.pad, st.btn)
-    draw_bar(x + st.pad, by1 - 1, by1, w - 2 * st.pad, st.border)
-    local tw = measure_string(label, "Helvetica_10") or measure_string(label)
-    suite_text(x + (w - tw) / 2, by0 + 7, label, 10, st.value)
-    return { x0 = x + st.pad, x1 = x + w - st.pad, y0 = by0, y1 = by1 }
+    return cx_footer_button(x, bottom, w, label, st.footer_h, st.pad)
 end
 
 -- header (38) + sub-header (22) + rows + footer + padding
@@ -1007,7 +975,7 @@ function citationx_overlay()
         local box_w  = text_w + 34
         local box_x  = (screen_w - box_w) / 2
         local box_y  = screen_h - 96
-        draw_bar(box_x, box_y - 8, box_y + 22, box_w, {0.00, 0.00, 0.00}, 0.92)
+        draw_bar(box_x, box_y - 8, box_y + 22, box_w, CX.bg)
         draw_bar(box_x, box_y - 8, box_y + 22, 3, SUITE_STYLE.accent, 1.0)
         suite_text(box_x + 16, box_y + 3, toast_text, 12, SUITE_STYLE.value)
     end

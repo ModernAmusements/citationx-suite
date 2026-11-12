@@ -36,24 +36,27 @@ TRAINER_CONFIG = {
     row_h            = 21,
 }
 
--- Same black / Helvetica language as the realism panel.
+-- Geometry only; colours come from the shared MA dark field (CX).
 ST = {
-    bg         = {0.00, 0.00, 0.00, 0.90},
-    header_bg  = {0.04, 0.04, 0.04, 0.96},
-    header_act = {0.16, 0.05, 0.05, 0.96},
-    border     = {0.32, 0.32, 0.32, 1.00},
-    title      = {1.00, 1.00, 1.00, 1.00},
-    sub        = {0.55, 0.55, 0.55, 1.00},
-    label      = {0.80, 0.80, 0.80, 1.00},
-    value      = {1.00, 1.00, 1.00, 1.00},
-    dim        = {0.45, 0.45, 0.45, 1.00},
-    ok         = {0.45, 0.85, 0.50, 1.00},
-    warn       = {0.95, 0.72, 0.25, 1.00},
-    alert      = {0.95, 0.36, 0.32, 1.00},
-    btn        = {0.10, 0.10, 0.10, 1.00},
+    bg         = CX.bg,
+    header_bg  = CX.header_bg,
+    header_act = CX.header_act,
+    border     = CX.border,
+    hairline   = CX.hairline,
+    title      = CX.title,
+    sub        = CX.sub,
+    label      = CX.label,
+    value      = CX.value,
+    dim        = CX.dim,
+    ok         = CX.ok,
+    warn       = CX.warn,
+    alert      = CX.alert,
+    btn        = CX.btn,
     -- legacy aliases used by the existing drawing code
-    accent     = {1.00, 1.00, 1.00, 1.00},
-    subhdr     = {0.55, 0.55, 0.55, 1.00},
+    accent     = CX.accent,
+    subhdr     = CX.sub,
+    footer_bg  = CX.footer_bg,
+    footer_fg  = CX.footer_fg,
     header_h   = 34,
     footer_h   = 34,
     pad        = 14,
@@ -367,36 +370,23 @@ end
 
 -- ------------------------------------------------------------- DRAWING -----
 local function bar(x, y0, y1, w, color, alpha)
-    glColor4f(color[1], color[2], color[3], alpha or color[4] or 1.0)
-    glRectf(x, y0, x + w, y1)
-end
-
-local function qrh_font(size)
-    if size == 18 then return draw_string_Helvetica_18 or draw_string end
-    if size == 10 then return draw_string_Helvetica_10 or draw_string end
-    return draw_string_Helvetica_12 or draw_string
+    cx_bar_w(x, y0, y1, w, color, alpha)
 end
 
 local function txt(x, y, text, color, size)
-    glColor4f(color[1], color[2], color[3], color[4] or 1.0)
-    qrh_font(size or 12)(x, y, tostring(text or ""))
+    cx_text(x, y, text, size or 12, color)
 end
 
 local function txt_right(right_x, y, text, color, size)
-    local s = tostring(text or "")
-    local sz = size or 12
-    local tw = measure_string(s, "Helvetica_" .. tostring(sz)) or measure_string(s)
-    txt(right_x - tw, y, s, color, sz)
+    cx_text_right(right_x, y, text, size or 12, color)
 end
 
 -- Keep long QRH step labels inside the panel (the 460 px original had room;
 -- the 430 px shell needs a guard for the dotted-line steps).
 local function qrh_fit(text, max_px, size)
     local s = tostring(text or "")
-    local font = "Helvetica_" .. tostring(size or 12)
-    local function m(t) return measure_string(t, font) or measure_string(t) end
-    if m(s) <= max_px then return s end
-    while #s > 1 and m(s .. "..") > max_px do s = s:sub(1, -2) end
+    if cx_measure(s, size or 12) <= max_px then return s end
+    while #s > 1 and cx_measure(s .. "..", size or 12) > max_px do s = s:sub(1, -2) end
     return s .. ".."
 end
 
@@ -498,7 +488,7 @@ function qrh_draw()
             txt(x + st.pad, y - 14, "PROCEDURE COMPLETE", st.ok)
             y = y - rh
             bar(x + st.pad, y - rh + 8, y + 5, w - 2 * st.pad, st.alert, 0.85)
-            txt(x + st.pad + 8, y - 14, "CLEAR FAILURE  (click)", {0.05, 0.05, 0.05})
+            txt(x + st.pad + 8, y - 14, "CLEAR FAILURE  (click)", CX.footer_fg)
             qrh_rows[#qrh_rows + 1] = {
                 kind = "clear",
                 x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
@@ -525,21 +515,15 @@ function qrh_draw()
         end
         -- random row
         bar(x + st.pad, y - rh + 8, y + 5, w - 2 * st.pad, st.warn, 0.85)
-        txt(x + st.pad + 8, y - 14, "RANDOM FAILURE (surprise me)", {0.05, 0.05, 0.05})
+        txt(x + st.pad + 8, y - 14, "RANDOM FAILURE (surprise me)", CX.footer_fg)
         qrh_rows[#qrh_rows + 1] = {
             kind = "random",
             x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
         }
     end
 
-    -- footer: drag-safe hide button
-    local by0 = bottom + 8
-    local by1 = by0 + st.footer_h - 12
-    bar(x + st.pad, by0, by1, w - 2 * st.pad, st.btn)
-    local label = "HIDE PANEL"
-    local tw = measure_string(label, "Helvetica_10") or measure_string(label)
-    txt(x + (w - tw) / 2, by0 + 6, label, st.value, 10)
-    qrh_footer_rect = { x0 = x + st.pad, x1 = x + w - st.pad, y0 = by0, y1 = by1 }
+    -- footer: drag-safe hide button (shared green bottom bar)
+    qrh_footer_rect = cx_footer_button(x, bottom, w, "HIDE PANEL", st.footer_h, st.pad)
 
     -- toast
     if toast_text and (ft_sim_time or 0) < toast_until then
@@ -547,7 +531,7 @@ function qrh_draw()
             or measure_string(toast_text)) + 32
         local bx = x
         local by = bottom - 30
-        bar(bx, by, by + 24, tw2, {0.00, 0.00, 0.00}, 0.92)
+        bar(bx, by, by + 24, tw2, CX.bg)
         bar(bx, by, by + 24, 4, st.accent)
         txt(bx + 16, by + 7, toast_text, st.value)
     end

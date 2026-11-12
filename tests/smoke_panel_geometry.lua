@@ -183,6 +183,8 @@ local function assert_text_inside_panel(tag)
 end
 
 ------------------------------------------------------------------ MasterSuite
+-- FlyWithLua loads Scripts/ alphabetically; the shared core always comes first.
+assert(loadfile("Scripts/CitationX_00_Core.lua"))()
 print("== CitationX_MasterSuite.lua ==")
 do
   local chunk = assert(loadfile("Scripts/CitationX_MasterSuite.lua"))
@@ -369,59 +371,6 @@ do
   assert_text_inside_panel("qrh-active")
   qrh_clear()
   TRAINER_CONFIG.require_c750 = true
-end
-
---------------------------------------------------------------------- EFB ----
-print("== CitationX_EFB.lua ==")
-do
-  EFB_CONFIG = nil
-  local chunk = assert(loadfile("Scripts/CitationX_EFB.lua"))
-  chunk()
-
-  reset()
-  efb_toggle_panel(true)   -- the script loads with the panel hidden
-  efb_draw()
-  check(#drawn > 20, "EFB panel draws content", #drawn)
-  assert_on_screen("efb", nil)
-  assert_row_spacing("efb")
-  assert_text_inside_panel("efb")
-
-  local ex0, etop0 = EFB_CONFIG.panel_x, EFB_CONFIG.panel_top
-  MOUSE_STATUS = "down"
-  MOUSE_X, MOUSE_Y = ex0 + 20, etop0 - 10
-  RESUME_MOUSE_CLICK = false
-  efb_mouse_click()
-  check(RESUME_MOUSE_CLICK == true, "EFB header press starts a drag")
-  MOUSE_STATUS = "drag"
-  MOUSE_X, MOUSE_Y = ex0 + 20 - 100, etop0 - 10 - 50
-  efb_mouse_click()
-  check(math.abs(EFB_CONFIG.panel_x - (ex0 - 100)) < 1
-    and math.abs(EFB_CONFIG.panel_top - (etop0 - 50)) < 1,
-    "EFB panel follows the mouse while dragging")
-  MOUSE_STATUS = "up"
-  efb_mouse_click()
-  EFB_CONFIG.panel_x, EFB_CONFIG.panel_top = ex0, etop0
-  reset()
-  efb_draw()
-
-  -- every page must render without leaving the screen
-  for _, page in ipairs({ 2, 3, 4, 1 }) do
-    efb_set_page(page)
-    reset()
-    efb_draw()
-    check(#drawn > 10, "EFB page " .. page .. " draws content", #drawn)
-    assert_on_screen("efb-page-" .. page, nil)
-    assert_text_inside_panel("efb-page-" .. page)
-  end
-
-  -- default positions must not collide: hub + realism top-left, QRH left,
-  -- EFB centre, cabin right
-  local x1 = EFB_CONFIG.panel_x
-  local x2 = x1 + EFB_CONFIG.panel_w
-  local qrh_right = TRAINER_CONFIG.panel_x + TRAINER_CONFIG.panel_w
-  local cab_left = CAB_CONFIG.panel_x
-  check(x1 > qrh_right, "EFB clears the QRH panel", string.format("%.0f > %d", x1, qrh_right))
-  check(x2 < cab_left, "EFB clears the cabin panel", string.format("%.0f < %d", x2, cab_left))
 end
 
 ------------------------------------------------------------------- Realism ---

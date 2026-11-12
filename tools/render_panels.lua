@@ -100,8 +100,8 @@ local function load_script(path)
 end
 
 -- Load everything first, in FlyWithLua's alphabetical order, one shared state.
+load_script("Scripts/CitationX_00_Core.lua")
 load_script("Scripts/CitationX_CabinOps.lua")
-load_script("Scripts/CitationX_EFB.lua")
 load_script("Scripts/CitationX_FailureTrainer.lua")
 load_script("Scripts/CitationX_MasterSuite.lua")
 load_script("Scripts/CitationX_Realism.lua")
@@ -119,18 +119,12 @@ citationx_overlay()
 new_frame("realism")
 real_draw()
 
--- 4. EFB, PERF page
-new_frame("efb")
-efb_toggle_panel(true)
-efb_set_page(1)
-efb_draw()
-
--- 5. cabin ops
+-- 4. cabin ops
 new_frame("cabin")
 cab_toggle_panel(true)
 cab_draw()
 
--- 6. QRH trainer, idle
+-- 5. QRH trainer, idle
 new_frame("qrh")
 qrh_toggle_panel(true)
 qrh_draw()

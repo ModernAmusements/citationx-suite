@@ -87,6 +87,9 @@ local YOKE_PITCH = "sim/joystick/yoke_pitch_ratio"
 local YOKE_ROLL  = "sim/joystick/yoke_roll_ratio"
 
 -- ---------- load ----------
+-- FlyWithLua loads Scripts/ alphabetically; the shared core always comes first.
+local core = (script:match("^(.*/)") or "") .. "CitationX_00_Core.lua"
+assert(loadfile(core))()
 local chunk = assert(loadfile(script))
 chunk()
 
@@ -230,6 +233,30 @@ frame()
 local flap_hits = 0
 for _, l in ipairs(logs) do if l:find("flap overspeed", 1, true) then flap_hits = flap_hits + 1 end end
 check(flap_hits == 1, "flap overspeed warns once per event", flap_hits)
+check(real_fail_flap_act == 0, "short flap overspeed does not fail the flaps yet")
+
+-- sustained overspeed breaks the flap actuator
+real_ias_kt = 200
+for _ = 1, 20 do frame() end
+check(real_fail_flap_act == 6, "sustained flap overspeed fails the flap actuator", real_fail_flap_act)
+check(real_fail_flap_right == 6, "default right flap departs", real_fail_flap_right)
+check(real_fail_flap_left == 0, "the other flap stays attached", real_fail_flap_left)
+check(has("CALLOUT FLAP FAIL"), "flap failure callout")
+check(has("right flap departed"), "flap departure names the side")
+real_repair_damage()
+check(real_fail_flap_act == 0 and real_fail_flap_right == 0,
+  "repair clears the flap failure")
+
+-- ---------- gear overspeed ----------
+logs = {}
+real_flap_rat = 0
+real_gear[0]  = 1
+real_ias_kt   = 230
+for _ = 1, 30 do frame() end
+check(real_fail_gear_act == 6, "sustained gear overspeed fails the gear actuator", real_fail_gear_act)
+check(has("CALLOUT GEAR FAIL"), "gear failure callout")
+real_repair_damage()
+check(real_fail_gear_act == 0, "repair clears the gear failure")
 
 -- ---------- icing ----------
 logs = {}

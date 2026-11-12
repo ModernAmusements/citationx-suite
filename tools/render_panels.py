@@ -14,7 +14,7 @@ import subprocess
 import sys
 
 FONT_PX = {"def": 12, "h10": 10, "h12": 12, "h18": 18}
-BACKDROP = "#141414"   # dark cockpit-ish background
+BACKDROP = "#e5e5e5"   # MA light-theme hairline grey: the dark panels read crisply
 MARGIN = 28
 
 

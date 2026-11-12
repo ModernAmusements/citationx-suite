@@ -33,22 +33,25 @@ CAB_CONFIG = {
     ground_reset_s   = 20,     -- engines idle on ground this long -> STANDBY
 }
 
--- Same black / Helvetica language as the realism panel.
+-- Geometry only; colours come from the shared MA dark field (CX).
 CS = {
-    bg        = {0.00, 0.00, 0.00, 0.90},
-    header_bg = {0.04, 0.04, 0.04, 0.96},
-    border    = {0.32, 0.32, 0.32, 1.00},
-    title     = {1.00, 1.00, 1.00, 1.00},
-    sub       = {0.55, 0.55, 0.55, 1.00},
-    label     = {0.80, 0.80, 0.80, 1.00},
-    value     = {1.00, 1.00, 1.00, 1.00},
-    dim       = {0.45, 0.45, 0.45, 1.00},
-    ok        = {0.45, 0.85, 0.50, 1.00},
-    warn      = {0.95, 0.72, 0.25, 1.00},
-    bad       = {0.95, 0.36, 0.32, 1.00},
-    btn       = {0.10, 0.10, 0.10, 1.00},
+    bg        = CX.bg,
+    header_bg = CX.header_bg,
+    border    = CX.border,
+    hairline  = CX.hairline,
+    title     = CX.title,
+    sub       = CX.sub,
+    label     = CX.label,
+    value     = CX.value,
+    dim       = CX.dim,
+    ok        = CX.ok,
+    warn      = CX.warn,
+    bad       = CX.bad,
+    btn       = CX.btn,
     -- legacy aliases used by the existing drawing code
-    accent    = {1.00, 1.00, 1.00, 1.00},
+    accent    = CX.accent,
+    footer_bg = CX.footer_bg,
+    footer_fg = CX.footer_fg,
     header_h  = 34,
     footer_h  = 34,
     pad       = 14,
@@ -294,26 +297,15 @@ end
 
 -- ------------------------------------------------------------- DRAWING -----
 local function bar(x, y0, y1, w, color, alpha)
-    glColor4f(color[1], color[2], color[3], alpha or color[4] or 1.0)
-    glRectf(x, y0, x + w, y1)
-end
-
-local function cab_font(size)
-    if size == 18 then return draw_string_Helvetica_18 or draw_string end
-    if size == 10 then return draw_string_Helvetica_10 or draw_string end
-    return draw_string_Helvetica_12 or draw_string
+    cx_bar_w(x, y0, y1, w, color, alpha)
 end
 
 local function txt(x, y, text, color, size)
-    glColor4f(color[1], color[2], color[3], color[4] or 1.0)
-    cab_font(size or 12)(x, y, tostring(text or ""))
+    cx_text(x, y, text, size or 12, color)
 end
 
 local function txt_right(right_x, y, text, color, size)
-    local s = tostring(text or "")
-    local sz = size or 12
-    local tw = measure_string(s, "Helvetica_" .. tostring(sz)) or measure_string(s)
-    txt(right_x - tw, y, s, color, sz)
+    cx_text_right(right_x, y, text, size or 12, color)
 end
 
 local function state_word(v)
@@ -395,7 +387,7 @@ function cab_draw()
             st.accent)
     end
     local pbx, pby, pbw = x + st.pad, y - 32, w - 2 * st.pad
-    bar(pbx, pby, pby + 8, pbw, {0.05, 0.05, 0.05}, 0.9)
+    bar(pbx, pby, pby + 8, pbw, CX.track, 0.9)
     local frac = pax_boarded / cfg.pax_total
     if frac > 0 then bar(pbx, pby, pby + 8, pbw * frac, st.ok, 0.95) end
     y = y - 44
@@ -407,7 +399,7 @@ function cab_draw()
         if full then
             bar(x + st.pad, y - rh + 6, y + 4, w - 2 * st.pad,
                 key == "start" and st.ok or st.warn, 0.85)
-            txt(x + st.pad + 8, y - 13, name, {0.05, 0.05, 0.05})
+            txt(x + st.pad + 8, y - 13, name, CX.footer_fg)
         else
             glColor4f((on == true) and st.ok[1] or st.dim[1],
                       (on == true) and st.ok[2] or st.dim[2],
@@ -426,21 +418,15 @@ function cab_draw()
         y = y - rh
     end
 
-    -- footer: drag-safe hide button
-    local by0 = bottom + 8
-    local by1 = by0 + st.footer_h - 12
-    bar(x + st.pad, by0, by1, w - 2 * st.pad, st.btn)
-    local label = "HIDE PANEL"
-    local tw = measure_string(label, "Helvetica_10") or measure_string(label)
-    txt(x + (w - tw) / 2, by0 + 6, label, st.value, 10)
-    cab_footer_rect = { x0 = x + st.pad, x1 = x + w - st.pad, y0 = by0, y1 = by1 }
+    -- footer: drag-safe hide button (shared green bottom bar)
+    cab_footer_rect = cx_footer_button(x, bottom, w, "HIDE PANEL", st.footer_h, st.pad)
 
     -- toast
     if cb_toast_text and (cab_sim_time or 0) < cb_toast_until then
         local tw2 = (measure_string(cb_toast_text, "Helvetica_12")
             or measure_string(cb_toast_text)) + 32
         local by = bottom - 30
-        bar(x + w - tw2, by, by + 24, tw2, {0.00, 0.00, 0.00}, 0.92)
+        bar(x + w - tw2, by, by + 24, tw2, CX.bg)
         bar(x + w - tw2, by, by + 24, 4, st.ok)
         txt(x + w - tw2 + 16, by + 7, cb_toast_text, st.value)
     end

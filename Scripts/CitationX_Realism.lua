@@ -79,7 +79,7 @@ REAL_CONFIG = {
     brake_hot_j        = 5.0e6, -- per brake, joules
     brake_cool_j       = 1.0e6,
 
-    -- Overspeed advisories ---------------------------------------------------
+    -- Overspeed advisories + damage -----------------------------------------
     overspeed_enabled  = true,
     -- Citation X checklist: Vfe 250 kt at flaps 5, 210 kt at flaps 15,
     -- 180 kt at full flaps. The detents are 0.50 / 0.75 / 1.00 of travel.
@@ -87,6 +87,16 @@ REAL_CONFIG = {
     flap15_vfe_kt      = 210,
     flap5_ratio_max    = 0.60,
     flap15_ratio_max   = 0.85,
+    -- X-Plane's "remove flying surfaces" option covers Vne and over-G, but
+    -- this ACF has one 250 kt Vfe. These close the per-detent flap gap and
+    -- give Vle a real consequence. Both are opt-out.
+    flap_damage_enabled = true,
+    flap_damage_over_kt = 10,   -- sustained margin above the detent Vfe
+    flap_damage_dwell_s = 3.0,
+    flap_damage_side    = "right",  -- which flap departs: "left" | "right"
+    gear_damage_enabled = true,
+    gear_damage_over_kt = 10,   -- sustained margin above Vle
+    gear_damage_dwell_s = 5.0,
 
     -- Icing ------------------------------------------------------------------
     ice_enabled        = true,
@@ -170,6 +180,10 @@ dataref("real_oat_c",      "sim/cockpit2/temperature/outside_air_temp_deg", "rea
 dataref("real_flap_rat",   "sim/flightmodel/controls/flaprat", "readonly")
 dataref("real_mach",       "sim/flightmodel/misc/machno", "readonly")
 dataref("real_brake_fan",  "sim/cockpit2/controls/brake_fan_on", "writable")
+dataref("real_fail_flap_act",   "sim/operation/failures/rel_flap_act", "writable")
+dataref("real_fail_flap_left",  "sim/operation/failures/rel_L_flp_off", "writable")
+dataref("real_fail_flap_right", "sim/operation/failures/rel_R_flp_off", "writable")
+dataref("real_fail_gear_act",   "sim/operation/failures/rel_gear_act", "writable")
 dataref("real_rain",       "sim/weather/region/rain_percent", "readonly")
 dataref("real_sim_time",   "sim/time/total_running_time_sec", "readonly")
 dataref("real_elev_m",     "sim/flightmodel/position/elevation", "readonly")
@@ -366,10 +380,12 @@ local S = {
     shed_steps      = 0,
     next_shed       = 0.0,
     brake_hot       = false,
-    flap_over_at    = 0.0,
+    flap_over_at    = nil,   -- start of a sustained overspeed
     flap_warned     = false,
-    gear_over_at    = 0.0,
+    flap_failed     = false,
+    gear_over_at    = nil,
     gear_warned     = false,
+    gear_failed     = false,
     ice_next        = 0.0,
     last_tick       = -1.0,
     prev_gear       = 1.0,
@@ -1006,6 +1022,63 @@ local function overspeed_tick(now)
     elseif ias < REAL_CONFIG.vle_kt - 3.0 then
         S.gear_warned = false
     end
+
+    -- Damage consequences. X-Plane's own "remove flying surfaces" option
+    -- covers Vne and over-G, but this ACF declares one 250 kt Vfe; the real
+    -- detent limits are enforced here. The aircraft's FLAP RESET annunciator
+    -- already reads rel_flap_act, so setting it to 6 is visibly consistent.
+    if real_fail_flap_act == 6
+        or real_fail_flap_left == 6
+        or real_fail_flap_right == 6 then
+        S.flap_failed  = true
+        S.flap_over_at = nil
+    else
+        S.flap_failed = false
+    end
+    if REAL_CONFIG.flap_damage_enabled and vfe
+        and ias > vfe + REAL_CONFIG.flap_damage_over_kt then
+        S.flap_over_at = S.flap_over_at or now
+        if not S.flap_failed
+            and (now - S.flap_over_at) >= REAL_CONFIG.flap_damage_dwell_s then
+            local side = (REAL_CONFIG.flap_damage_side == "left") and "left" or "right"
+            S.flap_failed  = true
+            S.flap_over_at = nil
+            real_fail_flap_act = 6
+            if side == "left" then
+                real_fail_flap_left = 6
+            else
+                real_fail_flap_right = 6
+            end
+            callout("flap_over", "FLAP FAIL")
+            notify(string.format("%s flap departed (%.0f kt above Vfe for %.0f s)",
+                side, ias - vfe, REAL_CONFIG.flap_damage_dwell_s),
+                string.upper(side) .. " FLAP FAIL")
+        end
+    else
+        S.flap_over_at = nil
+    end
+
+    if real_fail_gear_act == 6 then
+        S.gear_failed  = true
+        S.gear_over_at = nil
+    else
+        S.gear_failed = false
+    end
+    if REAL_CONFIG.gear_damage_enabled and gear > 0.05
+        and ias > REAL_CONFIG.vle_kt + REAL_CONFIG.gear_damage_over_kt then
+        S.gear_over_at = S.gear_over_at or now
+        if not S.gear_failed
+            and (now - S.gear_over_at) >= REAL_CONFIG.gear_damage_dwell_s then
+            S.gear_failed  = true
+            S.gear_over_at = nil
+            real_fail_gear_act = 6
+            callout("gear_over", "GEAR FAIL")
+            notify(string.format("gear actuator failed (%.0f kt above Vle for %.0f s)",
+                ias - REAL_CONFIG.vle_kt, REAL_CONFIG.gear_damage_dwell_s), "GEAR FAIL")
+        end
+    else
+        S.gear_over_at = nil
+    end
 end
 
 -- -------------------------------------------------------------------- ICING --
@@ -1067,6 +1140,18 @@ function real_set_enabled(on)
     logMsg("Citation X Realism: " .. (REAL_CONFIG.enabled and "ON" or "OFF"))
 end
 
+function real_repair_damage()
+    real_fail_flap_act   = 0
+    real_fail_flap_left  = 0
+    real_fail_flap_right = 0
+    real_fail_gear_act   = 0
+    S.flap_failed  = false
+    S.gear_failed  = false
+    S.flap_over_at = nil
+    S.gear_over_at = nil
+    notify("overspeed damage repaired", "DAMAGE REPAIRED")
+end
+
 function real_set_handling(on)
     REAL_CONFIG.handling_enabled = (on == true)
     if not REAL_CONFIG.handling_enabled then release_handling() end
@@ -1104,6 +1189,10 @@ function real_status_report()
         REAL_CONFIG.vfe_kt, REAL_CONFIG.vle_kt))
     logMsg(string.format("  load shed steps=%d, brake hot=%s",
         S.shed_steps, tostring(S.brake_hot)))
+    logMsg(string.format("  overspeed damage flap=%s (%s side) gear=%s (failed %s/%s)",
+        tostring(REAL_CONFIG.flap_damage_enabled), REAL_CONFIG.flap_damage_side,
+        tostring(REAL_CONFIG.gear_damage_enabled),
+        tostring(S.flap_failed), tostring(S.gear_failed)))
 end
 
 function real_test_callout()
@@ -1118,22 +1207,28 @@ end
 -- readout: on/off states are LEDs, and the four measured quantities (trim,
 -- fuel balance, weight, crosswind) are bar gauges with a green band and a red
 -- limit tick. Nothing here is a bare number.
+-- Geometry only; colours come from the shared MA dark field (CX). The two
+-- bottom-bar buttons are brand green with near-black labels.
 REAL_STYLE = {
     x = 24, top = 24, width = 470, pad = 14,
     header_h = 34, row_h = 22, footer_h = 34,
-    bg        = {0.00, 0.00, 0.00, 0.90},
-    header_bg = {0.04, 0.04, 0.04, 0.96},
-    border    = {0.32, 0.32, 0.32, 1.00},
-    track     = {0.14, 0.14, 0.14, 1.00},
-    title     = {1.00, 1.00, 1.00, 1.00},
-    sub       = {0.55, 0.55, 0.55, 1.00},
-    label     = {0.80, 0.80, 0.80, 1.00},
-    value     = {1.00, 1.00, 1.00, 1.00},
-    dim       = {0.45, 0.45, 0.45, 1.00},
-    ok        = {0.45, 0.85, 0.50, 1.00},
-    warn      = {0.95, 0.72, 0.25, 1.00},
-    bad       = {0.95, 0.36, 0.32, 1.00},
-    btn       = {0.10, 0.10, 0.10, 1.00},
+    bg        = CX.bg,
+    header_bg = CX.header_bg,
+    border    = CX.border,
+    hairline  = CX.hairline,
+    track     = CX.track,
+    title     = CX.title,
+    sub       = CX.sub,
+    label     = CX.label,
+    value     = CX.value,
+    dim       = CX.dim,
+    ok        = CX.ok,
+    warn      = CX.warn,
+    bad       = CX.bad,
+    btn       = CX.btn,
+    accent    = CX.accent,
+    footer_bg = CX.footer_bg,
+    footer_fg = CX.footer_fg,
 }
 
 local hud_hits = {}
@@ -1141,24 +1236,15 @@ local real_header_rect = nil
 local real_drag = { active = false, dx = 0, dy = 0 }
 
 local function hud_bar(x0, y0, x1, y1, col, alpha)
-    glColor4f(col[1], col[2], col[3], alpha or col[4] or 1.0)
-    glRectf(x0, y0, x1, y1)
-end
-
-local function hud_font(size)
-    if size == 18 then return draw_string_Helvetica_18 end
-    if size == 10 then return draw_string_Helvetica_10 end
-    return draw_string_Helvetica_12
+    cx_bar(x0, y0, x1, y1, col, alpha)
 end
 
 local function hud_text(x, y, text, size, col)
-    glColor4f(col[1], col[2], col[3], 1.0)
-    hud_font(size)(x, y, tostring(text or ""))
+    cx_text(x, y, text, size, col)
 end
 
 local function hud_text_right(x_right, y, text, size, col)
-    local w = measure_string(tostring(text or ""), "Helvetica_" .. tostring(size)) or 0
-    hud_text(x_right - w, y, text, size, col)
+    cx_text_right(x_right, y, text, size, col)
 end
 
 -- ------------------------------------------------------------- INSTRUMENTS --
@@ -1523,14 +1609,13 @@ function real_draw()
         y = y - st.row_h
     end
 
-    local by0 = bottom + 8
-    local by1 = by0 + st.footer_h - 12
+    local by0, by1 = cx_footer_band(bottom, st.footer_h)
     local mid = x + w / 2
-    hud_bar(x + pad, by0, mid - 4, by1, st.btn)
-    hud_bar(mid + 4, by0, x + w - pad, by1, st.btn)
-    hud_text(x + pad + 9, by0 + 6, "TEST CALLOUT", 10, st.value)
+    hud_bar(x + pad, by0, mid - 4, by1, st.footer_bg)
+    hud_bar(mid + 4, by0, x + w - pad, by1, st.footer_bg)
+    hud_text(x + pad + 9, by0 + 6, "TEST CALLOUT", 10, st.footer_fg)
     local hide_w = measure_string("HIDE HUD", "Helvetica_10") or 44
-    hud_text(x + w - pad - 9 - hide_w, by0 + 6, "HIDE HUD", 10, st.value)
+    hud_text(x + w - pad - 9 - hide_w, by0 + 6, "HIDE HUD", 10, st.footer_fg)
 
     hud_hits[#hud_hits + 1] = {
         x0 = x + pad, x1 = mid - 4, y0 = by0, y1 = by1,
@@ -1629,9 +1714,13 @@ create_command("CitationXRealism/handling",
 create_command("CitationXRealism/hud",
     "Citation X Realism: show or hide the realism panel",
     "real_set_hud(not REAL_CONFIG.hud_enabled)", "", "")
+create_command("CitationXRealism/repair",
+    "Citation X Realism: repair overspeed damage",
+    "real_repair_damage()", "", "")
 
 add_macro("Citation X Realism: enable/disable", "real_set_enabled(not REAL_CONFIG.enabled)")
 add_macro("Citation X Realism: test callout", "real_test_callout()")
 add_macro("Citation X Realism: status report", "real_status_report()")
 add_macro("Citation X Realism: handling curve", "real_set_handling(not REAL_CONFIG.handling_enabled)")
 add_macro("Citation X Realism: realism panel", "real_set_hud(not REAL_CONFIG.hud_enabled)")
+add_macro("Citation X Realism: repair overspeed damage", "real_repair_damage()")

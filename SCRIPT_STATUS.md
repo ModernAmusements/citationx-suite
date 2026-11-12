@@ -1,32 +1,31 @@
-# Script status — verified 2026-10-31 (v3.0, no keyboard layer)
+# Script status — verified 2026-11-12 (v3.0, MA dark theme, no EFB)
 
 Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 `tests/check_kpcrew_modules.lua`, `tests/smoke_mastersuite.lua`, `tests/smoke_hud_toggles.lua`,
-`tests/smoke_efb.lua`, `tests/smoke_checklist.lua`, `tests/smoke_realism.lua`,
-`tests/smoke_panel_geometry.lua`.
+`tests/smoke_realism.lua`, `tests/smoke_panel_geometry.lua`.
 
 ## Live in `Scripts/`
 
 | Script | State | Evidence / purpose |
 | --- | --- | --- |
-| `CitationX_MasterSuite.lua` | ✅ tests | v3.0 hub. `status report` says `input layer = mouse wheel -> ALT SEL`. **No `do_on_keystroke`, no wheel/button map, no axis-to-heading knob any more** — the only pilot input the suite reads is the mouse wheel (main wheel → ALT SEL, thumbwheel → heading bug, both configurable). Axis optimizer ON (pitch/roll deadzone + expo + smoothing, no key mapping), flight recorder, emergency generator, opt-in axis monitor, texture cycler (`sim/operation/next_livery`), AviTab app shortcuts, and the 13-row draggable hub with 470 px styling. `smoke_mastersuite.lua` pins the whole contract; `smoke_hud_toggles.lua` checks the registry; `smoke_panel_geometry.lua` renders the panel. |
+| `CitationX_00_Core.lua` | ✅ tests | Shared core, loaded first: the MA dark palette (`CX`) and the `cx_*` bar/text/fit/footer primitives every panel uses. No datarefs, commands or callbacks, so it cannot quarantine a panel. |
+| `CitationX_MasterSuite.lua` | ✅ tests | v3.0 hub. `status report` says `input layer = mouse wheel -> ALT SEL`. **No `do_on_keystroke`, no wheel/button map, no axis-to-heading knob any more** — the only pilot input the suite reads is the mouse wheel: the thumbwheel (wheel 1) moves the heading bug and wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. All three are configurable. Axis optimizer ON (pitch/roll deadzone + expo + smoothing, no key mapping), flight recorder, emergency generator, opt-in axis monitor, texture cycler (`sim/operation/next_livery`), AviTab app shortcuts, and the 12-row draggable hub at `SUITE_STYLE.x = 470`. `smoke_mastersuite.lua` pins the whole contract; `smoke_hud_toggles.lua` checks the registry; `smoke_panel_geometry.lua` renders the panel. |
 | `CitationX_FailureTrainer.lua` | ✅ works* | `Citation X Failure Trainer + QRH loaded` |
 | `CitationX_CabinOps.lua` | ✅ works* | `Cabin & Ground Ops loaded` |
-| `CitationX_Realism.lua` | ✅ tests | one black Helvetica panel, now a bank of **LEDs and bar gauges** instead of numbers: trim band, fuel balance, weight against MTOW/MLW, crosswind against the demonstrated limit, brake energy, bus voltage. Behind it: audio callouts (FMOD master bus), control check, takeoff trim/flap gate, fuel balance, weight limits, load-shed manager, brake fan, Vmo/Mmo overspeed, takeoff config, stabilised approach, gear-down confirmation, flap/gear overspeed, crosswind, icing/anti-ice and cabin-altitude advisories. `tests/smoke_realism.lua` drives all of it; `smoke_panel_geometry.lua` renders the panel |
-| `CitationX_EFB.lua` | ✅ tests | four pages: PERF, CHECK, ROUTE, FUEL. CHECK parses the pilot's own `clist.txt` (238 `sw_item` lines → 15 phases / 188 items, 128 with dataref conditions) and ticks items from the same expressions Xchecklist uses. ROUTE is the flight-plan maker: on-screen ICAO keypad, great-circle distance/track/time, and `efb_route_build` writes `Output/FMS plans/<DEP>-<DEST>.fms` (1100 format). Airport index `Scripts/CitationX_Airports.csv` (16,398 airports from the sim's apt.dat). `tests/smoke_efb.lua` + `tests/smoke_checklist.lua` pass |
+| `CitationX_Realism.lua` | ✅ tests | one MA-dark Helvetica panel, a bank of **LEDs and bar gauges** instead of numbers: trim band, fuel balance, weight against MTOW/MLW, crosswind against the demonstrated limit, brake energy, bus voltage. Behind it: audio callouts (FMOD master bus), control check, takeoff trim/flap gate, fuel balance, weight limits, load-shed manager, brake fan, Vmo/Mmo overspeed, takeoff config, stabilised approach, gear-down confirmation, flap/gear overspeed, crosswind, icing/anti-ice and cabin-altitude advisories. Sustained flap overspeed tears off one flap (default right) and fails the actuator, sustained gear overspeed fails the gear actuator (`rel_gear_act`); `CitationXRealism/repair` clears both. `tests/smoke_realism.lua` drives all of it; `smoke_panel_geometry.lua` renders the panel |
 | `LandingPerformance.lua` | ✅ works* | `Landing Performance: C750 \| GOOD \| Score 76 \| -220 FPM \| 1.42 G` — scored a real landing |
 | `Sim_Rate.lua` | ✅ works | `Sim Rate Monitor Loaded`, `Setting Sim Rate to 4x/1x` |
 | `kpredline.lua` | ✅ works | FSX-style Shift-Z line (see below); draws only after `kp/redline/toggle` |
 | `kpsoundmute.lua` | ✅ works | noise-cancelling headset mute (see below) |
-| `kpcrew23.lua` | ✅ loads | was quarantined; missing C750 Definitions files restored |
-| `kppanels.lua` | ✅ loads | was quarantined; same root cause |
-| `kpxbrief.lua` | ✅ loads | was a cascade of `kpcrew23`; needs `kpcrew23.lua` present |
 
 > **`works`** = confirmed in a real `Log.txt` run. **`works*`** = confirmed in that run but the
 > file has been edited since (control-panel relayout / HUD removal), so the current code is only
 > proven to load, not yet observed on screen.
-> **`loads`** = chunk executes with no error in the LuaJIT shared-state harness; no functional
-> test. The KPCrew copilot UI, SOP checklists and SimBrief import have **not** been exercised.
+
+KPCrew's own `kpcrew23.lua`, `kppanels.lua` and `kpxbrief.lua` are **not** in `Scripts/` any
+more — they were moved to `Scripts (disabled)/` on 2026-11-12. They are not running, but they
+do load cleanly (verified in one shared state), and `Scripts (Quarantine)/` is now empty, so
+FlyWithLua no longer shows its quarantine popup.
 
 ## Deleted
 
@@ -36,6 +35,10 @@ Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 | `tests/smoke_mission.lua` | tested the deleted script |
 | `Scripts (Quarantine)/CitationX_MissionGenerator.lua` | stale 32 KB copy from Oct 19 |
 | `CitationX_MissionProgress.txt` | mission-generator state file |
+| `CitationX_EFB.lua` | removed on request 2026-11-12 ("too many scripts") |
+| `CitationX_Airports.csv` | airport index, only the EFB ROUTE page read it |
+| `tests/smoke_efb.lua`, `tests/smoke_checklist.lua` | tested the deleted EFB |
+| `docs/img/panels/efb.png` | screenshot of the deleted panel |
 
 ## What `kpredline.lua` is
 
@@ -103,16 +106,16 @@ upstream's design — do not test it in isolation and treat the failure as a bug
 
 ## Panel geometry (measured, not eyeballed)
 
-`tests/smoke_panel_geometry.lua` renders all five panels into a recording canvas and asserts
-65 properties: everything fits 2560×1440 (the realism panel also at 1280×720), no vertical text
-collisions, no text overflows its panel, the EFB clears the QRH and cabin panels, the default
-panel positions do not collide, a vertical click sweep reaches every control-panel row, and
-every panel's header drag moves it by the mouse delta and keeps the new position.
+`tests/smoke_panel_geometry.lua` renders all four panels into a recording canvas and asserts
+that everything fits 2560×1440 (the realism panel also at 1280×720), that no vertical text
+collisions or text overflows its panel occur, that the default panel positions do not collide,
+that a vertical click sweep reaches every control-panel row, and that every panel's header drag
+moves it by the mouse delta and keeps the new position.
 
 It also proves the MasterSuite overlay draws **nothing at all** when its control panel is
 switched off — there is no telemetry HUD and no C750 systems readback any more. At load the
-suite draws exactly two surfaces: the realism panel and the Master Suite hub. The other three
-panels are opened from the hub and share the same black/Helvetica shell.
+suite draws exactly two surfaces: the realism panel and the Master Suite hub. The other two
+panels are opened from the hub and share the same MA dark shell.
 
 This does not prove the panels *look* good — only that they are mathematically well formed.
 

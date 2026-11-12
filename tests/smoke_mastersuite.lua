@@ -87,6 +87,8 @@ function XPLMFindDataRef() return nil end
 function XPLMGetDataf() return 0 end
 
 local SCRIPT = arg[1] or "Scripts/CitationX_MasterSuite.lua"
+-- FlyWithLua loads Scripts/ alphabetically, so the shared core always runs first.
+dofile((SCRIPT:match("^(.*/)") or "") .. "CitationX_00_Core.lua")
 dofile(SCRIPT)
 
 local fails = 0
@@ -295,7 +297,7 @@ CONFIG.texture_cycle_enabled = true
 local keys = {}
 for _, m in ipairs(SUITE_MODULES) do keys[m.key] = true end
 for _, k in ipairs({ "status", "axis", "log", "emerg", "axmon", "texture",
-                     "wheel", "avitab", "cabin", "qrh", "landperf", "efb", "realism" }) do
+                     "wheel", "avitab", "cabin", "qrh", "landperf", "realism" }) do
     check(keys[k] == true, "module '" .. k .. "' is registered")
 end
 for _, k in ipairs({ "input", "learn", "stick", "look" }) do

@@ -17,7 +17,7 @@ wheel — and everything else is a panel, a diagnostic or a command you can bind
 ### The panels (rendered offline from the actual draw calls)
 
 The suite's on-screen surfaces: the Master Suite hub and the realism pack panel at load,
-plus the EFB, cabin-ops and QRH panels opened from the hub. There is no telemetry HUD —
+plus the cabin-ops and QRH panels opened from the hub. There is no telemetry HUD —
 airspeed, altitude, heading, Mach, G, fuel flow, electrics, fuel and anti-ice stay on the
 aircraft's own PFD, EICAS and synoptics.
 
@@ -25,9 +25,9 @@ aircraft's own PFD, EICAS and synoptics.
 | --- | --- | --- |
 | [![load](docs/img/panels/load.png)](docs/img/panels/load.png) | [![hub](docs/img/panels/hub.png)](docs/img/panels/hub.png) | [![realism](docs/img/panels/realism.png)](docs/img/panels/realism.png) |
 
-| EFB (PERF) | Cabin ops | QRH trainer |
-| --- | --- | --- |
-| [![efb](docs/img/panels/efb.png)](docs/img/panels/efb.png) | [![cabin](docs/img/panels/cabin.png)](docs/img/panels/cabin.png) | [![qrh](docs/img/panels/qrh.png)](docs/img/panels/qrh.png) |
+| Cabin ops | QRH trainer |
+| --- | --- |
+| [![cabin](docs/img/panels/cabin.png)](docs/img/panels/cabin.png) | [![qrh](docs/img/panels/qrh.png)](docs/img/panels/qrh.png) |
 
 ### Upscaled cockpit textures (work in progress)
 
@@ -52,11 +52,11 @@ transplant is backed up. **The textures themselves live in the aircraft mod**
 
 | File | Purpose |
 | --- | --- |
-| `Scripts/CitationX_MasterSuite.lua` | The hub. Axis optimizer (pitch/roll deadzone, expo, smoothing), 1 Hz flight recorder CSV, simulated bleed-air/pressurization emergency, opt-in axis monitor, aircraft texture cycler (X-Plane's own next/previous livery), AviTab app shortcuts, and the draggable control panel. The mouse wheel moves ALT SEL (main wheel) and the heading bug (thumbwheel); taxi and landing lights are published as commands. No keystrokes, no button map, no telemetry HUD. |
+| `Scripts/CitationX_00_Core.lua` | Shared core, loaded first: the MA dark palette (`CX`) and the `cx_*` bar/text/fit/footer helpers. No datarefs, commands or callbacks. |
+| `Scripts/CitationX_MasterSuite.lua` | The hub. Axis optimizer (pitch/roll deadzone, expo, smoothing), 1 Hz flight recorder CSV, simulated bleed-air/pressurization emergency, opt-in axis monitor, aircraft texture cycler (X-Plane's own next/previous livery), AviTab app shortcuts, and the draggable control panel. The thumbwheel moves the heading bug and wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. Taxi and landing lights are published as commands. No keystrokes, no button map, no telemetry HUD. |
 | `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
-| `Scripts/CitationX_EFB.lua` | Electronic flight bag panel: PERF (density altitude, wind components, V1/VR/V2/Vref, takeoff and landing distance by runway condition), CHECK (your own Xchecklist `clist.txt`, read live from the same file the plugin loads), ROUTE (flight-plan maker with an on-screen keypad that writes an X-Plane `.fms`) and FUEL (trip/contingency/alternate/reserve/endurance). Advisory data only. |
-| `Scripts/CitationX_Realism.lua` | Realism pack: one black panel of LEDs and bar gauges (trim band, fuel balance, weight against MTOW/MLW, crosswind against the demonstrated limit, brake energy, bus voltage) with clickable toggles. Behind it: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable, fuel imbalance, crosswind, overweight) on FlyWithLua's FMOD master bus; flight-controls check; takeoff trim/flap gate; fuel-balance monitor; MTOW/MLW limits; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing, cabin-altitude and crosswind advisories (each also raises a 2 s toast). |
+| `Scripts/CitationX_Realism.lua` | Realism pack: one MA-dark panel of LEDs and bar gauges (trim band, fuel balance, weight against MTOW/MLW, crosswind against the demonstrated limit, brake energy, bus voltage) with clickable toggles. Behind it: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable, fuel imbalance, crosswind, overweight) on FlyWithLua's FMOD master bus; flight-controls check; takeoff trim/flap gate; fuel-balance monitor; MTOW/MLW limits; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing, cabin-altitude and crosswind advisories (each also raises a 2 s toast); sustained flap overspeed tears off one flap (default right, `flap_damage_side`) and fails the actuator, sustained gear overspeed fails the gear actuator (`rel_gear_act`), repairable with `CitationXRealism/repair`. |
 | `Scripts/LandingPerformance.lua` | Standalone landing scoring and debrief card (third-party, untracked in git). |
 
 ## Control panel
@@ -112,7 +112,6 @@ nothing.
 | CABIN OPS | `cabin` | `CitationX_CabinOps` panel |
 | QRH TRAINER | `qrh` | `CitationX_FailureTrainer` panel |
 | LANDING PERF | `landperf` | `LandingPerformance` result card |
-| EFB | `efb` | `CitationX_EFB` panel (PERF / CHECK / ROUTE / FUEL) |
 | REALISM PACK | `realism` | `CitationX_Realism` callouts and load manager |
 
 The sibling rows are nil-guarded: if that script is not installed the row shows
@@ -165,9 +164,10 @@ suite, while the rest of the FlyWithLua install (binaries, Modules, Internals, D
 stays untracked via `.gitignore`.
 
 > **FlyWithLua 2.8.16 and older:** *Reload all Lua script files* can crash X-Plane while it
-> tears down the realism pack's FMOD sounds. This install is on **2.8.20** (2026-10-23), which
-> contains the upstream fix; if you ever roll the plugin back, quit and restart the sim after
-> changing scripts instead of reloading.
+> tears down the realism pack's FMOD sounds. This install is on **2.8.20** (build 2026-10-23,
+> reinstalled 2026-11-12 from the official `X-Friese/FlyWithLua` CI artifact), which contains
+> the upstream fix; if you ever roll the plugin back, quit and restart the sim after changing
+> scripts instead of reloading.
 
 ## Configuration
 
@@ -184,8 +184,9 @@ stays untracked via `.gitignore`.
   `to_trim_tolerance`), fuel balance (`fuel_imbalance_lb`, `fuel_rearm_lb`,
   `fuel_imbalance_delay_s`), weight limits (`mtow_lb`, `mlw_lb`), crosswind
   (`crosswind_limit_kt`), handling curve (`handling_deadzone`, `handling_exponent`,
-  `handling_smoothing`), control-check travel, `audio_backend` (`auto`/`fmod`/`wav`) and
-  `toasts_enabled`.
+  `handling_smoothing`), control-check travel, overspeed damage (`flap_damage_*`,
+  `flap_damage_side`, `gear_damage_*`; enabled by default, `CitationXRealism/repair`
+  clears it), `audio_backend` (`auto`/`fmod`/`wav`) and `toasts_enabled`.
 
 ## Bindable commands
 
@@ -193,7 +194,7 @@ stays untracked via `.gitignore`.
 CitationXSuite/toggle_status     CitationXSuite/toggle_axis     CitationXSuite/toggle_log
 CitationXSuite/toggle_emerg      CitationXSuite/toggle_axmon    CitationXSuite/toggle_wheel
 CitationXSuite/toggle_texture    CitationXSuite/toggle_cabin    CitationXSuite/toggle_qrh
-CitationXSuite/toggle_landperf   CitationXSuite/toggle_efb      CitationXSuite/toggle_realism
+CitationXSuite/toggle_landperf   CitationXSuite/toggle_realism
 
 CitationXSuite/texture_next      CitationXSuite/texture_prev
 CitationXSuite/alt_sel_up        CitationXSuite/alt_sel_down
@@ -203,10 +204,6 @@ CitationXSuite/wheel_report      CitationXSuite/wheel_map_swap
 CitationXSuite/avitab_charts     CitationXSuite/avitab_maps     CitationXSuite/avitab_routes
 CitationXSuite/avitab_airports   CitationXSuite/avitab_toggle   CitationXSuite/avitab_recentre
 CitationXSuite/avitab_zoom_in    CitationXSuite/avitab_zoom_out
-CitationXSuite/efb_page_perf     CitationXSuite/efb_page_check  CitationXSuite/efb_page_route
-CitationXSuite/efb_page_fuel     CitationXSuite/efb_route_build CitationXSuite/efb_route_here
-CitationXSuite/efb_check_prev    CitationXSuite/efb_check_page_next
-CitationXSuite/efb_check_page_prev
 CitationXSuite/status_report     CitationXSuite/test_emergency
 
 CitationXQRH/*                 CabinOps/*                    CitationXRealism/*
@@ -233,8 +230,6 @@ luajit tests/probe_load_order.lua ../../plugins/DataRefs.txt Scripts
 export TMPDIR="$(mktemp -d)/"
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
-HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_efb.lua Scripts/CitationX_EFB.lua
-HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_checklist.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_realism.lua Scripts/CitationX_Realism.lua
 luajit tests/smoke_panel_geometry.lua
 

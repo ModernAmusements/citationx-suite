@@ -11,7 +11,6 @@
 !/Scripts/
 /Scripts/*
 !/Scripts/CitationX_*.lua
-!/Scripts/CitationX_Airports.csv
 !/Scripts/CitationX_Callouts/
 /Scripts/CitationX_Callouts/*
 !/Scripts/CitationX_Callouts/*.wav
