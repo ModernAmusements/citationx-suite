@@ -1,8 +1,16 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-11-12
+Last updated: 2026-11-14
 
 ## Session handoff — read this first
+
+**2026-11-14 — Failure Trainer expanded to 14 scenarios; docs de-drifted.** The QRH trainer
+gained seven procedures: flap actuator, landing-gear indication, hydraulic B pump, APU
+fail-to-start, pitot/static blockage, elevator trim runaway and slow cabin decompression.
+`rel_flap_act` is written through XPLM (Realism already owns that writable binding for
+overspeed damage). Validation is now 104 dataref bindings and the geometry harness sweeps
+every scenario (117 checks). The drift audit fixed stale input claims in `CONTROLLER.md`,
+the KPCrew/quarantine status and the binding counts. See §40.
 
 **2026-11-12 — MA dark theme, EFB removed, four panels left.** The suite's on-screen
 language is now the Modern Amusement dark field (`MA_WEBSITE/src/styles/globals.scss`,
@@ -12,12 +20,14 @@ bottom bar: every panel's HIDE strip is brand green with dark text. See §37.
 
 The EFB was **deleted** on 2026-11-12 at the user's request (script, hub row, 21 commands,
 6 macros, airport CSV, `smoke_efb.lua`, `smoke_checklist.lua`, `efb.png`). The suite is four
-scripts: hub, QRH, cabin and realism. Do not resurrect it without being asked.
+panel scripts plus the shared core: hub, QRH, cabin, realism. Do not resurrect it without
+being asked.
 
 Current suite: `CitationX_MasterSuite.lua` (hub + wheel/recorder/optimizer), `CitationX_Realism.lua`,
-`CitationX_FailureTrainer.lua`, `CitationX_CabinOps.lua`. The hub shows 12 rows; the only pilot
-input the suite reads is the mouse wheel (thumbwheel → heading bug, wheel 2 → ALT SEL).
-94 dataref bindings, 0 load failures, 0 binding problems.
+`CitationX_FailureTrainer.lua`, `CitationX_CabinOps.lua`, loaded after `CitationX_00_Core.lua`.
+The hub shows 12 rows; the only pilot input the suite reads is the mouse wheel (thumbwheel →
+heading bug, wheel 2 → ALT SEL). The QRH trainer has 14 scenarios. 104 dataref bindings,
+0 load failures, 0 binding problems.
 
 ## Older handoff notes (2026-10-30)
 
@@ -93,10 +103,11 @@ panel geometry ................ PASSED (65 checks, incl. drag and active QRH)
 
 Textures still need *Developer → Reload Aircraft* (or a restart), not a Lua reload.
 
-## Current runtime state (2026-11-12)
-- **Suite scripts (tracked):** `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
-  `CitationX_CabinOps.lua`, `CitationX_Realism.lua` plus `CitationX_Callouts/*.wav`
-  (19 files). All load clean; no `FlyWithLua Error:` lines.
+## Current runtime state (2026-11-14)
+- **Suite scripts (tracked):** `CitationX_00_Core.lua` (palette + draw primitives),
+  `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`, `CitationX_CabinOps.lua`,
+  `CitationX_Realism.lua` plus `CitationX_Callouts/*.wav` (22 files). All load clean; no
+  `FlyWithLua Error:` lines.
 - **The suite reads exactly one pilot input: the mouse wheel** — thumbwheel (wheel 1) moves the
   heading bug, wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. No keyboard
   map, no joystick-button map, no axis-to-heading knob. The axis optimizer is ON by default and
@@ -106,6 +117,11 @@ Textures still need *Developer → Reload Aircraft* (or a restart), not a Lua re
 - **Panels:** the realism panel and the MasterSuite hub (`status`) are the only two drawn at
   load; CabinOps, QRH and LandingPerformance start hidden. All four share the MA dark palette
   and a green bottom bar (§37).
+- **QRH trainer:** 14 scenarios — engine fire L, generator L trip, bleed air L, boost pump L,
+  flameout L, APU fire, hydraulic A, hydraulic B, flap actuator, gear indication, APU
+  fail-to-start, pitot/static blockage, elevator trim runaway and slow cabin decompression —
+  plus RANDOM. Steps self-check against `sim/...` and `laminar/CitX/...` state; `rel_flap_act`
+  is written through XPLM because Realism owns that writable binding (§40).
 - **Mission Generator: deleted 2026-10-21** at the user's request, together with
   `tests/smoke_mission.lua`. The `MissionGen/*` commands, the briefing panel and the cruise
   time warp no longer exist. Do not resurrect it without being asked.
@@ -114,7 +130,8 @@ Textures still need *Developer → Reload Aircraft* (or a restart), not a Lua re
   no `efb` hub row exist any more. Do not resurrect it without being asked.
 - **Third-party add-ons (untracked):** `LandingPerformance.lua` (landing scoring),
   `Sim_Rate.lua` (ground-speed compression), `kpredline.lua` / `kpsoundmute.lua`. KPCrew 2.3's
-  core scripts are quarantined (see Environment) even though its modules are on disk.
+  core scripts sit in `Scripts (disabled)/` — they are not running, and `Scripts (Quarantine)/`
+  holds only `PlaceHolder.txt`.
 - **Panel spacing** was widened on 2026-10-21 (`row_h` 17 → 22, `status_row_h` 15 → 20,
   `sys_row_h` 15 → 19) because the text was too cramped. `sys_row_h` is gone with the C750 panel.
 - **Not installed:** karlvr Citation X patches, Saitek panel config (Xsaitekpanels absent),
@@ -123,8 +140,8 @@ Textures still need *Developer → Reload Aircraft* (or a restart), not a Lua re
 ## Environment
 - X-Plane 12: `/Users/modernamusmenet/X-Plane 12` (macOS, arm64)
 - FlyWithLua NG+ 2.8.20 (mac_x64, universal x86_64/arm64)
-- Active scripts in `Scripts/`: `CitationX_MasterSuite.lua`, `CitationX_FailureTrainer.lua`,
-  `CitationX_CabinOps.lua`, `CitationX_Realism.lua`,
+- Active scripts in `Scripts/`: `CitationX_00_Core.lua`, `CitationX_MasterSuite.lua`,
+  `CitationX_FailureTrainer.lua`, `CitationX_CabinOps.lua`, `CitationX_Realism.lua`,
   `LandingPerformance.lua`, `Sim_Rate.lua`, `kpredline.lua`, `kpsoundmute.lua`.
   KPCrew's own `kpcrew23.lua` / `kppanels.lua` / `kpxbrief.lua` sit in
   `Scripts (disabled)/` — they are not active. `Scripts (Quarantine)/` is empty apart from
@@ -1325,11 +1342,15 @@ Everything below passed offline harnesses but has **never been seen in X-Plane**
 record these as confirmed working:
 
 - The **visual result** of the 12-row control panel (telemetry body and C750 systems panel
-  removed). Geometry is measured, not assumed (`tests/smoke_panel_geometry.lua`: 44 checks —
+  removed). Geometry is measured, not assumed (`tests/smoke_panel_geometry.lua`: 117 checks —
   panels fit the screen, no vertical text collisions, no text overflowing its panel, drag moves
-  each panel, click sweep reaches every row). What remains unproven is purely aesthetic:
-  whether `row_h = 22` reads well and whether the panels still clear each other at other
-  resolutions.
+  each panel, click sweep reaches every row, every QRH scenario injects and renders). What
+  remains unproven is purely aesthetic: whether `row_h = 22` reads well and whether the panels
+  still clear each other at other resolutions.
+- The **seven new QRH scenarios** (flap actuator, gear indication, hydraulic B, APU fail to
+  start, pitot/static, trim runaway, cabin decompression): the harness injects, renders and
+  clears each one, but no human has flown the procedures in-sim, and X-Plane's failure enum
+  values have not been observed against the aircraft's own annunciators.
 - The **realism pack in flight**: callout timing (V1/rotate/positive rate/gear up/1000/500/100/
   minimums/stable/unstable), whether the synthesized WAVs are audible over engine noise, whether
   the load-shed/brake-fan thresholds match what the aircraft actually does, and whether the new
@@ -1345,7 +1366,8 @@ record these as confirmed working:
   simulator's texture-resolution cap. The dark panel is a deliberate finish change, not just a
   resolution upgrade; the light 8K transplant is backed up.
 - The KPCrew copilot, panels and briefings. Only the *loading* path was fixed; the KPCrew UI,
-  the SOP checklists and the SimBrief import have had no functional test.
+  the SOP checklists and the SimBrief import have had no functional test. KPCrew is disabled,
+  not running.
 - The `metargen.lua` METAR fix (array weather refs → `dataref_table`, visibility in statute
   miles). Statically clean, but the METAR string it builds has not been read in flight.
 - The **AviTab tablet** after the §16 `AviTab.json` rect fix and the stock `Panel.png` swap. The
@@ -1358,21 +1380,18 @@ record these as confirmed working:
 - The **EFB** was removed on 2026-11-12; its four pages had passed the mock harness but were
   never used in a real flight.
 
-In-sim status: the suite loaded cleanly on 2026-10-21 at 18:22 and again on 2026-10-23 01:00
-(`All script files loaded successfully`, 0 `FlyWithLua Error`). The 2026-10-23 load also logged
-`Citation X Realism: loaded` with `12/12 callout sounds loaded`. **No clean load has happened
-since the 2026-10-26 duplicate-writable and keyboard fixes**, so the current 22-sound load, the
-16-row black panel, the new monitors, the panel reskin/drag and the R3 cockpit look have never
-run in X-Plane. What has **not** been reviewed by eye/ear: the control panel without the
-telemetry body, the callouts during a real takeoff/approach, the load-shed/brake-fan behaviour,
-the dark interior pass, the AviTab in-cockpit screen on `..._AviTab_mods`, and whether the
-head-offset datarefs actually pan in 12.4.3.
+In-sim status: the live `Log.txt` (2026-11-13 14:27) shows
+`FlyWithLua NG+ 2.8.20 build Oct 23 2026`, `All script files loaded successfully` and
+`Citation X Realism: loaded, 22 callouts on fmod bus`, with no `FlyWithLua Error:` and no
+`Moved Bad Script`. That is the clean load for the current suite. What has **not** been
+reviewed by eye/ear: the QRH's new failure procedures, the control panel without the telemetry
+body, the callouts during a real takeoff/approach, the load-shed/brake-fan behaviour, the dark
+interior pass and the AviTab in-cockpit screen on `Cessna Citation X_mods`.
 
 ## Validation performed
 - `luac -p` on every script in `Scripts/`, including the KPCrew ones.
 - Every `dataref(...)` declaration in `Scripts/CitationX_*.lua` checked with
-  `tests/check_datarefs.lua`: 0 problems across 4 suite scripts (94 bindings, including the
-  three cockpit-look refs).
+  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (104 bindings).
 - Every `require()` reachable for the C750 checked with
   `tests/check_kpcrew_modules.lua C750`: 0 missing (`--all` sweeps every aircraft).
 - Every `laminar/CitX/...` command and runtime dataref checked against the Citation X's own
@@ -1392,8 +1411,8 @@ head-offset datarefs actually pan in 12.4.3.
   - `tests/smoke_panel_geometry.lua` — renders all four panels into a recording canvas and
     asserts: everything fits 2560×1440 (and the realism panel at 1280×720), no vertical text
     collisions, no text overflows its panel, the default positions do not collide, a click
-    sweep reaches every row, and every header drag moves its panel by the mouse delta
-    (44 checks).
+    sweep reaches every row, and every header drag moves its panel by the mouse delta. It now
+    also injects, renders and clears **every** QRH scenario (117 checks).
   - `tests/probe_load_order.lua` — loads all of `Scripts/` in one shared LuaJIT state in
     FlyWithLua's alphabetical order. The authoritative load test.
 
@@ -1403,6 +1422,9 @@ head-offset datarefs actually pan in 12.4.3.
 - Two scripts may not bind the same DataRef **writable**; the later script is quarantined even
   if its logic would never write. Read-only duplicates are fine. `probe_load_order.lua` now
   flags this.
+- X-Plane failure enums are ints: **6 = fail now, 0 = working**. A failure enum another script
+  already binds writable (the trainer needs `rel_flap_act`, Realism owns it) must be written
+  through `XPLMFindDataRef` + `XPLMSetDatai`, never a second `dataref(..., "writable")`.
 - FlyWithLua shows the "found bad lua scripts that have been quarantined" popup whenever
   `Scripts (Quarantine)/` is non-empty at the end of a load — even if nothing failed in that run.
   Keep the folder free of `.lua` files unless you actually want the popup.
@@ -1423,11 +1445,11 @@ head-offset datarefs actually pan in 12.4.3.
   other panel is opt-in; axis monitor and learn mode remain explicit diagnostics.
 
 ## Repo, agent & deployment
-- Git initialized in place in the FlyWithLua folder; `.gitignore` tracks only the four
-  Citation X scripts, `CitationX_Callouts/*.wav`, `tests/`, `tools/`, `docs/` and the
-  documentation (`README.md`, `CONTEXT.md`, `SCRIPT_STATUS.md`, `CONTROLLER.md`). Plugin
-  binaries, Modules, Internals, Documentation, runtime files, credentials and agent/editor
-  configuration stay untracked.
+- Git initialized in place in the FlyWithLua folder; `.gitignore` tracks only the five
+  Citation X scripts (four panels + `CitationX_00_Core.lua`), `CitationX_Callouts/*.wav`,
+  `tests/`, `tools/`, `docs/` and the documentation (`README.md`, `CONTEXT.md`,
+  `SCRIPT_STATUS.md`, `CONTROLLER.md`). Plugin binaries, Modules, Internals, Documentation,
+  runtime files, credentials and agent/editor configuration stay untracked.
 - Public remote: <https://github.com/ModernAmusements/citationx-suite>
 - Project agent (local only, not published): `.opencode/agents/citationx.md` (mode `all`),
   local rules in `AGENTS.md`. Both are ignored by git.
@@ -1446,6 +1468,11 @@ head-offset datarefs actually pan in 12.4.3.
 - Mouse wheel: `CONFIG` in `CitationX_MasterSuite.lua` — `mouse_wheel_altitude`,
   `wheel_altitude_number` (2), `wheel_heading_number` (1), `wheel_heading_enabled`,
   `hdg_step_deg` / `hdg_fast_step_deg`, `alt_step_ft`.
+- QRH trainer: `TRAINER_CONFIG` in `CitationX_FailureTrainer.lua` (`panel_enabled`,
+  `panel_x`, `panel_top`, `panel_w`, `row_h`, `require_c750`) and the `SCENARIOS` table —
+  each entry is `{ key, title, condition, inject, clear, steps }`; a step is
+  `{ label, cmd?, advisory?, check }`. Add a scenario there and the command/macro row and
+  the geometry sweep pick it up automatically.
 - Realism pack: `REAL_CONFIG` in `CitationX_Realism.lua` — `v1_kt`/`vr_kt`/`vref_kt`/`vfe_kt`/
   `vle_kt`, `minima_ft`, `elec_min_bus_v`/`elec_shed_interval`/`elec_max_sheds`,
   `brake_hot_j`/`brake_cool_j`, `flap15_vfe_kt`, `ice_oat_min_c`/`ice_oat_max_c`,
@@ -1859,3 +1886,58 @@ GitHub Actions artifact of `X-Friese/FlyWithLua` run `40024711417`
 sha256 `b14798fb…`. The 2.8.16 binary is kept as `mac_x64/FlyWithLua.xpl.2.8.16.bak`
 (sha256 `5cc54d43…`). The `0c3c0537…` hash recorded in §28 was a different lipo of the same
 version, not the artifact. Reloading should be safe again; verify the first reload in-sim.
+
+## 40. Seven more QRH failures + doc drift audit (2026-11-14)
+
+Requested as "explore more failure like flap fails". The Failure Trainer grew from 7 to
+**14 scenarios**, all built from the aircraft's own datarefs/commands, never invented:
+
+| Scenario | Injection | Mandatory self-checks |
+| --- | --- | --- |
+| FLAP ACTUATOR | `rel_flap_act` = 6 via XPLM | flap lever 15, IAS < 200 |
+| LANDING GEAR INDICATION | `rel_gear_ind` = 6 | gear handle down, IAS < 210 |
+| HYDRAULIC B PUMP | `laminar/CitX/hydraulics/cmd_unload_pump_B_toggle` | aux pump on, pump B unload, antiskid norm |
+| APU FAIL TO START | `rel_apu` = 6 | APU master/starter/generator off, external power on |
+| PITOT / STATIC BLOCKAGE | `rel_pitot` = 6 | both pitot heats on |
+| ELEVATOR TRIM RUNAWAY | `rel_elv_trim_run` = 6 | autopilot disconnected |
+| CABIN DECOMPRESSION | `rel_depres_slow` = 6 | passenger O2 on, pressurization manual, cabin alt < 10 000 ft, aircraft < 10 000 ft |
+
+Implementation notes:
+
+- **`rel_flap_act` is not bound here.** `CitationX_Realism.lua` already owns it writable for
+  overspeed damage, and two writable bindings quarantine the later script. The trainer resolves
+  the ref with `XPLMFindDataRef` and writes it with `XPLMSetDatai` (`ft_fail_lazy`), the same
+  pattern Realism uses for the load-shed switch. `probe_load_order` stays at 0 duplicate
+  bindings.
+- All other failure enums are fresh writable bindings, checked absent from the other scripts:
+  `rel_apu`, `rel_gear_ind`, `rel_pitot`, `rel_elv_trim_run`, `rel_depres_slow`.
+- New CitX state refs read lazily in the frame poll: `flaps_slats/handle_ratio`,
+  `ice/pitot_static_left|right`, `hydraulics/unload_pump_B`, `APU/starter_switch`,
+  `oxygen/pass_oxy`, `pressurization/manual`.
+- New core state bindings: indicated airspeed, elevation, `autopilot_on`, cabin altitude,
+  `gear_handle_down`.
+- `qrh_scenarios()` is a read-only accessor for the harnesses. The geometry test now injects,
+  renders, measures and clears **every** scenario (117 checks).
+
+**Drift found and fixed during this pass:**
+
+- `CONTROLLER.md` still documented the removed 2026-10-30/31 input layers (right-stick Axis-3
+  heading knob, mouse thumb-button ALT SEL, the whole Ctrl+Shift/Ctrl+Opt keyboard map) and
+  contradicted itself in the first paragraph. Rewritten for v3.0: mouse wheel only, native
+  X-Plane profiles, no keystroke layer.
+- `CONTEXT.md` said 94 bindings, 19 callout WAVs and 4 suite scripts; the tree has 104 bindings,
+  22 WAVs, 5 tracked Lua files including `CitationX_00_Core.lua`, and 14 QRH scenarios.
+- The "Not yet verified in-sim" status claimed no clean load since 2026-10-26. `Log.txt` shows a
+  clean 2026-11-13 load on 2.8.20 with 22 callouts and no `FlyWithLua Error`.
+- `SCRIPT_STATUS.md` reproduced the DataRefs path as `../../Resources/plugins/DataRefs.txt`
+  from the repo root, which resolves to `Resources/Resources/plugins/...`; the working path is
+  `../DataRefs.txt`.
+- `AGENTS.md` omitted `tests/probe_kpcrew_run.lua` from the tracked scope and did not list the
+  shared `CX` / `cx_*` and QRH `qrh_*` prefixes in rule 5. Corrected.
+- `docs/img/panels/*.png` were re-rendered from the current draw calls, so the QRH screenshot
+  shows the 14-row scenario list instead of the old seven.
+
+Validation: `luac -p` clean; `check_datarefs` 0 problems (21 declarations in the trainer,
+104 bindings total); `probe_load_order` 104 bindings, 0 load failures, 0 binding problems;
+`smoke_panel_geometry` 117 checks pass; MasterSuite, HUD-toggle and Realism smoke tests pass;
+`check_kpcrew_modules C750` 393 require sites, 0 missing.

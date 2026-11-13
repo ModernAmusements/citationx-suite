@@ -5,9 +5,10 @@ standalone landing-performance scorer.
 
 > ⚠️ **WORK IN PROGRESS** — v3.0 is being verified in-sim. What has never been seen in
 > X-Plane yet: the restored AviTab cockpit screen (2026-10-31), callout timing in flight,
-> the 16-row black realism panel, and the 8K dark cockpit textures under the simulator's
-> texture cap. Every script passes the offline harnesses (see *Development and validation*);
-> the remaining items are recorded in `CONTEXT.md`.
+> the 16-row black realism panel, the expanded 14-scenario QRH trainer, and the 8K dark
+> cockpit textures under the simulator's texture cap. Every script passes the offline
+> harnesses (see *Development and validation*); the remaining items are recorded in
+> `CONTEXT.md`.
 
 **Version 3.0 has no keyboard layer.** The suite reads exactly one pilot input — the mouse
 wheel — and everything else is a panel, a diagnostic or a command you can bind yourself.
@@ -54,7 +55,7 @@ transplant is backed up. **The textures themselves live in the aircraft mod**
 | --- | --- |
 | `Scripts/CitationX_00_Core.lua` | Shared core, loaded first: the MA dark palette (`CX`) and the `cx_*` bar/text/fit/footer helpers. No datarefs, commands or callbacks. |
 | `Scripts/CitationX_MasterSuite.lua` | The hub. Axis optimizer (pitch/roll deadzone, expo, smoothing), 1 Hz flight recorder CSV, simulated bleed-air/pressurization emergency, opt-in axis monitor, aircraft texture cycler (X-Plane's own next/previous livery), AviTab app shortcuts, and the draggable control panel. The thumbwheel moves the heading bug and wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. Taxi and landing lights are published as commands. No keystrokes, no button map, no telemetry HUD. |
-| `Scripts/CitationX_FailureTrainer.lua` | QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulics) with checklists that self-check against the aircraft's own datarefs. |
+| `Scripts/CitationX_FailureTrainer.lua` | 14 QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulic A/B, flap actuator, gear indication, APU fail-to-start, pitot/static, trim runaway, cabin decompression) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
 | `Scripts/CitationX_Realism.lua` | Realism pack: one MA-dark panel of LEDs and bar gauges (trim band, fuel balance, weight against MTOW/MLW, crosswind against the demonstrated limit, brake energy, bus voltage) with clickable toggles. Behind it: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable, fuel imbalance, crosswind, overweight) on FlyWithLua's FMOD master bus; flight-controls check; takeoff trim/flap gate; fuel-balance monitor; MTOW/MLW limits; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing, cabin-altitude and crosswind advisories (each also raises a 2 s toast); sustained flap overspeed tears off one flap (default right, `flap_damage_side`) and fails the actuator, sustained gear overspeed fails the gear actuator (`rel_gear_act`), repairable with `CitationXRealism/repair`. |
 | `Scripts/LandingPerformance.lua` | Standalone landing scoring and debrief card (third-party, untracked in git). |
@@ -68,15 +69,16 @@ and only to move the two autopilot selectors:
 
 | Mouse | Action |
 | --- | --- |
-| main wheel forward / back | ALT SEL up / down (100 ft per notch) |
-| thumbwheel forward / back | heading bug right / left (1° per notch) |
+| main wheel (wheel 0) | view zoom — the suite leaves it to X-Plane |
+| thumbwheel (wheel 1) | heading bug, 10° per notch |
+| wheel 2 | ALT SEL, 100 ft per notch |
 | middle click | *bind `CitationXSuite/taxi_light_toggle` in your mouse driver* |
 | gesture | *bind `CitationXSuite/landing_lights_toggle` in your mouse driver* |
 
 X-Plane reports which wheel moved in `MOUSE_WHEEL_NUMBER`; if your mouse enumerates them the
 other way round run `CitationXSuite/wheel_map_swap`, and `CitationXSuite/wheel_report` logs what
-the last notch reported. The **WHEEL = ALT SEL** row switches the wheel off entirely, leaving
-the view zoom with X-Plane.
+the last notch reported. The **WHEEL = ALT SEL** row switches the ALT SEL wheel off (the
+thumbwheel heading bug stays); the main wheel is always X-Plane's view zoom.
 
 FlyWithLua cannot see individual mouse buttons, so middle click and gestures cannot be captured
 by the suite. Both actions exist as real X-Plane commands — point the mouse driver (Logi
@@ -88,7 +90,8 @@ suite never reads a key.
 All panels share the realism panel's language: black body, grey 1 px border, white Helvetica 18
 title, grey 10 px sub-header, 12 px rows, 22 px row pitch and a 34 px footer with a **HIDE
 PANEL** button. **Drag any panel by its header** to move it; the position is kept for the
-session. The hub starts at the top-left, the realism panel beside it.
+session. The realism panel starts at the top-left; the hub sits beside it
+(`SUITE_STYLE.x = 470`).
 
 The hub lists every subsystem with a live state. Click a row to toggle it.
 The same toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as
@@ -217,7 +220,7 @@ luac -p Scripts/*.lua
 
 # every dataref() binding is legal: the ref exists and array refs carry an index
 for f in Scripts/CitationX_*.lua; do
-  lua tests/check_datarefs.lua ../../Resources/plugins/DataRefs.txt "$f"
+  lua tests/check_datarefs.lua ../DataRefs.txt "$f"
 done
 
 # every require() reachable for the C750 resolves on disk (--all sweeps every aircraft)

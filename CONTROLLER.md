@@ -1,16 +1,16 @@
-# PS4 controller mapping — Citation X (`citX` profile)
+# PS4 controller mapping — Citation X
 
-X-Plane profile: `Output/preferences/control profiles/citX - Joysticks.prf`
+Active aircraft profile: `Output/preferences/control profiles/PS4-CitationX - Joysticks.prf`.
+X-Plane maps it to the modded aircraft in `Miscellaneous.prf`
+(`P acf_profile Cessna___Citation___X_mods PS4-CitationX`); the stock
+`Laminar Research/Cessna Citation X` still uses `citX - Joysticks.prf`.
+
 Device: DUALSHOCK 4 Wireless Controller (VID 054c, PID 09cc) — the same map is written
 into **both** device slots, so it behaves identically over USB and Bluetooth.
 
-Axes: left stick = pitch/roll, right stick X = yaw, right stick Y is **free** — the
-suite no longer reads it (v3.0 removed the Lua axis-to-heading knob on 2026-10-31). The
-heading bug is on the **mouse thumbwheel** now, and the altitude selector on the mouse wheel;
-see `README.md`.
-
-The suite registers no keystroke handler and no button map, so every binding below is
-X-Plane's own. `tools/joymap.py` can edit this profile with the sim closed.
+Axes: left stick = pitch/roll, right stick X = yaw, right stick Y = **free**. The suite
+registers no keystroke handler, no button map and no axis handler, so every input below is
+X-Plane's own profile; the suite reads only the **mouse wheel** (section below).
 
 ## Buttons (PS4 notation)
 
@@ -31,11 +31,11 @@ X-Plane's own. `tools/joymap.py` can edit this profile with the sim closed.
 | **Touchpad** | Landing lights |
 | **PS** | Quick look 0 |
 
-> **L2 / R2 are analog on the DS4.** The suite does not touch them in v3.0;
-> the profile's own axis assignments drive the throttles. (The old Lua
-> trigger-stepped throttle layer was removed with the rest of the input map.)
+> **L2 / R2 are buttons in this profile**, not axes: X-Plane steps the throttles with
+> `sim/engines/throttle_down` / `throttle_up`. The suite does not touch them.
 
 ## D-pad (8-way hat)
+
 | Direction | Action |
 | --- | --- |
 | Up | Altitude up |
@@ -47,169 +47,36 @@ X-Plane's own. `tools/joymap.py` can edit this profile with the sim closed.
 | Down-right | Approach |
 | Down-left | NAV |
 
-## Suite additions (not part of the X-Plane profile)
+## Suite input (v3.0)
 
-- **Two inputs only:**
-  - right stick Y (**Axis 3**, spring-centred and unassigned in the profile) turns the heading
-    bug. Push up/down to change HDG SEL; it is rate-based, 30°/s at full deflection. Raw axis 3
-    or 28 depending on which device slot X-Plane gives the pad, so both are pinned.
-  - the mouse **thumb buttons back/forward** step ALT SEL. They arrive as `Ctrl+Shift+9` /
-    `Ctrl+Shift+0` from Logi Options+, and the suite handles only those two keystrokes even
-    with the input mapper off.
-- **Everything else is OFF at load**, so this profile is the only input map: the rest of the
-  keyboard layers, L2/R2 analog throttle, stick ALT SEL, arrow-key view tilt, R3 cockpit look,
-  axis optimizer and the realism handling curve. Switch a layer on from the MasterSuite
-  `CONTROL PANEL` row (or the macro menu) if you want it back — it will compete with the
-  profile again.
-- D-pad and face buttons are never touched by the suite; X-Plane owns them.
+The suite consumes exactly one pilot input, and only when the selected wheel is one it owns:
 
-## Mouse
-
-Two separate things:
-
-### 1. In-sim mouse wheel
-
-| Control | Action |
+| Mouse | Action |
 | --- | --- |
-| Wheel | View zoom in/out (X-Plane native; the suite does not consume it) |
+| main wheel (wheel 0) | X-Plane view zoom — the suite leaves it alone |
+| thumbwheel (wheel 1) | heading bug, 10° per notch |
+| wheel 2 | ALT SEL, 100 ft per notch |
 
-### 2. Logitech MX buttons (Logi Options+)
+`CitationXSuite/wheel_report` logs which wheel number the mouse sends;
+`CitationXSuite/wheel_map_swap` exchanges 1 and 2. The **WHEEL = ALT SEL** row on the
+Master Suite hub disables the wheel layer entirely and returns both wheels to X-Plane.
 
-FlyWithLua never sees the mouse button itself — only the keystroke Logi Options+
-sends. **The two thumb buttons are live by default:** the suite handles
-`Ctrl+Shift+9` / `Ctrl+Shift+0` even with the input mapper off. Every other row
-below needs the MasterSuite **INPUT MAPPER** switched on.
+There is **no** Lua keyboard layer, no thumb-button ALT SEL, no stick-to-heading knob and no
+right-stick cockpit look in v3.0. `Ctrl+Shift+9` / `Ctrl+Shift+0` (the MX thumb buttons) pass
+straight through to X-Plane like any other keystroke. Bind them in X-Plane's own keyboard
+settings if you want them to do something.
 
-| MX control (recommended) | Send this | Action | Live at load |
-| --- | --- | --- | --- |
-| Thumb button back | `Ctrl+Shift+9` | ALT SEL down (100 ft) | **yes** |
-| Thumb button forward | `Ctrl+Shift+0` | ALT SEL up (100 ft) | **yes** |
-| Wheel click | `Ctrl+Shift+5` | Both landing lights | no |
-| Gesture button | `Ctrl+Shift+5` | Both landing lights | no |
-| Thumb wheel left | `Ctrl+Shift+1` | NAV lights | no |
-| Thumb wheel right | `Ctrl+Shift+2` | Beacon lights | no |
-| Mode-shift | `Ctrl+Opt+M` | Master caution | no |
-| Keyboard rotary knob ← / → | `Ctrl+Shift+,` / `Ctrl+Shift+.` | Pitch trim down / up | no |
-
-These are only suggestions — every combo below is a valid target.
-
-### Keyboard / MX layers (available, OFF at load)
-
-These layers belong to the suite, not to X-Plane. They are **off at load** (the `INPUT MAPPER`
-row switches them on); while they are off, the keys pass straight to X-Plane. The two
-exceptions are `Ctrl+Shift+9` / `Ctrl+Shift+0` (ALT SEL down/up), which stay live because they
-are what the mouse thumb buttons send. Each layer owns what the pad cannot reach — no command
-is duplicated between the PS4 profile and the keyboard.
-
-### Ctrl+Shift + digit / arrow
-
-| Keys | Action |
-| --- | --- |
-| `Ctrl+Shift+1` | NAV lights |
-| `Ctrl+Shift+2` | Beacon lights |
-| `Ctrl+Shift+3` | Strobe lights |
-| `Ctrl+Shift+4` | Taxi lights |
-| `Ctrl+Shift+5` | Both landing lights |
-| `Ctrl+Shift+9` | ALT SEL down (100 ft) |
-| `Ctrl+Shift+0` | ALT SEL up (100 ft) |
-| `Ctrl+Shift+,` | Pitch trim down (keyboard knob) |
-| `Ctrl+Shift+.` | Pitch trim up (keyboard knob) |
-| `Ctrl+Shift+7` | AP heading hold |
-
-### Ctrl+Shift + letter
-
-| Keys | Action |
-| --- | --- |
-| `Ctrl+Shift+A` | AP toggle |
-| `Ctrl+Shift+B` | AP half bank |
-| `Ctrl+Shift+C` | AP CWS |
-| `Ctrl+Shift+D` | AP ALT |
-| `Ctrl+Shift+H` | Heading sync |
-| `Ctrl+Shift+I` | Fuel transfer L |
-| `Ctrl+Shift+J` | Fuel transfer R |
-| `Ctrl+Shift+K` | Start engine L |
-| `Ctrl+Shift+L` | Start engine R |
-| `Ctrl+Shift+O` | Ignition L |
-| `Ctrl+Shift+P` | Ignition R |
-| `Ctrl+Shift+Q` | Boost pump L |
-| `Ctrl+Shift+R` | Boost pump R |
-| `Ctrl+Shift+S` | AP VS |
-| `Ctrl+Shift+T` | Starter stop |
-| `Ctrl+Shift+U` | Engine sync |
-| `Ctrl+Shift+V` | AP VNAV |
-| `Ctrl+Shift+W` | Windshield air |
-| `Ctrl+Shift+X` | Crossfeed L |
-| `Ctrl+Shift+Y` | Yaw damper |
-| `Ctrl+Shift+Z` | Crossfeed R |
-
-### Ctrl+Opt + digit
-
-| Keys | Action |
-| --- | --- |
-| `Ctrl+Opt+1` | Battery L |
-| `Ctrl+Opt+2` | Battery R |
-| `Ctrl+Opt+3` | Generator L |
-| `Ctrl+Opt+4` | Generator R |
-| `Ctrl+Opt+5` | External power |
-| `Ctrl+Opt+6` | Avionics |
-| `Ctrl+Opt+7` | Avionics EICAS |
-| `Ctrl+Opt+8` | APU master |
-| `Ctrl+Opt+9` | APU start |
-| `Ctrl+Opt+0` | APU generator |
-
-### Ctrl+Opt + letter
-
-| Keys | Action |
-| --- | --- |
-| `Ctrl+Opt+A` | Ice engine L |
-| `Ctrl+Opt+B` | Ice engine R |
-| `Ctrl+Opt+C` | Wing ice light |
-| `Ctrl+Opt+D` | Slat heat |
-| `Ctrl+Opt+G` | Stab heat L |
-| `Ctrl+Opt+H` | Stab heat R |
-| `Ctrl+Opt+I` | Pitot heat L |
-| `Ctrl+Opt+J` | Pitot heat R |
-| `Ctrl+Opt+K` | Cabin dump |
-| `Ctrl+Opt+L` | Iso valve |
-| `Ctrl+Opt+M` | Master caution |
-| `Ctrl+Opt+N` | Aux hyd pump |
-| `Ctrl+Opt+O` | Unload pump A |
-| `Ctrl+Opt+P` | Unload pump B |
-| `Ctrl+Opt+Q` | Antiskid |
-| `Ctrl+Opt+R` | Gravity flow |
-| `Ctrl+Opt+S` | AP FLC |
-| `Ctrl+Opt+T` | Ground idle |
-| `Ctrl+Opt+U` | Tail flood light |
-| `Ctrl+Opt+V` | Recognition lights |
-| `Ctrl+Opt+W` | Cabin master light |
-| `Ctrl+Opt+X` | Landing light L |
-| `Ctrl+Opt+Y` | Landing light R |
-| `Ctrl+Opt+Z` | Passenger O2 |
-
-### Free inputs
-
-- **PS4 buttons:** every physical control is assigned.
-- **PS4 axes:** right stick Y is free; every axis belongs to the profile.
-- **Mouse wheel:** main wheel → ALT SEL, thumbwheel → heading bug (the only pilot input the
-  suite reads). `CitationXSuite/wheel_map_swap` if your mouse enumerates them differently;
-  the **WHEEL = ALT SEL** row turns it off and gives the wheel back to X-Plane's view zoom.
-- **Free keystrokes** (no duplicate of the pad): `Ctrl+Shift+6`, `Ctrl+Shift+8`, `Ctrl+Shift+↑/↓/←/→`, `Ctrl+Shift+E/F`, `Ctrl+Opt+E/F`, all `Ctrl+Opt` arrows, and any MX button not mapped in Logi Options+.
+`tools/joymap.py` / `tools/joymap_gui.py` read and edit the active profile with the sim closed.
 
 ## View
 
 | Input | Action |
 | --- | --- |
-| **↑ / ↓ arrow keys** | Tilt the view up / down (`sim/general/hat_switch_up/down` in `X-Plane Keys.prf`) |
-| **Right-click + drag** | Free look, X-Plane native — the only smooth mouse-look; FlyWithLua gets clicks/wheel only, not motion |
+| **↑ / ↓ arrow keys** | Tilt the view up / down (X-Plane's own keys) |
+| **Right-click + drag** | Free look, X-Plane native |
 | **Mouse wheel** | View zoom in/out |
-| **Wheel click** | Both landing lights |
-| **Gesture button** | Both landing lights |
-| **Thumb back / forward** | ALT SEL down / up (100 ft) |
 | **Right stick ←/→** | Yaw |
-| **Right stick ↑/↓** | Heading bug (suite, Axis 3) |
-
-If you want a mouse button to tilt, map it in Logi Options+ to send **↑** or **↓** —
-those keys now drive the view.
+| **Right stick ↑/↓** | Free — the suite does not read it |
 
 ## If one control is wrong
 
@@ -219,4 +86,5 @@ profile stores numeric indices, so the name → index translation is:
 `0 Cross · 1 Triangle · 2 Circle · 3 Square · 4 L1 · 5 R1 · 6 L2 · 7 R2 ·
 8 Share · 9 Options · 10 R3 · 11 L3 · 12 Touchpad · 13 PS`
 
-Backups: `citX - Joysticks.prf.bak-2026-10-27` and `.bak2-2026-10-27`.
+Backups: `PS4-CitationX - Joysticks.prf.bak-2026-10-30-233044` and
+`citX - Joysticks.prf.bak-2026-10-27`.

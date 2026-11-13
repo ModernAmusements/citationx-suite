@@ -17,6 +17,8 @@
 --  Scenarios:
 --    ENGINE FIRE L   GENERATOR L TRIP   BLEED AIR L FAILURE
 --    BOOST PUMP L    FLAMEOUT L (restart)   APU FIRE   HYD PUMP A
+--    FLAP ACTUATOR   GEAR INDICATION   HYD PUMP B   APU FAIL TO START
+--    PITOT / STATIC  ELEVATOR TRIM RUNAWAY   CABIN DECOMPRESSION
 --    + RANDOM (bind it to a joystick button for surprise failures)
 --
 --  Commands (bindable in Settings > Keyboard/Joystick):
@@ -69,6 +71,11 @@ dataref("ft_fail_genera0", "sim/operation/failures/rel_genera0", "writable")
 dataref("ft_fail_engfla0", "sim/operation/failures/rel_engfla0", "writable")
 dataref("ft_fail_bleed_l", "sim/operation/failures/rel_bleed_air_lft", "writable")
 dataref("ft_fail_apu",     "sim/operation/failures/rel_apu_fire", "writable")
+dataref("ft_fail_apu_start", "sim/operation/failures/rel_apu", "writable")
+dataref("ft_fail_gear_ind",  "sim/operation/failures/rel_gear_ind", "writable")
+dataref("ft_fail_pitot",     "sim/operation/failures/rel_pitot", "writable")
+dataref("ft_fail_trim_run",  "sim/operation/failures/rel_elv_trim_run", "writable")
+dataref("ft_fail_depres",    "sim/operation/failures/rel_depres_slow", "writable")
 
 -- Standard state used by the checklist verifiers (1-based array slots).
 dataref("ft_throttle_l",   "sim/cockpit2/engine/actuators/throttle_ratio", "readonly", 1)
@@ -77,6 +84,11 @@ dataref("ft_master_caution", "sim/cockpit2/annunciators/master_caution", "readon
 dataref("ft_eng_fire_l",     "sim/cockpit2/annunciators/engine_fires", "readonly", 1)
 dataref("ft_on_ground",      "sim/flightmodel/failures/onground_any", "readonly")
 dataref("ft_sim_time",       "sim/time/total_running_time_sec", "readonly")
+dataref("ft_ias_kts",        "sim/flightmodel/position/indicated_airspeed", "readonly")
+dataref("ft_elev_m",         "sim/flightmodel/position/elevation", "readonly")
+dataref("ft_ap_on",          "sim/cockpit2/autopilot/autopilot_on", "readonly")
+dataref("ft_cabin_alt_ft",   "sim/cockpit2/pressurization/indicators/cabin_altitude_ft", "readonly")
+dataref("ft_gear_handle",    "sim/cockpit2/controls/gear_handle_down", "readonly")
 
 -- CitX runtime datarefs: they only exist once the C750 is loaded, so they are
 -- resolved lazily with XPLMFindDataRef and polled in the frame loop (reading
@@ -100,8 +112,29 @@ CITX_TR = {
     apu_gen    = "laminar/CitX/APU/gen_switch",
     aux_pump   = "laminar/CitX/hydraulics/aux_pump",
     unload_a   = "laminar/CitX/hydraulics/unload_pump_A",
+    unload_b   = "laminar/CitX/hydraulics/unload_pump_B",
     antiskid   = "laminar/CitX/hydraulics/antiskid",
+    flap_handle = "laminar/CitX/flaps_slats/handle_ratio",
+    pitot_l    = "laminar/CitX/ice/pitot_static_left",
+    pitot_r    = "laminar/CitX/ice/pitot_static_right",
+    apu_starter = "laminar/CitX/APU/starter_switch",
+    pass_oxy   = "laminar/CitX/oxygen/pass_oxy",
+    press_manual = "laminar/CitX/pressurization/manual",
 }
+
+-- Failure enums already bound writable by another suite script must be written
+-- through XPLM: a second writable dataref() for the same ref quarantines this
+-- script. CitationX_Realism.lua owns rel_flap_act (overspeed damage).
+local ft_lazy_refs = {}
+
+local function ft_fail_lazy(ref, value)
+    local h = ft_lazy_refs[ref]
+    if not h then
+        h = XPLMFindDataRef(ref)
+        ft_lazy_refs[ref] = h
+    end
+    if h and XPLMSetDatai then XPLMSetDatai(h, value) end
+end
 
 local tr_ref  = {}   -- lazily resolved XPLM ref handles
 local TRV     = {}   -- polled values (frame loop snapshot)
@@ -263,6 +296,145 @@ local SCENARIOS = {
               check = function() return (TRV.antiskid or 0) < 0.5 end },
         },
     },
+    {
+        key = "hyd_pump_b",
+        title = "HYDRAULIC SYSTEM B - PUMP FAILURE",
+        condition = "HYD B PUMP - LOW PRESSURE",
+        inject = function() command_once("laminar/CitX/hydraulics/cmd_unload_pump_B_toggle") end,
+        clear  = function() command_once("laminar/CitX/hydraulics/cmd_unload_pump_B_toggle") end,
+        steps = {
+            { label = "AUXILIARY PUMP ................. ON",
+              cmd = "laminar/CitX/hydraulics/cmd_aux_pump_toggle",
+              check = function() return (TRV.aux_pump or 0) > 0.5 end },
+            { label = "PUMP B UNLOAD .................. CHECK",
+              check = function() return (TRV.unload_b or 0) > 0.5 end },
+            { label = "ANTISKID ....................... NORM",
+              cmd = "laminar/CitX/hydraulics/cmd_antiskid_toggle",
+              check = function() return (TRV.antiskid or 0) < 0.5 end },
+        },
+    },
+    {
+        key = "flap_actuator",
+        title = "FLAP ACTUATOR - FAILURE",
+        condition = "FLAP DISAGREE - ASYMMETRIC / JAMMED",
+        -- Realism binds rel_flap_act writable for overspeed damage, so this
+        -- script writes the same enum through XPLM instead of binding it.
+        inject = function() ft_fail_lazy("sim/operation/failures/rel_flap_act", 6) end,
+        clear  = function() ft_fail_lazy("sim/operation/failures/rel_flap_act", 0) end,
+        steps = {
+            { label = "FLAP LEVER ...................... 15",
+              check = function() return math.abs((TRV.flap_handle or 0) - 0.75) < 0.13 end },
+            { label = "AIRSPEED ....................... 200 KIAS MAX",
+              check = function() return (ft_ias_kts or 0) < 200 end },
+            { label = "FLAP RESET ANNUNCIATOR ......... CHECK",
+              advisory = true,
+              check = function() return true end },
+            { label = "LANDING DISTANCE ............... INCREASE",
+              advisory = true,
+              check = function() return true end },
+        },
+    },
+    {
+        key = "gear_indication",
+        title = "LANDING GEAR - INDICATION FAILURE",
+        condition = "GEAR INDICATION DISAGREES WITH HANDLE",
+        inject = function() ft_fail_gear_ind = 6 end,
+        clear  = function() ft_fail_gear_ind = 0 end,
+        steps = {
+            { label = "GEAR LEVER ....................... DOWN",
+              check = function() return (ft_gear_handle or 0) > 0.5 end },
+            { label = "GEAR DOWN .................... VISUAL / TOWER",
+              advisory = true,
+              check = function() return true end },
+            { label = "AIRSPEED ......................... 210 KIAS MAX",
+              check = function() return (ft_ias_kts or 0) < 210 end },
+            { label = "LAND ............................ NORMAL",
+              advisory = true,
+              check = function() return true end },
+        },
+    },
+    {
+        key = "apu_fail_start",
+        title = "APU - FAILURE TO START",
+        condition = "APU FAULT - NO START / NO BLEED",
+        inject = function() ft_fail_apu_start = 6 end,
+        clear  = function() ft_fail_apu_start = 0 end,
+        steps = {
+            { label = "APU MASTER ...................... OFF",
+              cmd = "laminar/CitX/APU/master_switch_toggle",
+              check = function() return (TRV.apu_master or 1) < 0.5 end },
+            { label = "APU STARTER ..................... OFF",
+              cmd = "laminar/CitX/APU/starter_switch_dwn",
+              check = function() return (TRV.apu_starter or 1) < 0.5 end },
+            { label = "APU GENERATOR ................... OFF",
+              cmd = "laminar/CitX/APU/gen_switch_dwn",
+              check = function() return (TRV.apu_gen or 1) < 0.5 end },
+            { label = "EXTERNAL POWER ................. ON",
+              cmd = "laminar/CitX/electrical/cmd_ext_pwr_toggle",
+              check = function() return (TRV.ext_pwr or 0) > 0.5 end },
+        },
+    },
+    {
+        key = "pitot_static",
+        title = "PITOT / STATIC - BLOCKAGE",
+        condition = "AIR DATA DISAGREES - PITOT HEAT OFF",
+        inject = function() ft_fail_pitot = 6 end,
+        clear  = function() ft_fail_pitot = 0 end,
+        steps = {
+            { label = "PITOT HEAT L ................... ON",
+              cmd = "laminar/CitX/ice/cmd_pitot_static_left_toggle",
+              check = function() return (TRV.pitot_l or 0) > 0.5 end },
+            { label = "PITOT HEAT R ................... ON",
+              cmd = "laminar/CitX/ice/cmd_pitot_static_right_toggle",
+              check = function() return (TRV.pitot_r or 0) > 0.5 end },
+            { label = "STANDBY INSTRUMENTS ............ CROSS-CHECK",
+              advisory = true,
+              check = function() return true end },
+            { label = "AIRSPEED / ALTITUDE ............ STANDBY",
+              advisory = true,
+              check = function() return true end },
+        },
+    },
+    {
+        key = "trim_runaway",
+        title = "ELEVATOR TRIM - RUNAWAY",
+        condition = "UNCOMMANDED PITCH TRIM - AP OFF",
+        inject = function() ft_fail_trim_run = 6 end,
+        clear  = function() ft_fail_trim_run = 0 end,
+        steps = {
+            { label = "AUTOPILOT ...................... DISCONNECT",
+              cmd = "sim/autopilot/servos_fdir_off",
+              check = function() return (ft_ap_on or 0) < 0.5 end },
+            { label = "CONTROL WHEEL .................. HOLD",
+              advisory = true,
+              check = function() return true end },
+            { label = "TRIM ........................... OPPOSE",
+              advisory = true,
+              check = function() return true end },
+            { label = "AIRSPEED ....................... REDUCE",
+              advisory = true,
+              check = function() return true end },
+        },
+    },
+    {
+        key = "cabin_decompression",
+        title = "CABIN - SLOW DECOMPRESSION",
+        condition = "CABIN ALTITUDE RISING - O2 REQUIRED",
+        inject = function() ft_fail_depres = 6 end,
+        clear  = function() ft_fail_depres = 0 end,
+        steps = {
+            { label = "PASSENGER OXYGEN ............... ON",
+              cmd = "laminar/CitX/oxygen/cmd_pass_oxy_up",
+              check = function() return (TRV.pass_oxy or 0) > 0.5 end },
+            { label = "PRESSURIZATION ................. MANUAL",
+              cmd = "laminar/CitX/pressurization/cmd_manual_toggle",
+              check = function() return (TRV.press_manual or 0) > 0.5 end },
+            { label = "CABIN ALTITUDE ........... BELOW 10 000 FT",
+              check = function() return (ft_cabin_alt_ft or 0) < 10000 end },
+            { label = "DESCENT .................. BELOW 10 000 FT",
+              check = function() return (ft_elev_m or 0) * 3.28084 < 10000 end },
+        },
+    },
 }
 
 -- ---------------------------------------------------------------- STATE ----
@@ -326,6 +498,11 @@ end
 
 function qrh_inject_random()
     qrh_inject(SCENARIOS[math.random(#SCENARIOS)])
+end
+
+-- Read-only view for the offline harnesses (panel geometry, smoke tests).
+function qrh_scenarios()
+    return SCENARIOS
 end
 
 function qrh_clear()

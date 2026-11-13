@@ -370,6 +370,28 @@ do
   assert_row_spacing("qrh-active")
   assert_text_inside_panel("qrh-active")
   qrh_clear()
+
+  -- every scenario must inject, draw inside the panel and tear down again
+  for _, sc in ipairs(qrh_scenarios()) do
+    qrh_inject(sc)
+    reset()
+    qrh_draw()
+    check(#drawn > 10, "scenario " .. sc.key .. " draws content", #drawn)
+    assert_on_screen("qrh-" .. sc.key, nil)
+    assert_row_spacing("qrh-" .. sc.key)
+    assert_text_inside_panel("qrh-" .. sc.key)
+    qrh_clear()
+  end
+  check(#qrh_scenarios() >= 14, "QRH exposes the expanded scenario set",
+    tostring(#qrh_scenarios()))
+
+  -- the 14-row scenario list must survive a 720p screen too
+  SCREEN_WIDTH, SCREEN_HIGHT = 1280, 720
+  TRAINER_CONFIG.panel_top = nil
+  reset()
+  qrh_draw()
+  assert_on_screen("qrh-720p", nil)
+  SCREEN_WIDTH, SCREEN_HIGHT = screen_w, screen_h
   TRAINER_CONFIG.require_c750 = true
 end
 
