@@ -12,6 +12,9 @@ overspeed damage). Validation is now 104 dataref bindings and the geometry harne
 every scenario (117 checks). The drift audit fixed stale input claims in `CONTROLLER.md`,
 the KPCrew/quarantine status and the binding counts. See §40.
 
+An MD-80 adaptation was explored the same day but **deferred at the user's request**; the
+reconnaissance and the two open decisions are recorded in §41. No MD-80 code exists yet.
+
 **2026-11-12 — MA dark theme, EFB removed, four panels left.** The suite's on-screen
 language is now the Modern Amusement dark field (`MA_WEBSITE/src/styles/globals.scss`,
 `[data-theme='dark']`): `#0a0a0a` body, `#171717` header, white ink, `#ff6600` accent,
@@ -1941,3 +1944,51 @@ Validation: `luac -p` clean; `check_datarefs` 0 problems (21 declarations in the
 104 bindings total); `probe_load_order` 104 bindings, 0 load failures, 0 binding problems;
 `smoke_panel_geometry` 117 checks pass; MasterSuite, HUD-toggle and Realism smoke tests pass;
 `check_kpcrew_modules C750` 393 require sites, 0 missing.
+
+## 41. MD-80 adaptation — explored, deferred (2026-11-14)
+
+Asked whether the Citation X failure work could be adapted to the MD-80. The reconnaissance was
+done, then the user answered **"later"** to both scope and repo questions. **No MD-80 code,
+tests or docs were added; nothing in `Scripts/` changed.**
+
+### What was found
+
+- The default MD-82 (`Aircraft/Laminar Research/McDonnell Douglas MD-82`, ICAO `MD82`) ships a
+  full Laminar xLua package: `md80_electrical`, `md80_bleedair`, `md80_apu`,
+  `md80_flgt_controls`, `md80_EOAP`, `md80_ice`, `md80_ignition`, `md80_autopilot`,
+  `md80_switches`, `md80_TOcomputer`, PFD/ND, GPWS, WXR and sound.
+- It registers ~97 commands under `laminar/md82cmd/...` (mostly lights, radios, autopilot,
+  electrical cross-ties, bleed-air valves and ice) and ~80 custom datarefs under
+  `laminar/md82/...` (switch positions, needles, FMA/EOAP text, flap/gear/speedbrake handles).
+- Most physical systems are **stock X-Plane**, not custom: fire handles
+  (`sim/cockpit2/engine/actuators/fire_extinguisher_on`), fuel pumps
+  (`sim/fuel/fuel_tank_pump_*`), generators/batteries/APU (`sim/electrical/...`), starter
+  engagement (`sim/starters/engage_starter_1/2`), pitot/wing/window heat (`sim/ice/...`),
+  electric hydraulic pump (`sim/cockpit2/switches/electric_hydraulic_pump_on`), flaps
+  (`sim/cockpit2/controls/flap_ratio`) and gear (`sim/cockpit2/controls/gear_handle_down`).
+  This makes the failure-enum + self-checking-QRH pattern used by the Citation X trainer
+  directly viable.
+- The bundled `X-Plane MD-82 Pilot Operating Manual.pdf` covers normal procedures and the
+  checklist (`clist.txt`, 16 phases from cockpit preparation to shutdown). It has **no
+  emergency/QRH section**, so MD-80 failure procedures must be written from standard MD-80
+  practice rather than copied from that PDF.
+- There are several MD-82 copies under `Aircraft/Laminar Research/` (`MD-82`, `MD-82 Mod`,
+  `MD-82 ENC`, the 4K overhaul). A script keyed on `PLANE_ICAO == "MD82"` works with all of
+  them, so no copy needs to be chosen up front.
+- Shared-state naming: the Citation X trainer already owns `TRAINER_CONFIG`, `ST`, `SCENARIOS`
+  and `qrh_*`. An MD-80 script must use a separate prefix (`MD80_CONFIG`, `MD80_ST`,
+  `MD80_SCENARIOS`, `md80_*`) or it will overwrite the C750 trainer when both are loaded.
+  It can read `CX` / `cx_*` from `CitationX_00_Core.lua` only if that core is guaranteed to
+  load first; a standalone palette is safer if the MD-80 script must also work outside this
+  suite.
+
+### Open decisions (deferred)
+
+1. **Scope:** QRH failure trainer only (recommended), trainer + audio callouts, or a full
+   hub/realism/cabin suite port.
+2. **Repo:** add `Scripts/MD80_FailureTrainer.lua` to this repo (whitelist it in `.gitignore`,
+   document it as the MD-80 companion), keep it live but untracked, or create a separate
+   `md80-suite` repository.
+
+Nothing below the two decisions was started; do not treat the MD-80 as supported until a
+script exists and `probe_load_order.lua` has loaded it in the shared state.
