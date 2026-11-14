@@ -1019,6 +1019,11 @@ function fi_toggle_panel(on)
     end
     if not FI_CONFIG.panel_enabled then
         inst_drag.active = false
+        -- Hiding the panel abandons the run: the frame loop must not keep
+        -- grading (or keep a lesson's failure injected) behind a hidden panel.
+        if inst_state == FI_STATE.FLYING or inst_state == FI_STATE.BRIEF then
+            fi_menu()
+        end
     else
         -- Opening the panel always shows the lesson list.
         inst_state = FI_STATE.MENU

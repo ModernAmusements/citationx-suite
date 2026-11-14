@@ -302,6 +302,23 @@ check(qrh_is_complete() == false, "QRH starts incomplete")
 fi_menu()
 check(qrh_active_key() == nil, "leaving the lesson clears the injected failure")
 
+-- Hiding the panel abandons the run; it must not keep grading (or keep a
+-- lesson's failure injected) behind a closed panel.
+fi_toggle_panel(true)
+fi_start("engfail_tkof")
+fi_on_ground, fi_agl_m, fi_ias, fi_gs, fi_fpm = 1, 0, 100, 50, 0
+fi_time = t + 2
+frame_cb()
+fi_on_ground, fi_agl_m = 0, 500 / 3.28084
+fi_time = t + 2.25
+frame_cb()
+check(qrh_active_key() == "flameout_l", "the hide test re-injects the failure",
+  tostring(qrh_active_key()))
+fi_toggle_panel(false)
+check(qrh_active_key() == nil, "hiding the panel clears the injected failure")
+check(fi_state() == 1, "hiding the panel returns to the lesson list")
+fi_toggle_panel(true)
+
 -- ---------- panel interaction ----------
 fi_toggle_panel(true)
 fi_menu()
