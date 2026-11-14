@@ -424,9 +424,9 @@ do
   fi_mouse_click()
   check(RESUME_MOUSE_CLICK == true, "instructor header press starts a drag")
   MOUSE_STATUS = "drag"
-  MOUSE_X, MOUSE_Y = ix0 + 20 + 90, itop0 - 10 - 60
+  MOUSE_X, MOUSE_Y = ix0 + 20 - 90, itop0 - 10 - 60
   fi_mouse_click()
-  check(math.abs(FI_CONFIG.panel_x - (ix0 + 90)) < 1
+  check(math.abs(FI_CONFIG.panel_x - (ix0 - 90)) < 1
     and math.abs(FI_CONFIG.panel_top - (itop0 - 60)) < 1,
     "instructor panel follows the mouse while dragging")
   MOUSE_STATUS = "up"

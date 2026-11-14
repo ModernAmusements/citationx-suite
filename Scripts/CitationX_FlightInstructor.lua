@@ -35,7 +35,8 @@
 
 FI_CONFIG = {
     panel_enabled = false,   -- hidden at load; the Master Suite hub opens it
-    panel_x       = 24,
+    panel_x       = nil,     -- nil = bottom-right on first draw (the QRH keeps
+                             -- the bottom-left, so a failure lesson shows both)
     panel_top     = nil,     -- nil = bottom-left (60 px) on first draw
     panel_w       = 430,
     row_h         = 20,
@@ -1369,7 +1370,8 @@ function fi_draw()
     local sh  = SCREEN_HIGHT or 1080
 
     local h = fi_panel_height()
-    local x = math.max(0, math.min(cfg.panel_x, sw - w))
+    local x = cfg.panel_x or (sw - w - 24)
+    x = math.max(0, math.min(x, sw - w))
     local top = cfg.panel_top or (60 + h)
     top = math.max(h + 8, math.min(top, sh - 4))
     cfg.panel_x, cfg.panel_top = x, top
