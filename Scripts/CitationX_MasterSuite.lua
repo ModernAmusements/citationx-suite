@@ -332,6 +332,19 @@ SUITE_MODULES = {
         end,
     },
     {
+        key = "instructor", label = "FLIGHT INSTRUCTOR", macro = "flight instructor",
+        get = function()
+            return (type(FI_CONFIG) == "table") and FI_CONFIG.panel_enabled or false
+        end,
+        set = function(on)
+            if type(fi_toggle_panel) == "function" then fi_toggle_panel(on) end
+        end,
+        state = function()
+            if type(FI_CONFIG) ~= "table" then return "ABSENT" end
+            return FI_CONFIG.panel_enabled and "ON" or "OFF"
+        end,
+    },
+    {
         key = "landperf", label = "LANDING PERF", macro = "landing report",
         get = function() return la_displayOn == true end,
         set = function(on)

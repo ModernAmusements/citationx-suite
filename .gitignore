@@ -29,6 +29,7 @@
 # README screenshots (panel renders + texture before/after captures)
 !/docs/
 /docs/*
+!/docs/*.md
 !/docs/img/
 /docs/img/*
 !/docs/img/panels/

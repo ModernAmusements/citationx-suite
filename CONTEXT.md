@@ -4,6 +4,18 @@ Last updated: 2026-11-14
 
 ## Session handoff — read this first
 
+**2026-11-14 — Flight instructor added; 12 graded lessons.** `CitationX_FlightInstructor.lua`
+is the fifth panel: menu → brief → flying → debrief, 12 lessons in four sections, every item
+self-checked against the sim and held for 0.6 s (2 s for the ones that matter), Vref/VR/V2
+computed from actual weight, best score in `CitationX_TrainingProgress.txt`. Three lessons
+inject their own failure through the QRH trainer and grade its real checklist state, so the
+two panels share one failure lifecycle. The written syllabus is `docs/FLIGHT_TRAINING.md`.
+The hub went from 12 to 13 rows and the tree from 104 to 136 dataref bindings. Two
+pre-existing load-time bugs surfaced while testing and were fixed: `is_c750` (QRH) and
+`inst_is_c750` (instructor) started `false` and were only refreshed in their frame loops, so
+an action taken before the first frame got a spurious "C750 ONLY" refusal. Both now
+initialise from `PLANE_ICAO` at load. See §42.
+
 **2026-11-14 — Failure Trainer expanded to 14 scenarios; docs de-drifted.** The QRH trainer
 gained seven procedures: flap actuator, landing-gear indication, hydraulic B pump, APU
 fail-to-start, pitot/static blockage, elevator trim runaway and slow cabin decompression.
@@ -22,15 +34,15 @@ language is now the Modern Amusement dark field (`MA_WEBSITE/src/styles/globals.
 bottom bar: every panel's HIDE strip is brand green with dark text. See §37.
 
 The EFB was **deleted** on 2026-11-12 at the user's request (script, hub row, 21 commands,
-6 macros, airport CSV, `smoke_efb.lua`, `smoke_checklist.lua`, `efb.png`). The suite is four
-panel scripts plus the shared core: hub, QRH, cabin, realism. Do not resurrect it without
-being asked.
+6 macros, airport CSV, `smoke_efb.lua`, `smoke_checklist.lua`, `efb.png`). The suite is now
+five panel scripts plus the shared core: hub, QRH, cabin, instructor (added 2026-11-14),
+realism. Do not resurrect the EFB without being asked.
 
 Current suite: `CitationX_MasterSuite.lua` (hub + wheel/recorder/optimizer), `CitationX_Realism.lua`,
-`CitationX_FailureTrainer.lua`, `CitationX_CabinOps.lua`, loaded after `CitationX_00_Core.lua`.
-The hub shows 12 rows; the only pilot input the suite reads is the mouse wheel (thumbwheel →
-heading bug, wheel 2 → ALT SEL). The QRH trainer has 14 scenarios. 104 dataref bindings,
-0 load failures, 0 binding problems.
+`CitationX_FailureTrainer.lua`, `CitationX_FlightInstructor.lua`, `CitationX_CabinOps.lua`, loaded
+after `CitationX_00_Core.lua`. The hub shows 13 rows; the only pilot input the suite reads is the
+mouse wheel (thumbwheel → heading bug, wheel 2 → ALT SEL). The QRH trainer has 14 scenarios and
+the instructor has 12 lessons. 136 dataref bindings, 0 load failures, 0 binding problems.
 
 ## Older handoff notes (2026-10-30)
 
@@ -1992,3 +2004,106 @@ tests or docs were added; nothing in `Scripts/` changed.**
 
 Nothing below the two decisions was started; do not treat the MD-80 as supported until a
 script exists and `probe_load_order.lua` has loaded it in the shared state.
+
+## 42. Flight instructor — 12 graded lessons (2026-11-14)
+
+Asked for "a flight instructor so I can genuinely learn to fly it": graded in-sim lessons
+plus a written curriculum. Scope was confirmed as **panel + syllabus**, home region **SoCal**
+(KLAX, KSAN, local fields). The mission generator stays deleted; this is not a mission
+system and it does not teleport the aeroplane.
+
+### Files
+
+- `Scripts/CitationX_FlightInstructor.lua` — the panel and the syllabus (12 lessons, 4
+  sections, 66 graded items).
+- `tests/smoke_instructor.lua` — drives the whole state machine, a 100% ILS, a bad run, the
+  progress file, the QRH failure lifecycle and the panel.
+- `docs/FLIGHT_TRAINING.md` — ground school, limitations, speeds, the 12 lesson plans, SoCal
+  fields and a ten-flight study plan.
+- Edits to `CitationX_FailureTrainer.lua` (`qrh_is_complete`, `qrh_active_key`),
+  `CitationX_MasterSuite.lua` (hub row), `tests/smoke_hud_toggles.lua` (13 rows),
+  `tests/smoke_panel_geometry.lua` (instructor in all four states).
+
+### Design decisions
+
+- **No teleporting.** The panel cannot move the aeroplane, so every lesson's setup tells the
+  pilot to use X-Plane's own Flight Configuration (runway start, approach start at 3/10 NM
+  final, air start on downwind, cruise at FL350). This also keeps the lesson honest: setting
+  the scenario up is part of the exercise.
+- **One state machine.** `MENU → BRIEF → FLYING → DEBRIEF`. `fi_start` refuses if
+  `PLANE_ICAO ~= "C750"`; `fi_menu` clears any injected failure; `fi_brief` resets the run
+  but does not arm.
+- **Grading model.** Every criterion is `check(v, s)` against a snapshot of the sim's own
+  datarefs, and is awarded only after being continuously true for `hold` seconds (0.6
+  default, 1.5–2 s for speed/attitude/path items). This is the QRH trainer's "switch held"
+  idea applied to flying. A single-frame spike cannot score.
+- **Speed targets from weight.** `fi_vref_lb` interpolates the AFM simplified landing table
+  (23,000 lb/108 → 31,800 lb/132), `fi_tko_speeds` picks the AFM flaps-15 band (23–27k
+  114/116/129 … 33–35.7k 133/134/137). `fi_reset_run` reads `fi_weight_kg`, so a heavy
+  aeroplane gets higher targets; a cold-and-dark default of 24,000 lb keeps the first brief
+  sensible.
+- **Failure lifecycle is shared, not duplicated.** `engfail_tkof`, `noflap` and
+  `decompression` call `qrh_inject_by_key` and grade `qrh_is_complete()`. Leaving a lesson
+  calls `qrh_clear()`. Only the instructor's own injection is cleared — a failure the pilot
+  set by hand is left alone.
+- **Progress** is `CitationX_TrainingProgress.txt` next to the scripts, one `key=percent`
+  line per lesson, loaded at start-up. This is the only file the instructor writes.
+- **Exposed read-only helpers.** `fi_lessons`, `fi_section_list`, `fi_state`, `fi_best`,
+  `fi_snapshot`, `fi_panel_height` exist for the harnesses (the geometry test needs the
+  height to click the footer). They follow the `fi_` prefix; nothing else is added to the
+  shared namespace.
+- **`fi_*` globals.** All dataref names and state are prefixed, so the localStorage-style
+  single Lua state stays collision-free.
+
+### Accuracy corrections made during the build
+
+- The crosswind lesson originally taught a wing-low sideslip. The Operating Manual is
+  explicit that this wing **must not** be flown wing-down: crab with wings level, rudder to
+  align, land in a slight crab. The lesson was rewritten to grade wings-level-in-flare and
+  alignment, and the brief now quotes the real numbers (21 kt demonstrated, not limiting;
+  10 kt with manual controls).
+- The "no-flap" lesson is really a **flaps 15** landing: the QRH flap-actuator procedure
+  says flap lever 15 and the AFM single-engine/flap-failure technique is flaps 15 maximum.
+  Renamed to "FLAPS 15 LANDING (JAM)", retargeted to Vref+10…+25 (the AFM flaps-15 table is
+  the authority; full-flap Vref+15 is the training approximation).
+- The single-engine ILS was grading **full flaps** and Vref+10. The book is flaps 15 maximum,
+  Vref(flaps 15)+10 minimum until landing assured. Retargeted: flaps 15 + gear by 1,000 ft,
+  and speed graded as a floor (not below Vref+10).
+- The go-around rotation is **+7.5°** per the Operating Manual, not +10°; label, brief and
+  check updated.
+- Takeoff V1/VR/V2 were checked against the AFM simplified-criteria table (rendered from the
+  PDF to an image, because the table is a scan): 23–27k 114/116/129, 27–30k 116/119/127,
+  30–33k 125/128/132, 33–35.7k 133/134/137. The V2 dip is in the book.
+- Vref/Vapp were checked against the simplified landing table (108/110/115/121/126/132 and
+  +5). Vfe/Vle/Mmo/Vmo, the 500 ft speedbrake floor, the 190 KIAS VENR and the autopilot
+  minimum-use heights all come from AFM Section II.
+
+### Bugs found and fixed
+
+- `is_c750` in `CitationX_FailureTrainer.lua` and `inst_is_c750` in the instructor were
+  locals set `false` and only refreshed inside their `do_every_frame` callbacks. Any
+  injection or lesson start before the first frame got "C750 ONLY" and did nothing. Both are
+  now initialised from `PLANE_ICAO` at load and still refreshed every frame.
+- `fi_start` had the same first-frame dependency and is covered by the same fix.
+- `fi_snapshot` and `fi_panel_height` were locals; they were promoted to read-only globals
+  because the harnesses need to grade a cold airframe without a frame loop and to click the
+  footer without duplicating the layout maths.
+
+### Validation
+
+- `luac -p Scripts/*.lua` clean.
+- `check_datarefs`: 118 declarations across the five panel scripts (instructor 32),
+  0 problems.
+- `probe_load_order`: 10 scripts, 136 bindings, 0 load failures, 0 binding problems.
+- `check_kpcrew_modules C750`: 0 missing.
+- `smoke_instructor`: all pass (syllabus shape, cold-airframe safety, ILS 100%, bad run
+  < 50%, progress file, QRH injection/clear, four panel states, click/drag).
+- `smoke_panel_geometry`: 218 checks pass, including the instructor menu/brief/flying/debrief
+  and the 17-row menu at 1280×720.
+- `smoke_hud_toggles`: 13 rows pass.
+- MasterSuite, Realism smoke tests unchanged and passing.
+
+**Not yet seen in-sim.** The instructor has only run under the mock harnesses. First in-sim
+checks: lesson list fits the screen at 1440p and 720p, the live coach line, a real ILS
+arming and grading, the QRH panel opening over the instructor, and the progress file in
+`Scripts/`.

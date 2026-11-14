@@ -444,7 +444,7 @@ local proc_done    = false
 local qrh_rows     = {}    -- clickable rects, rebuilt each draw
 local toast_text   = nil
 local toast_until  = 0
-local is_c750      = false
+local is_c750      = (PLANE_ICAO == "C750")   -- refreshed every frame
 
 -- --------------------------------------------------------------- HELPERS ---
 local function qrh_toast(text)
@@ -503,6 +503,17 @@ end
 -- Read-only view for the offline harnesses (panel geometry, smoke tests).
 function qrh_scenarios()
     return SCENARIOS
+end
+
+-- Read-only view for CitationX_FlightInstructor.lua: the instructor grades a
+-- lesson's "QRH complete" item against the real checklist state, so the two
+-- panels share one source of truth instead of duplicating switch logic.
+function qrh_is_complete()
+    return active ~= nil and proc_done == true
+end
+
+function qrh_active_key()
+    return active and active.key or nil
 end
 
 function qrh_clear()

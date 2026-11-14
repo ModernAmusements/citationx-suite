@@ -1,16 +1,17 @@
-# Script status — verified 2026-11-14 (v3.0, MA dark theme, no EFB, 14 QRH scenarios)
+# Script status — verified 2026-11-14 (v3.0, MA dark theme, no EFB, 14 QRH scenarios, flight instructor)
 
 Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 `tests/check_kpcrew_modules.lua`, `tests/smoke_mastersuite.lua`, `tests/smoke_hud_toggles.lua`,
-`tests/smoke_realism.lua`, `tests/smoke_panel_geometry.lua`.
+`tests/smoke_realism.lua`, `tests/smoke_instructor.lua`, `tests/smoke_panel_geometry.lua`.
 
 ## Live in `Scripts/`
 
 | Script | State | Evidence / purpose |
 | --- | --- | --- |
 | `CitationX_00_Core.lua` | ✅ tests | Shared core, loaded first: the MA dark palette (`CX`) and the `cx_*` bar/text/fit/footer primitives every panel uses. No datarefs, commands or callbacks, so it cannot quarantine a panel. |
-| `CitationX_MasterSuite.lua` | ✅ tests | v3.0 hub. `status report` says `input layer = mouse wheel -> ALT SEL`. **No `do_on_keystroke`, no wheel/button map, no axis-to-heading knob any more** — the only pilot input the suite reads is the mouse wheel: the thumbwheel (wheel 1) moves the heading bug and wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. The wheel numbers and steps are configurable. Axis optimizer ON (pitch/roll deadzone + expo + smoothing, no key mapping), flight recorder, emergency generator, opt-in axis monitor, texture cycler (`sim/operation/next_livery`), AviTab app shortcuts, and the 12-row draggable hub at `SUITE_STYLE.x = 470`. `smoke_mastersuite.lua` pins the whole contract; `smoke_hud_toggles.lua` checks the registry; `smoke_panel_geometry.lua` renders the panel. |
-| `CitationX_FailureTrainer.lua` | ✅ works* | 14 QRH-style scenarios: engine fire L, generator L trip, bleed air L, boost pump L, flameout L, APU fire, hydraulic A/B, flap actuator, gear indication, APU fail-to-start, pitot/static, elevator trim runaway and slow cabin decompression, plus RANDOM. Every step self-checks against `sim/...` and `laminar/CitX/...`; `rel_flap_act` is written through XPLM because the Realism pack owns that writable binding. |
+| `CitationX_MasterSuite.lua` | ✅ tests | v3.0 hub. `status report` says `input layer = mouse wheel -> ALT SEL`. **No `do_on_keystroke`, no wheel/button map, no axis-to-heading knob any more** — the only pilot input the suite reads is the mouse wheel: the thumbwheel (wheel 1) moves the heading bug and wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. The wheel numbers and steps are configurable. Axis optimizer ON (pitch/roll deadzone + expo + smoothing, no key mapping), flight recorder, emergency generator, opt-in axis monitor, texture cycler (`sim/operation/next_livery`), AviTab app shortcuts, and the 13-row draggable hub at `SUITE_STYLE.x = 470`. `smoke_mastersuite.lua` pins the whole contract; `smoke_hud_toggles.lua` checks the registry; `smoke_panel_geometry.lua` renders the panel. |
+| `CitationX_FailureTrainer.lua` | ✅ tests | 14 QRH-style scenarios: engine fire L, generator L trip, bleed air L, boost pump L, flameout L, APU fire, hydraulic A/B, flap actuator, gear indication, APU fail-to-start, pitot/static, elevator trim runaway and slow cabin decompression, plus RANDOM. Every step self-checks against `sim/...` and `laminar/CitX/...`; `rel_flap_act` is written through XPLM because the Realism pack owns that writable binding. |
+| `CitationX_FlightInstructor.lua` | ✅ tests | New 2026-11-14; passes the offline harnesses, in-sim confirmation pending. 12 graded lessons in four sections: normal takeoff, rejected takeoff, engine failure at 400 ft, visual pattern, visual approach, crosswind, flaps-15 jam, ILS, RNAV, single-engine ILS, go-around and emergency descent. Menu → brief → flying → debrief, each item self-checked and held for a moment, Vref/VR/V2 from actual weight, best score in `CitationX_TrainingProgress.txt`. Three lessons inject their own failure through the QRH trainer and grade its real checklist state. `tests/smoke_instructor.lua` drives a clean ILS (100%), a bad run, the failure lifecycle and the panel; `docs/FLIGHT_TRAINING.md` is the written syllabus. |
 | `CitationX_CabinOps.lua` | ✅ works* | `Cabin & Ground Ops loaded` |
 | `CitationX_Realism.lua` | ✅ tests | one MA-dark Helvetica panel, a bank of **LEDs and bar gauges** instead of numbers: trim band, fuel balance, weight against MTOW/MLW, crosswind against the demonstrated limit, brake energy, bus voltage. Behind it: audio callouts (FMOD master bus), control check, takeoff trim/flap gate, fuel balance, weight limits, load-shed manager, brake fan, Vmo/Mmo overspeed, takeoff config, stabilised approach, gear-down confirmation, flap/gear overspeed, crosswind, icing/anti-ice and cabin-altitude advisories. Sustained flap overspeed tears off one flap (default right) and fails the actuator, sustained gear overspeed fails the gear actuator (`rel_gear_act`); `CitationXRealism/repair` clears both. `tests/smoke_realism.lua` drives all of it; `smoke_panel_geometry.lua` renders the panel |
 | `LandingPerformance.lua` | ✅ works* | `Landing Performance: C750 \| GOOD \| Score 76 \| -220 FPM \| 1.42 G` — scored a real landing |
@@ -106,17 +107,18 @@ upstream's design — do not test it in isolation and treat the failure as a bug
 
 ## Panel geometry (measured, not eyeballed)
 
-`tests/smoke_panel_geometry.lua` renders all four panels into a recording canvas and asserts
-that everything fits 2560×1440 (the realism panel also at 1280×720), that no vertical text
-collisions or text overflows its panel occur, that the default panel positions do not collide,
-that a vertical click sweep reaches every control-panel row, and that every panel's header drag
-moves it by the mouse delta and keeps the new position. It also injects, renders, measures and
-clears **every QRH scenario** (117 checks).
+`tests/smoke_panel_geometry.lua` renders all five panels into a recording canvas and asserts
+that everything fits 2560×1440 (the realism and instructor panels also at 1280×720), that no
+vertical text collisions or text overflows its panel occur, that the default panel positions do
+not collide, that a vertical click sweep reaches every control-panel row, and that every panel's
+header drag moves it by the mouse delta and keeps the new position. It also injects, renders,
+measures and clears **every QRH scenario**, and draws the instructor in all four states
+(218 checks).
 
 It also proves the MasterSuite overlay draws **nothing at all** when its control panel is
 switched off — there is no telemetry HUD and no C750 systems readback any more. At load the
-suite draws exactly two surfaces: the realism panel and the Master Suite hub. The other two
-panels are opened from the hub and share the same MA dark shell.
+suite draws exactly two surfaces: the realism panel and the Master Suite hub. The other three
+panels (cabin, QRH, instructor) are opened from the hub and share the same MA dark shell.
 
 This does not prove the panels *look* good — only that they are mathematically well formed.
 
@@ -140,5 +142,6 @@ luajit tests/probe_load_order.lua ../DataRefs.txt Scripts
 export TMPDIR="$(mktemp -d)/"
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_instructor.lua Scripts/CitationX_FlightInstructor.lua
 luajit tests/smoke_panel_geometry.lua
 ```

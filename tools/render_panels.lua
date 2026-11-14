@@ -103,6 +103,7 @@ end
 load_script("Scripts/CitationX_00_Core.lua")
 load_script("Scripts/CitationX_CabinOps.lua")
 load_script("Scripts/CitationX_FailureTrainer.lua")
+load_script("Scripts/CitationX_FlightInstructor.lua")
 load_script("Scripts/CitationX_MasterSuite.lua")
 load_script("Scripts/CitationX_Realism.lua")
 
@@ -128,6 +129,11 @@ cab_draw()
 new_frame("qrh")
 qrh_toggle_panel(true)
 qrh_draw()
+
+-- 6. flight instructor, lesson list
+new_frame("instructor")
+fi_toggle_panel(true)
+fi_draw()
 
 ------------------------------------------------------------ JSON emitter -----
 local function esc(s)

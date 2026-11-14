@@ -121,7 +121,7 @@ check(rawget(_G, "HUD_STYLE") == nil, "no HUD palette left behind")
 -- ---------- every module row is complete ----------
 local expected = {
   "status", "axis", "log", "emerg", "axmon", "texture", "wheel",
-  "avitab", "cabin", "qrh", "landperf", "realism",
+  "avitab", "cabin", "qrh", "instructor", "landperf", "realism",
 }
 local seen = {}
 for i, m in ipairs(SUITE_MODULES) do
@@ -152,7 +152,7 @@ for _, key in ipairs({ "hud", "systems" }) do
 end
 
 -- ---------- sibling-panel toggles present ----------
-for _, key in ipairs({ "cabin", "qrh", "landperf" }) do
+for _, key in ipairs({ "cabin", "qrh", "instructor", "landperf" }) do
   local found
   for _, m in ipairs(SUITE_MODULES) do if m.key == key then found = m end end
   check(found ~= nil, "sibling toggle present: " .. key)

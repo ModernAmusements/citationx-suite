@@ -395,6 +395,106 @@ do
   TRAINER_CONFIG.require_c750 = true
 end
 
+----------------------------------------------------------------- Instructor ---
+print("== CitationX_FlightInstructor.lua ==")
+do
+  -- The progress file lives in the FlyWithLua Scripts folder; give the harness
+  -- a scratch directory so a run can never touch the live one.
+  local tmp = os.getenv("TMPDIR") or os.getenv("TMP") or "/tmp/"
+  if tmp:sub(-1) ~= "/" then tmp = tmp .. "/" end
+  SCRIPT_DIRECTORY = tmp .. "citationx_instructor_geometry/"
+  os.execute("mkdir -p '" .. SCRIPT_DIRECTORY .. "'")
+
+  local chunk = assert(loadfile("Scripts/CitationX_FlightInstructor.lua"))
+  chunk()
+  fi_toggle_panel(true)        -- hidden at load; the hub opens it
+
+  reset()
+  fi_draw()
+  check(#drawn > 40, "instructor menu draws content", #drawn)
+  assert_on_screen("instructor-menu", nil)
+  assert_row_spacing("instructor-menu")
+  assert_text_inside_panel("instructor-menu")
+
+  -- header drag
+  local ix0, itop0 = FI_CONFIG.panel_x, FI_CONFIG.panel_top
+  MOUSE_STATUS = "down"
+  MOUSE_X, MOUSE_Y = ix0 + 20, itop0 - 10
+  RESUME_MOUSE_CLICK = false
+  fi_mouse_click()
+  check(RESUME_MOUSE_CLICK == true, "instructor header press starts a drag")
+  MOUSE_STATUS = "drag"
+  MOUSE_X, MOUSE_Y = ix0 + 20 + 90, itop0 - 10 - 60
+  fi_mouse_click()
+  check(math.abs(FI_CONFIG.panel_x - (ix0 + 90)) < 1
+    and math.abs(FI_CONFIG.panel_top - (itop0 - 60)) < 1,
+    "instructor panel follows the mouse while dragging")
+  MOUSE_STATUS = "up"
+  fi_mouse_click()
+  FI_CONFIG.panel_x, FI_CONFIG.panel_top = ix0, itop0
+
+  -- clicking the menu rows must be consumed, and never throw
+  local hit = 0
+  for y = itop0 - 20, 40, -6 do
+    MOUSE_STATUS = "down"; MOUSE_X = ix0 + 60; MOUSE_Y = y
+    RESUME_MOUSE_CLICK = false
+    local ok = pcall(fi_mouse_click)
+    check(ok, "instructor menu click at y=" .. y .. " does not error")
+    if RESUME_MOUSE_CLICK then hit = hit + 1 end
+    FI_CONFIG.panel_enabled = true
+    MOUSE_STATUS = "up"
+  end
+  check(hit > 0, "instructor menu consumes clicks on its rows", hit .. " hit(s)")
+
+  -- brief, flying and debrief all have their own layout
+  fi_menu()
+  fi_brief("ils")
+  reset()
+  fi_draw()
+  check(#drawn > 30, "instructor brief draws content", #drawn)
+  assert_on_screen("instructor-brief", nil)
+  assert_row_spacing("instructor-brief")
+  assert_text_inside_panel("instructor-brief")
+
+  fi_start("ils")
+  reset()
+  fi_draw()
+  check(#drawn > 30, "instructor flying panel draws content", #drawn)
+  assert_on_screen("instructor-flying", nil)
+  assert_row_spacing("instructor-flying")
+  assert_text_inside_panel("instructor-flying")
+
+  fi_finish(true)
+  reset()
+  fi_draw()
+  check(#drawn > 30, "instructor debrief draws content", #drawn)
+  assert_on_screen("instructor-debrief", nil)
+  assert_row_spacing("instructor-debrief")
+  assert_text_inside_panel("instructor-debrief")
+
+  -- the 17-row lesson list must survive a 720p screen too
+  SCREEN_WIDTH, SCREEN_HIGHT = 1280, 720
+  FI_CONFIG.panel_top = nil
+  fi_menu()
+  reset()
+  fi_draw()
+  assert_on_screen("instructor-menu-720p", nil)
+  SCREEN_WIDTH, SCREEN_HIGHT = screen_w, screen_h
+  FI_CONFIG.panel_top = nil
+
+  -- the HIDE PANEL footer closes it
+  reset()
+  fi_draw()
+  local bottom = FI_CONFIG.panel_top - fi_panel_height()
+  MOUSE_STATUS = "down"
+  MOUSE_X = FI_CONFIG.panel_x + FI_CONFIG.panel_w / 2
+  MOUSE_Y = bottom + FI_CONFIG.footer_h - 8
+  RESUME_MOUSE_CLICK = false
+  fi_mouse_click()
+  check(FI_CONFIG.panel_enabled == false, "instructor HIDE PANEL button closes the panel")
+  MOUSE_STATUS = "up"
+end
+
 ------------------------------------------------------------------- Realism ---
 print("== CitationX_Realism.lua ==")
 do

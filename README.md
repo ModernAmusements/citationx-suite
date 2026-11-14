@@ -1,14 +1,15 @@
 # Citation X Suite for FlyWithLua (X-Plane 12)
 
-Four FlyWithLua NG+ scripts for the Laminar Research Cessna Citation X (C750), plus a
-standalone landing-performance scorer.
+Five FlyWithLua NG+ scripts for the Laminar Research Cessna Citation X (C750), a
+flight-instructor syllabus with twelve graded lessons, and a standalone landing-performance
+scorer.
 
 > ⚠️ **WORK IN PROGRESS** — v3.0 is being verified in-sim. What has never been seen in
 > X-Plane yet: the restored AviTab cockpit screen (2026-10-31), callout timing in flight,
-> the 16-row black realism panel, the expanded 14-scenario QRH trainer, and the 8K dark
-> cockpit textures under the simulator's texture cap. Every script passes the offline
-> harnesses (see *Development and validation*); the remaining items are recorded in
-> `CONTEXT.md`.
+> the 16-row black realism panel, the expanded 14-scenario QRH trainer, the 12-lesson
+> flight instructor, and the 8K dark cockpit textures under the simulator's texture cap.
+> Every script passes the offline harnesses (see *Development and validation*); the
+> remaining items are recorded in `CONTEXT.md`.
 
 **Version 3.0 has no keyboard layer.** The suite reads exactly one pilot input — the mouse
 wheel — and everything else is a panel, a diagnostic or a command you can bind yourself.
@@ -18,7 +19,8 @@ wheel — and everything else is a panel, a diagnostic or a command you can bind
 ### The panels (rendered offline from the actual draw calls)
 
 The suite's on-screen surfaces: the Master Suite hub and the realism pack panel at load,
-plus the cabin-ops and QRH panels opened from the hub. There is no telemetry HUD —
+plus the cabin-ops, QRH and flight-instructor panels opened from the hub. There is no
+telemetry HUD —
 airspeed, altitude, heading, Mach, G, fuel flow, electrics, fuel and anti-ice stay on the
 aircraft's own PFD, EICAS and synoptics.
 
@@ -26,9 +28,9 @@ aircraft's own PFD, EICAS and synoptics.
 | --- | --- | --- |
 | [![load](docs/img/panels/load.png)](docs/img/panels/load.png) | [![hub](docs/img/panels/hub.png)](docs/img/panels/hub.png) | [![realism](docs/img/panels/realism.png)](docs/img/panels/realism.png) |
 
-| Cabin ops | QRH trainer |
-| --- | --- |
-| [![cabin](docs/img/panels/cabin.png)](docs/img/panels/cabin.png) | [![qrh](docs/img/panels/qrh.png)](docs/img/panels/qrh.png) |
+| Cabin ops | QRH trainer | Flight instructor |
+| --- | --- | --- |
+| [![cabin](docs/img/panels/cabin.png)](docs/img/panels/cabin.png) | [![qrh](docs/img/panels/qrh.png)](docs/img/panels/qrh.png) | [![instructor](docs/img/panels/instructor.png)](docs/img/panels/instructor.png) |
 
 ### Upscaled cockpit textures (work in progress)
 
@@ -56,6 +58,7 @@ transplant is backed up. **The textures themselves live in the aircraft mod**
 | `Scripts/CitationX_00_Core.lua` | Shared core, loaded first: the MA dark palette (`CX`) and the `cx_*` bar/text/fit/footer helpers. No datarefs, commands or callbacks. |
 | `Scripts/CitationX_MasterSuite.lua` | The hub. Axis optimizer (pitch/roll deadzone, expo, smoothing), 1 Hz flight recorder CSV, simulated bleed-air/pressurization emergency, opt-in axis monitor, aircraft texture cycler (X-Plane's own next/previous livery), AviTab app shortcuts, and the draggable control panel. The thumbwheel moves the heading bug and wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. Taxi and landing lights are published as commands. No keystrokes, no button map, no telemetry HUD. |
 | `Scripts/CitationX_FailureTrainer.lua` | 14 QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulic A/B, flap actuator, gear indication, APU fail-to-start, pitot/static, trim runaway, cabin decompression) with checklists that self-check against the aircraft's own datarefs. |
+| `Scripts/CitationX_FlightInstructor.lua` | 12 graded lessons in four sections (departure, pattern & landing, instrument, emergency), each with a written brief and a sim setup, graded against the sim's own datarefs and held for a moment so a lucky frame does not score. Speeds from actual weight; best score per lesson in `CitationX_TrainingProgress.txt`; three lessons inject their own failure through the QRH trainer. Written syllabus: [`docs/FLIGHT_TRAINING.md`](docs/FLIGHT_TRAINING.md). |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
 | `Scripts/CitationX_Realism.lua` | Realism pack: one MA-dark panel of LEDs and bar gauges (trim band, fuel balance, weight against MTOW/MLW, crosswind against the demonstrated limit, brake energy, bus voltage) with clickable toggles. Behind it: audio callouts (V1, rotate, positive rate, gear up/down, 1000/500/100, minimums, stable/unstable, fuel imbalance, crosswind, overweight) on FlyWithLua's FMOD master bus; flight-controls check; takeoff trim/flap gate; fuel-balance monitor; MTOW/MLW limits; electrical load manager that drives the aircraft's own LOAD SHED switch; brake-energy monitor that runs the brake fan; Vmo/Mmo overspeed, takeoff-config, flap/gear overspeed, anti-ice-off, icing, cabin-altitude and crosswind advisories (each also raises a 2 s toast); sustained flap overspeed tears off one flap (default right, `flap_damage_side`) and fails the actuator, sustained gear overspeed fails the gear actuator (`rel_gear_act`), repairable with `CitationXRealism/repair`. |
 | `Scripts/LandingPerformance.lua` | Standalone landing scoring and debrief card (third-party, untracked in git). |
@@ -114,11 +117,32 @@ nothing.
 | AVITAB CHARTS | `avitab` | Opens AviTab's charts app |
 | CABIN OPS | `cabin` | `CitationX_CabinOps` panel |
 | QRH TRAINER | `qrh` | `CitationX_FailureTrainer` panel |
+| FLIGHT INSTRUCTOR | `instructor` | `CitationX_FlightInstructor` lesson panel |
 | LANDING PERF | `landperf` | `LandingPerformance` result card |
 | REALISM PACK | `realism` | `CitationX_Realism` callouts and load manager |
 
 The sibling rows are nil-guarded: if that script is not installed the row shows
 `ABSENT` and clicking it does nothing.
+
+## Flight training
+
+`CitationX_FlightInstructor.lua` turns the suite into a graded course: twelve lessons in
+four sections — normal takeoff, rejected takeoff, engine failure at 400 ft, visual pattern,
+visual approach, crosswind, flaps-15 jam, ILS, RNAV, single-engine ILS, go-around and
+emergency descent.
+
+* Pick a lesson from the panel, read the brief and the sim setup, press `START`.
+* The panel grades the sim's own datarefs, item by item, and only awards an item when it
+  has been held for a moment. The brief is the standard; the debrief is the feedback.
+* Vref, VR and V2 come from the aeroplane's actual weight, so a heavy jet gets higher
+  targets.
+* The best score per lesson is kept in `CitationX_TrainingProgress.txt`.
+* Three lessons inject their own failure through the QRH trainer, so the checklist and the
+  lesson work on the same aeroplane.
+
+The written syllabus — limitations, speeds, the normal profile, all twelve lesson plans, a
+SoCal practice-field table and a ten-flight study plan — is
+[`docs/FLIGHT_TRAINING.md`](docs/FLIGHT_TRAINING.md).
 
 ### AviTab
 
@@ -181,6 +205,9 @@ stays untracked via `.gitignore`.
   monitor. Panel layout lives in `SUITE_STYLE` (`row_h`, `header_h`, `footer_h`, `pad`, `x`/`top`).
 - `CitationX_CabinOps.lua` — `CAB_CONFIG` (`row_h` controls row spacing).
 - `CitationX_FailureTrainer.lua` — `TRAINER_CONFIG` (`row_h` controls row spacing).
+- `CitationX_FlightInstructor.lua` — `FI_CONFIG` (`panel_w`, `row_h`, `require_c750`) and
+  `FI_STYLE`. Lesson content (briefs, setups, criteria, target speeds) lives in `FI_LESSONS`
+  in the same file; the AFM speed tables are the file-local `FI_VREF_TABLE` and `FI_TKO_TABLE`.
 - `CitationX_Realism.lua` — `REAL_CONFIG`: callout speeds (V1/Vr/Vref/Vfe/Vle), Vmo/Mmo,
   minima, load-shed threshold, brake-energy limits, icing window, anti-ice/cabin-altitude
   triggers, stabilised-approach gate, takeoff trim/flap gate (`to_flap_*`,
@@ -234,6 +261,7 @@ export TMPDIR="$(mktemp -d)/"
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_realism.lua Scripts/CitationX_Realism.lua
+HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_instructor.lua Scripts/CitationX_FlightInstructor.lua
 luajit tests/smoke_panel_geometry.lua
 
 # re-render the README panel screenshots from the actual draw calls
