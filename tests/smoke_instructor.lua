@@ -92,7 +92,7 @@ assert(loadfile(script))()
 
 check(type(FI_CONFIG) == "table", "FI_CONFIG exists")
 check(type(FI_STYLE) == "table", "FI_STYLE exists")
-check(FI_CONFIG.panel_enabled == false, "instructor panel starts hidden")
+check(FI_CONFIG.panel_enabled == true, "instructor panel is visible at load")
 
 -- ---------- syllabus ----------
 local lessons = fi_lessons()

@@ -2033,6 +2033,9 @@ system and it does not teleport the aeroplane.
 - **One state machine.** `MENU → BRIEF → FLYING → DEBRIEF`. `fi_start` refuses if
   `PLANE_ICAO ~= "C750"`; `fi_menu` clears any injected failure; `fi_brief` resets the run
   but does not arm.
+- **Visible at load.** The panel starts on screen (bottom-right, next to the realism panel
+  and hub) so the lesson list is one glance away. Hiding it via the footer or the hub
+  abandons the run and clears the instructor's own failure; reopening shows the list.
 - **Grading model.** Every criterion is `check(v, s)` against a snapshot of the sim's own
   datarefs, and is awarded only after being continuously true for `hold` seconds (0.6
   default, 1.5–2 s for speed/attitude/path items). This is the QRH trainer's "switch held"

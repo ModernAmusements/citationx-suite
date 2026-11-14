@@ -18,9 +18,9 @@ wheel — and everything else is a panel, a diagnostic or a command you can bind
 
 ### The panels (rendered offline from the actual draw calls)
 
-The suite's on-screen surfaces: the Master Suite hub and the realism pack panel at load,
-plus the cabin-ops, QRH and flight-instructor panels opened from the hub. There is no
-telemetry HUD —
+The suite's on-screen surfaces: the Master Suite hub, the realism pack panel and the
+flight-instructor lesson list at load, plus the cabin-ops and QRH panels opened from the
+hub. There is no telemetry HUD —
 airspeed, altitude, heading, Mach, G, fuel flow, electrics, fuel and anti-ice stay on the
 aircraft's own PFD, EICAS and synoptics.
 
@@ -65,7 +65,8 @@ transplant is backed up. **The textures themselves live in the aircraft mod**
 
 ## Control panel
 
-**Two panels are on screen at load: the black realism panel and the Master Suite hub.**
+**Three panels are on screen at load: the black realism panel, the Master Suite hub and the
+flight-instructor lesson list.**
 The suite registers no keystroke handler and no controller-button map, so every key and every
 button belongs to X-Plane's own profiles. It reads exactly one pilot input — the mouse wheel —
 and only to move the two autopilot selectors:

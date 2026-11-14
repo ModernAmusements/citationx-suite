@@ -117,8 +117,9 @@ measures and clears **every QRH scenario**, and draws the instructor in all four
 
 It also proves the MasterSuite overlay draws **nothing at all** when its control panel is
 switched off — there is no telemetry HUD and no C750 systems readback any more. At load the
-suite draws exactly two surfaces: the realism panel and the Master Suite hub. The other three
-panels (cabin, QRH, instructor) are opened from the hub and share the same MA dark shell.
+suite draws three surfaces: the realism panel, the Master Suite hub and the flight-instructor
+lesson list (bottom-right). Only the cabin and QRH panels are opened from the hub, and all
+five share the same MA dark shell.
 
 This does not prove the panels *look* good — only that they are mathematically well formed.
 

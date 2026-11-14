@@ -34,7 +34,9 @@
 -- ============================================================================
 
 FI_CONFIG = {
-    panel_enabled = false,   -- hidden at load; the Master Suite hub opens it
+    -- Visible at load so the lesson list is one glance away; the hub row and
+    -- the macro still toggle it, and hiding it abandons the run.
+    panel_enabled = true,
     panel_x       = nil,     -- nil = bottom-right on first draw (the QRH keeps
                              -- the bottom-left, so a failure lesson shows both)
     panel_top     = nil,     -- nil = bottom-left (60 px) on first draw
