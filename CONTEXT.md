@@ -10,7 +10,7 @@ self-checked against the sim and held for 0.6 s (2 s for the ones that matter), 
 computed from actual weight, best score in `CitationX_TrainingProgress.txt`. Three lessons
 inject their own failure through the QRH trainer and grade its real checklist state, so the
 two panels share one failure lifecycle. The written syllabus is `docs/FLIGHT_TRAINING.md`.
-The hub went from 12 to 13 rows and the tree from 104 to 136 dataref bindings. Two
+The hub went from 12 to 13 rows and the tree from 104 to 138 dataref bindings. Two
 pre-existing load-time bugs surfaced while testing and were fixed: `is_c750` (QRH) and
 `inst_is_c750` (instructor) started `false` and were only refreshed in their frame loops, so
 an action taken before the first frame got a spurious "C750 ONLY" refusal. Both now
@@ -42,7 +42,7 @@ Current suite: `CitationX_MasterSuite.lua` (hub + wheel/recorder/optimizer), `Ci
 `CitationX_FailureTrainer.lua`, `CitationX_FlightInstructor.lua`, `CitationX_CabinOps.lua`, loaded
 after `CitationX_00_Core.lua`. The hub shows 13 rows; the only pilot input the suite reads is the
 mouse wheel (thumbwheel → heading bug, wheel 2 → ALT SEL). The QRH trainer has 14 scenarios and
-the instructor has 12 lessons. 136 dataref bindings, 0 load failures, 0 binding problems.
+the instructor has 12 lessons. 138 dataref bindings, 0 load failures, 0 binding problems.
 
 ## Older handoff notes (2026-10-30)
 
@@ -2010,7 +2010,8 @@ script exists and `probe_load_order.lua` has loaded it in the shared state.
 Asked for "a flight instructor so I can genuinely learn to fly it": graded in-sim lessons
 plus a written curriculum. Scope was confirmed as **panel + syllabus**, home region **SoCal**
 (KLAX, KSAN, local fields). The mission generator stays deleted; this is not a mission
-system and it does not teleport the aeroplane.
+system. The instructor can reposition the aeroplane, but only when the pilot presses
+`SET ME UP`.
 
 ### Files
 
@@ -2026,10 +2027,17 @@ system and it does not teleport the aeroplane.
 
 ### Design decisions
 
-- **No teleporting.** The panel cannot move the aeroplane, so every lesson's setup tells the
-  pilot to use X-Plane's own Flight Configuration (runway start, approach start at 3/10 NM
-  final, air start on downwind, cruise at FL350). This also keeps the lesson honest: setting
-  the scenario up is part of the exercise.
+- **SET ME UP.** The brief has a setup button that places and configures the aeroplane:
+  threshold, 3/5/10 NM final, downwind or FL350, with gear/flaps/throttle/autopilot/NAV1.
+  Threshold coordinates and true headings come from X-Plane's own `apt.dat`, and the move
+  is a delta on the writable `local_x/z/y` doubles, so it works without teleporting via a
+  read-only lat/lon. It refuses beyond 40 NM (`setup_max_nm`) rather than tear the scenery.
+  Weather is deliberately not changed; the manual Flight Configuration route still works
+  (`START` does not move anything).
+- **Readable status.** The brief shows the actual weight and the Vref/VR/V2 the panel will
+  grade, a two-line TECHNIQUE note per lesson and the last SETUP result. The flying panel
+  adds a status line (gear/flap/autopilot/NAV signal/items met), the menu shows the average
+  and how many lessons are flown, and the debrief shows the best score.
 - **One state machine.** `MENU → BRIEF → FLYING → DEBRIEF`. `fi_start` refuses if
   `PLANE_ICAO ~= "C750"`; `fi_menu` clears any injected failure; `fi_brief` resets the run
   but does not arm.
@@ -2095,13 +2103,13 @@ system and it does not teleport the aeroplane.
 ### Validation
 
 - `luac -p Scripts/*.lua` clean.
-- `check_datarefs`: 118 declarations across the five panel scripts (instructor 32),
+- `check_datarefs`: 120 declarations across the five panel scripts (instructor 34),
   0 problems.
-- `probe_load_order`: 10 scripts, 136 bindings, 0 load failures, 0 binding problems.
+- `probe_load_order`: 10 scripts, 138 bindings, 0 load failures, 0 binding problems.
 - `check_kpcrew_modules C750`: 0 missing.
 - `smoke_instructor`: all pass (syllabus shape, cold-airframe safety, ILS 100%, bad run
   < 50%, progress file, QRH injection/clear, four panel states, click/drag).
-- `smoke_panel_geometry`: 218 checks pass, including the instructor menu/brief/flying/debrief
+- `smoke_panel_geometry`: 221 checks pass, including the instructor menu/brief/flying/debrief
   and the 17-row menu at 1280×720.
 - `smoke_hud_toggles`: 13 rows pass.
 - MasterSuite, Realism smoke tests unchanged and passing.

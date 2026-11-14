@@ -8,9 +8,10 @@
 --
 --  Lesson flow:  LESSON LIST -> BRIEF -> FLYING -> DEBRIEF -> (retry / next)
 --
---    * every lesson has a written brief and a sim setup line, because the
---      panel cannot teleport you: you set the approach up with X-Plane's own
---      Flight Configuration (runway or 3/10 NM final) and this grades it
+--    * every lesson has a written brief and a sim setup line; SET ME UP places
+--      and configures the aeroplane for you (runway threshold, final, downwind
+--      or cruise) within 40 NM of the field, or you can do it by hand in
+--      X-Plane's Flight Configuration
 --    * each graded item self-checks against the sim's own datarefs, and is
 --      only awarded once it has been held for a moment - same idea as the QRH
 --      trainer's switch checks, applied to flying
@@ -46,6 +47,7 @@ FI_CONFIG = {
     footer_h      = 34,
     pad           = 14,
     require_c750  = true,
+    setup_max_nm  = 40,     -- SET ME UP refuses a cross-country jump
 }
 
 -- Geometry only; colours come from the shared MA dark field (CX).
@@ -108,6 +110,8 @@ dataref("fi_hdef",       "sim/cockpit2/radios/indicators/hsi_hdef_dots_pilot", "
 dataref("fi_vdef",       "sim/cockpit2/radios/indicators/hsi_vdef_dots_pilot", "readonly")
 dataref("fi_dme",        "sim/cockpit2/radios/indicators/nav1_dme_distance_nm", "readonly")
 dataref("fi_gps_xtk",    "sim/cockpit2/radios/indicators/gps_xtk",      "readonly")
+dataref("fi_nav1_h",     "sim/cockpit2/radios/indicators/nav1_display_horizontal", "readonly")
+dataref("fi_nav1_v",     "sim/cockpit2/radios/indicators/nav1_display_vertical",   "readonly")
 
 -- Wind (for the crosswind lesson readout).
 dataref("fi_wind_kts",   "sim/cockpit2/gauges/indicators/wind_speed_kts", "readonly")
@@ -181,11 +185,172 @@ local function fi_abs(x)
     return x and math.abs(x) or 999
 end
 
+-- ------------------------------------------------------------- AUTO SETUP ----
+-- "SET ME UP" places the aeroplane where the lesson begins instead of asking
+-- the pilot to do it in Flight Configuration. Thresholds and true headings are
+-- taken from X-Plane's own apt.dat (Global Airports), so the final is on the
+-- real centreline; nothing here is invented.
+--
+-- Only the current position is moved (local_x/z/y deltas), so this works
+-- without touching the read-only lat/lon datarefs. Refused beyond 40 NM from
+-- the field: a long jump would tear the scenery.
+local FI_RUNWAYS = {
+    KLAX_25L = { lat = 33.9373695, lon = -118.3827247, hdg = 262.97,
+                 elev_ft = 125, nav = 10990, icao = "KLAX" },  -- ILS ILAX 109.90
+    KLAX_07L = { lat = 33.9355612, lon = -118.4220740, hdg =  82.97,
+                 elev_ft = 125, nav = 11110, icao = "KLAX" },  -- ILS IIAS 111.10
+    KSAN_27  = { lat = 32.7299936, lon = -117.1749683, hdg = 286.08,
+                 elev_ft =  17, nav = nil,   icao = "KSAN" },  -- RNAV, no ILS
+    KSNA_20R = { lat = 33.6816573, lon = -117.8650825, hdg = 207.80,
+                 elev_ft =  56, nav = 11175, icao = "KSNA" },  -- ILS ISNA 111.75
+}
+
+local FI_REF = {}   -- XPLM handles, resolved once on the first setup
+
+local function fi_ref(name)
+    return XPLMFindDataRef(name)
+end
+
+local function fi_setup_refs()
+    if FI_REF.lat then return FI_REF end
+    FI_REF.lat      = fi_ref("sim/flightmodel/position/latitude")
+    FI_REF.lon      = fi_ref("sim/flightmodel/position/longitude")
+    FI_REF.elev     = fi_ref("sim/flightmodel/position/elevation")
+    FI_REF.lx       = fi_ref("sim/flightmodel/position/local_x")
+    FI_REF.ly       = fi_ref("sim/flightmodel/position/local_y")
+    FI_REF.lz       = fi_ref("sim/flightmodel/position/local_z")
+    FI_REF.psi      = fi_ref("sim/flightmodel/position/psi")
+    FI_REF.theta    = fi_ref("sim/flightmodel/position/theta")
+    FI_REF.phi      = fi_ref("sim/flightmodel/position/phi")
+    FI_REF.vx       = fi_ref("sim/flightmodel/position/local_vx")
+    FI_REF.vy       = fi_ref("sim/flightmodel/position/local_vy")
+    FI_REF.vz       = fi_ref("sim/flightmodel/position/local_vz")
+    FI_REF.gear     = fi_ref("sim/cockpit2/controls/gear_handle_down")
+    FI_REF.flap     = fi_ref("sim/cockpit2/controls/flap_handle_request_ratio")
+    FI_REF.brake    = fi_ref("sim/cockpit2/controls/speedbrake_ratio")
+    FI_REF.park     = fi_ref("sim/flightmodel/controls/parkbrake")
+    FI_REF.throttle = fi_ref("sim/cockpit2/engine/actuators/throttle_ratio_all")
+    FI_REF.nav1     = fi_ref("sim/cockpit2/radios/actuators/nav1_frequency_hz")
+    return FI_REF
+end
+
+-- Move a lat/lon by a distance (metres) along a true heading.
+local function fi_move_latlon(lat, lon, hdg_deg, dist_m)
+    local r  = math.rad(hdg_deg)
+    local dn = dist_m * math.cos(r)
+    local de = dist_m * math.sin(r)
+    local dlat = dn / 111320.0
+    local dlon = de / (111320.0 * math.cos(math.rad(lat)))
+    return lat + dlat, lon + dlon
+end
+
+local function fi_dist_nm(lat1, lon1, lat2, lon2)
+    local dn = (lat2 - lat1) * 111320.0
+    local de = (lon2 - lon1) * 111320.0 * math.cos(math.rad((lat1 + lat2) / 2))
+    return math.sqrt(dn * dn + de * de) / 1852.0
+end
+
+-- Put the aeroplane at a target position/attitude/speed. Everything is a delta
+-- on the OpenGL local frame (+X east, +Y up, +Z south), which is writable.
+local function fi_place_at(lat, lon, elev_ft, hdg, pitch, ias, fpm)
+    local ref = fi_setup_refs()
+    local lat0  = XPLMGetDatad(ref.lat)
+    local lon0  = XPLMGetDatad(ref.lon)
+    local elev0 = XPLMGetDatad(ref.elev)
+    if not lat0 or not lon0 or not elev0 then return false end
+
+    local dn = (lat - lat0) * 111320.0
+    local de = (lon - lon0) * 111320.0 * math.cos(math.rad((lat + lat0) / 2))
+    XPLMSetDatad(ref.lx, XPLMGetDatad(ref.lx) + de)
+    XPLMSetDatad(ref.lz, XPLMGetDatad(ref.lz) - dn)
+    XPLMSetDatad(ref.ly, XPLMGetDatad(ref.ly) + (elev_ft * 0.3048 - elev0))
+
+    XPLMSetDataf(ref.psi,   hdg)
+    XPLMSetDataf(ref.theta, pitch or 0)
+    XPLMSetDataf(ref.phi,   0)
+
+    local gs = (ias or 0) * 0.514444
+    XPLMSetDataf(ref.vx,  gs * math.sin(math.rad(hdg)))
+    XPLMSetDataf(ref.vz, -gs * math.cos(math.rad(hdg)))
+    XPLMSetDataf(ref.vy,  (fpm or 0) * 0.00508)
+    return true
+end
+
+local function fi_apply_place(place)
+    local rw = FI_RUNWAYS[place.runway]
+    if not rw then return false, "no runway data" end
+
+    local ref = fi_setup_refs()
+    local lat0, lon0 = XPLMGetDatad(ref.lat), XPLMGetDatad(ref.lon)
+    if not lat0 or not lon0 then return false, "no position" end
+    if fi_dist_nm(lat0, lon0, rw.lat, rw.lon) > (FI_CONFIG.setup_max_nm or 40) then
+        return false, "load " .. tostring(rw.icao) .. " first"
+    end
+
+    local hdg     = rw.hdg
+    local lat, lon = rw.lat, rw.lon
+    local elev_ft = rw.elev_ft
+    local pitch, fpm, ias = 0, 0, 0
+
+    if place.kind == "final" then
+        lat, lon = fi_move_latlon(rw.lat, rw.lon, (hdg + 180) % 360,
+                                  (place.dist_nm or 10) * 1852)
+        elev_ft = rw.elev_ft + (place.dist_nm or 10) * 318.0 + 50
+        pitch, fpm, ias = 2.0, -700, place.ias or 140
+    elseif place.kind == "runway" then
+        lat, lon = fi_move_latlon(rw.lat, rw.lon, hdg, 60)
+        elev_ft  = rw.elev_ft + 1
+        ias      = 0
+    elseif place.kind == "downwind" then
+        -- Start before the threshold in the landing direction, offset left.
+        lat, lon = fi_move_latlon(rw.lat, rw.lon, hdg, 1.5 * 1852)
+        lat, lon = fi_move_latlon(lat, lon, (hdg - 90) % 360, 1.5 * 1852)
+        elev_ft  = rw.elev_ft + (place.alt_ft or 1500)
+        hdg      = (hdg + 180) % 360
+        ias      = place.ias or 180
+    elseif place.kind == "cruise" then
+        elev_ft  = place.alt_ft or 35000
+        ias      = place.ias or 250
+    else
+        return false, "unknown setup"
+    end
+
+    if place.kind == "cruise" then
+        -- Set a ground speed that gives roughly the requested IAS at altitude.
+        ias = ias * 1.7
+    end
+
+    if not fi_place_at(lat, lon, elev_ft, hdg, pitch, ias, fpm) then
+        return false, "no position"
+    end
+
+    if ref.gear     then XPLMSetDatai(ref.gear, place.gear or 0) end
+    if ref.flap     then XPLMSetDataf(ref.flap, place.flap or 0) end
+    if ref.brake    then XPLMSetDataf(ref.brake, 0) end
+    if ref.park     then XPLMSetDataf(ref.park, 0) end
+    if ref.throttle then
+        XPLMSetDataf(ref.throttle,
+            place.throttle or (place.kind == "runway" and 0.0 or 0.60))
+    end
+
+    if place.ap then
+        command_once("sim/autopilot/servos_on")
+    else
+        command_once("sim/autopilot/servos_fdir_off")
+    end
+
+    if place.nav and rw.nav and ref.nav1 then
+        XPLMSetDatai(ref.nav1, rw.nav)
+        command_once("sim/autopilot/hsi_select_nav_1")
+    end
+    return true
+end
+
 -- ---------------------------------------------------------------- LESSONS ---
 -- Criteria are checked every frame; they are awarded once held for `hold`
 -- seconds (default 0.6). `hint` is the instruction the coach shows next.
--- `arm` decides when grading starts (the sim cannot be teleported, so the
--- pilot sets the scenario up with X-Plane's own Flight Configuration).
+-- `arm` decides when grading starts (SET ME UP places the aeroplane, but the
+-- pilot may also set the scenario up by hand with Flight Configuration).
 local FI_LESSONS = {
     -- ------------------------------------------------------- DEPARTURE ------
     {
@@ -203,6 +368,11 @@ local FI_LESSONS = {
             "Press START, then release the brakes.",
         },
         waiting = "release the brakes and roll",
+        detail = {
+            "Rotate smoothly at VR - do not yank it off.",
+            "V2+10 to 3,000 ft, then clean up and accelerate.",
+        },
+        place = { runway = "KLAX_07L", kind = "runway", gear = 1, flap = 0.75 },
         arm = function(v, s) return v.on_ground == 1 and v.ias > 20 end,
         criteria = {
             { label = "ROTATE AT VR", hint = "ROTATE AT VR - 10 DEGREES",
@@ -249,6 +419,11 @@ local FI_LESSONS = {
             "V1 is 114-133 KIAS depending on weight.",
         },
         waiting = "start the takeoff roll",
+        detail = {
+            "Below V1 a stop is cheaper than a fly; above it, fly.",
+            "Both feet on the rudder, boards out, do not release.",
+        },
+        place = { runway = "KLAX_07L", kind = "runway", gear = 1, flap = 0.75 },
         arm = function(v, s) return v.on_ground == 1 and v.ias > 25 end,
         update = function(v, s, dt)
             -- The abort is "seen" the first time power comes off at speed.
@@ -298,6 +473,11 @@ local FI_LESSONS = {
             "The QRH flameout checklist opens itself.",
         },
         waiting = "start the takeoff roll",
+        detail = {
+            "Fly the aeroplane first: hold V2, ball centred.",
+            "Then gear, flaps at V2+15, VENR 190, and the QRH.",
+        },
+        place = { runway = "KLAX_07L", kind = "runway", gear = 1, flap = 0.75 },
         arm = function(v, s) return v.on_ground == 1 and v.ias > 20 end,
         update = function(v, s, dt)
             if not s.injected and v.on_ground == 0 and v.agl > 400 then
@@ -362,6 +542,12 @@ local FI_LESSONS = {
             "Press START on the downwind leg.",
         },
         waiting = "get airborne on the downwind",
+        detail = {
+            "Abeam: flaps 15 and gear; base 160; final Vref+5.",
+            "If you are not stable at 300 ft, go around.",
+        },
+        place = { runway = "KLAX_07L", kind = "downwind", alt_ft = 1500, ias = 180,
+                  gear = 0, flap = 0 },
         arm = function(v, s)
             return v.on_ground == 0 and v.agl > 500 and v.ias < 250
         end,
@@ -416,6 +602,12 @@ local FI_LESSONS = {
             "Day, no wind, then press START.",
         },
         waiting = "roll out on final",
+        detail = {
+            "No guidance: put the runway on the aim point.",
+            "Configured by 1,000 ft, Vref by 500, wings level.",
+        },
+        place = { runway = "KLAX_25L", kind = "final", dist_nm = 5, ias = 170,
+                  gear = 0, flap = 0.5 },
         arm = function(v, s)
             return v.on_ground == 0 and v.agl > 400 and v.agl < 6000 and v.ias < 250
         end,
@@ -470,6 +662,12 @@ local FI_LESSONS = {
             "Fly a normal approach, then press START.",
         },
         waiting = "roll out on final",
+        detail = {
+            "Crab with wings level; rudder in the flare to align.",
+            "Do not use a wing-down sideslip in this wing.",
+        },
+        place = { runway = "KLAX_25L", kind = "final", dist_nm = 5, ias = 145,
+                  gear = 1, flap = 0.75 },
         arm = function(v, s)
             return v.on_ground == 0 and v.agl > 200 and v.agl < 3000 and v.ias < 220
         end,
@@ -516,6 +714,12 @@ local FI_LESSONS = {
             "Vref + 15 is the target over the fence.",
         },
         waiting = "roll out on final",
+        detail = {
+            "Flaps 15 per the QRH, not full. Long runway only.",
+            "Expect a faster, flatter approach and a long float.",
+        },
+        place = { runway = "KLAX_25L", kind = "final", dist_nm = 10, ias = 175,
+                  gear = 0, flap = 0.75 },
         arm = function(v, s)
             return v.on_ground == 0 and v.agl > 300 and v.agl < 6000 and v.ias < 240
         end,
@@ -571,17 +775,25 @@ local FI_LESSONS = {
             "Arm APPR, then press START.",
         },
         waiting = "capture the localiser",
+        detail = {
+            "Gear and flaps 15 by capture; full flaps by 500 ft.",
+            "Autopilot off by 170 ft - it must be off for landing.",
+        },
+        place = { runway = "KLAX_25L", kind = "final", dist_nm = 10, ias = 145,
+                  gear = 1, flap = 0.75, nav = true },
         arm = function(v, s)
             return v.on_ground == 0 and fi_between(v.agl, 800, 4500) and v.ias < 260
         end,
         criteria = {
             { label = "LOCALISER +/- 1 DOT AT 500", hint = "TRACK THE LOCALISER",
               check = function(v, s)
-                  return fi_between(v.agl, 420, 540) and fi_abs(v.hdef) <= 1.0
+                  return v.nav1_h == 1
+                     and fi_between(v.agl, 420, 540) and fi_abs(v.hdef) <= 1.0
               end },
             { label = "GLIDESLOPE +/- 1 DOT AT 500", hint = "TRACK THE GLIDESLOPE",
               check = function(v, s)
-                  return fi_between(v.agl, 420, 540) and fi_abs(v.vdef) <= 1.0
+                  return v.nav1_v == 1
+                     and fi_between(v.agl, 420, 540) and fi_abs(v.vdef) <= 1.0
               end },
             { label = "GEAR + FULL FLAPS BY 1,000", hint = "GEAR DOWN, FULL FLAPS",
               check = function(v, s)
@@ -628,6 +840,12 @@ local FI_LESSONS = {
             "Press START once established inbound.",
         },
         waiting = "establish inbound on the final approach course",
+        detail = {
+            "No glideslope: 318 ft per NM is your vertical path.",
+            "Match sink to ground speed, not to the altimeter.",
+        },
+        place = { runway = "KSAN_27", kind = "final", dist_nm = 10, ias = 145,
+                  gear = 1, flap = 0.75 },
         arm = function(v, s)
             return v.on_ground == 0 and fi_between(v.agl, 500, 6000) and v.ias < 260
         end,
@@ -675,6 +893,12 @@ local FI_LESSONS = {
             "you are inside 3,000 ft AGL.",
         },
         waiting = "capture the localiser",
+        detail = {
+            "Flaps 15, Vref(15)+10 minimum, trim it out.",
+            "Wings level; the missed approach is always available.",
+        },
+        place = { runway = "KLAX_25L", kind = "final", dist_nm = 10, ias = 155,
+                  gear = 1, flap = 0.75, nav = true },
         arm = function(v, s)
             return v.on_ground == 0 and fi_between(v.agl, 800, 4500) and v.ias < 260
         end,
@@ -693,11 +917,13 @@ local FI_LESSONS = {
         criteria = {
             { label = "LOCALISER +/- 1 DOT AT 500", hint = "TRACK THE LOCALISER",
               check = function(v, s)
-                  return fi_between(v.agl, 420, 540) and fi_abs(v.hdef) <= 1.0
+                  return v.nav1_h == 1
+                     and fi_between(v.agl, 420, 540) and fi_abs(v.hdef) <= 1.0
               end },
             { label = "GLIDESLOPE +/- 1 DOT AT 500", hint = "TRACK THE GLIDESLOPE",
               check = function(v, s)
-                  return fi_between(v.agl, 420, 540) and fi_abs(v.vdef) <= 1.0
+                  return v.nav1_v == 1
+                     and fi_between(v.agl, 420, 540) and fi_abs(v.vdef) <= 1.0
               end },
             { label = "VREF(15) + 10 MIN AT 500", hint = "SPEED VREF(15) + 10 - ONE ENGINE",
               check = function(v, s)
@@ -739,6 +965,12 @@ local FI_LESSONS = {
             "Go around at 300 ft - do not land.",
         },
         waiting = "descend through 500 ft, configured",
+        detail = {
+            "TO/GA, rotate to +7.5, positive rate, gear up.",
+            "Flaps 15, climb at Vapp, level at 3,000 ft.",
+        },
+        place = { runway = "KLAX_25L", kind = "final", dist_nm = 3, ias = 130,
+                  gear = 1, flap = 1.0, nav = true },
         arm = function(v, s)
             return v.on_ground == 0 and fi_between(v.agl, 30, 500)
                 and v.flap > 0.85 and v.gear_handle == 1
@@ -788,6 +1020,12 @@ local FI_LESSONS = {
             "checklist opens once above 20,000 ft.",
         },
         waiting = "get airborne above 20,000 ft",
+        detail = {
+            "Masks, AP off, idle, boards out, 15 deg bank.",
+            "4,000 fpm to 10,000 ft, then work the QRH.",
+        },
+        place = { runway = "KLAX_25L", kind = "cruise", alt_ft = 35000, ias = 250,
+                  gear = 0, flap = 0, ap = true },
         arm = function(v, s)
             return v.on_ground == 0 and v.elev_ft > 20000
         end,
@@ -842,6 +1080,7 @@ local inst_toast_text = nil
 local inst_toast_until = 0
 local inst_is_c750   = (PLANE_ICAO == "C750")   -- refreshed every frame
 local inst_scroll    = 0         -- menu scroll offset (whole rows)
+local inst_setup_msg = "NOT RUN" -- last SET ME UP result, shown in the brief
 
 -- Per-lesson run state.
 local S = {}
@@ -962,12 +1201,42 @@ function fi_start(key)
     logMsg("Citation X Instructor: started " .. lesson.key)
 end
 
+-- Place and configure the aeroplane, then start the lesson. Refuses when the
+-- lesson has no preset or when the aircraft is not near the field.
+function fi_setup(key)
+    local lesson = fi_lesson_by_key(key) or inst_lesson
+    if not lesson or not lesson.place then
+        fi_toast("NO AUTO SETUP FOR THIS LESSON")
+        return false
+    end
+    if FI_CONFIG.require_c750 and not inst_is_c750 then
+        fi_toast("FLIGHT INSTRUCTOR: C750 ONLY")
+        return false
+    end
+    local ran, placed, why = pcall(fi_apply_place, lesson.place)
+    if not ran then
+        inst_setup_msg = "FAILED - internal error"
+        fi_toast("SETUP: INTERNAL ERROR")
+        return false
+    end
+    if not placed then
+        inst_setup_msg = "FAILED - " .. tostring(why)
+        fi_toast("SETUP: " .. tostring(why))
+        return false
+    end
+    fi_start(lesson.key)
+    inst_setup_msg = "PLACED - " .. tostring(lesson.place.runway)
+    fi_toast("SETUP: " .. lesson.title)
+    return true
+end
+
 function fi_brief(key)
     local lesson = fi_lesson_by_key(key)
     if not lesson then return end
     inst_lesson = lesson
     fi_reset_run(lesson)
     inst_state = FI_STATE.BRIEF
+    inst_setup_msg = "NOT RUN"
 end
 
 function fi_finish(quiet)
@@ -1098,6 +1367,8 @@ function fi_snapshot()
         vdef       = fi_vdef or 0,
         dme        = fi_dme or 0,
         xtk        = fi_gps_xtk or 0,
+        nav1_h     = fi_nav1_h or 0,
+        nav1_v     = fi_nav1_v or 0,
         wind_kts   = fi_wind_kts or 0,
         wind_dir   = fi_wind_dir or 0,
         td_fpm     = S.td_fpm,
@@ -1189,26 +1460,29 @@ end
 function fi_panel_height()
     local cfg = FI_CONFIG
     if inst_state == FI_STATE.MENU then
-        return cfg.header_h + 14 + #fi_menu_rows() * cfg.row_h + 14
+        return cfg.header_h + 14 + 18 + #fi_menu_rows() * cfg.row_h + 14
              + cfg.footer_h + 8
     elseif inst_state == FI_STATE.BRIEF then
         local lesson = inst_lesson
         if not lesson then return 200 end
         return cfg.header_h + 18
-             + #lesson.brief * 15 + 10
+             + #lesson.brief * 15 + 8
+             + 14
              + 15 + #lesson.setup * 15 + 10
-             + 15 + #lesson.criteria * 15 + 12
+             + 15 + #lesson.criteria * 15 + 10
+             + 16 + #(lesson.detail or {}) * 14 + 10
+             + 14
              + 26 + 10 + cfg.footer_h + 8
     elseif inst_state == FI_STATE.FLYING then
         local lesson = inst_lesson
         if not lesson then return 200 end
-        return cfg.header_h + 22 + 18 + 8
+        return cfg.header_h + 22 + 18 + 16 + 8
              + #lesson.criteria * cfg.row_h + 10
              + 26 + 10 + cfg.footer_h + 8
     else
         local lesson = inst_lesson
         if not lesson then return 200 end
-        return cfg.header_h + 40 + 16
+        return cfg.header_h + 40 + 16 + 18
              + #lesson.criteria * 18 + 12
              + 26 + 10 + cfg.footer_h + 8
     end
@@ -1217,13 +1491,24 @@ end
 local function fi_button(x, y, w, label, col, fg)
     bar(x, y - 22, y, w, col)
     local tw = cx_measure(label, 12)
-    txt(x + (w - tw) / 2, y - 16, label, 12, fg or CX.footer_fg)
+    txt(math.floor(x + (w - tw) / 2 + 0.5), y - 16, label, 12, fg or CX.footer_fg)
     return { x0 = x, x1 = x + w, y0 = y - 22, y1 = y }
 end
 
 local function fi_draw_menu(cfg, st, x, top, w)
     local rows = fi_menu_rows()
     local y = top - cfg.header_h - 14
+
+    local sum, flown = 0, 0
+    for _, lesson in ipairs(FI_LESSONS) do
+        local b = inst_progress[lesson.key]
+        if b then sum = sum + b flown = flown + 1 end
+    end
+    local avg = flown > 0 and math.floor(sum / flown + 0.5) or 0
+    txt(x + cfg.pad, y - 13, string.format(
+        "AVERAGE %d%%   %d OF %d FLOWN", avg, flown, #FI_LESSONS), 10, st.sub)
+    bar(x + cfg.pad, y - 17, y - 16, w - 2 * cfg.pad, st.hairline, 0.5)
+    y = y - 18
 
     for _, row in ipairs(rows) do
         if row.kind == "section" then
@@ -1262,13 +1547,22 @@ local function fi_draw_brief(cfg, st, x, top, w, lesson)
     end
     y = y - 8
 
+    -- What the aeroplane actually weighs and the speeds that follow from it.
+    txt(x + cfg.pad, y, cx_fit(string.format(
+        "GW %d LB   VREF %d   VR %d   V2 %d",
+        math.floor((S.weight_lb or 0) + 0.5),
+        math.floor((S.vref or 0) + 0.5),
+        math.floor((S.vr or 0) + 0.5),
+        math.floor((S.v2 or 0) + 0.5)), w - 2 * cfg.pad, 10), 10, st.sub)
+    y = y - 14
+
     txt(x + cfg.pad, y, "SETUP", 10, st.sub)
     y = y - 15
     for _, line in ipairs(lesson.setup) do
         txt(x + cfg.pad, y, cx_fit(line, w - 2 * cfg.pad, 12), 12, st.label)
         y = y - 15
     end
-    y = y - 6
+    y = y - 8
 
     txt(x + cfg.pad, y, "GRADED ITEMS", 10, st.sub)
     y = y - 15
@@ -1277,13 +1571,30 @@ local function fi_draw_brief(cfg, st, x, top, w, lesson)
         txt(x + cfg.pad + 16, y, cx_fit(c.label, w - 2 * cfg.pad - 16, 12), 12, st.value)
         y = y - 15
     end
+    y = y - 8
 
+    txt(x + cfg.pad, y, "TECHNIQUE", 10, st.sub)
+    y = y - 15
+    for _, line in ipairs(lesson.detail or {}) do
+        txt(x + cfg.pad, y, cx_fit(line, w - 2 * cfg.pad, 12), 12, st.dim)
+        y = y - 14
+    end
+    y = y - 8
+
+    local setup_col = st.warn
+    if inst_setup_msg:find("^PLACED") then setup_col = st.ok end
+    if inst_setup_msg:find("^FAILED") then setup_col = st.bad end
+    txt(x + cfg.pad, y, cx_fit("SETUP: " .. inst_setup_msg,
+        w - 2 * cfg.pad, 10), 10, setup_col)
     y = y - 10
-    local bw = (w - 2 * cfg.pad - 10) / 2
+
+    local bw = (w - 2 * cfg.pad - 20) / 3
+    inst_rows[#inst_rows + 1] = { kind = "setup",
+        rect = fi_button(x + cfg.pad, y, bw, "SET ME UP", st.ok) }
     inst_rows[#inst_rows + 1] = { kind = "start",
-        rect = fi_button(x + cfg.pad, y, bw, "START LESSON", st.ok) }
+        rect = fi_button(x + cfg.pad + bw + 10, y, bw, "START", st.btn, st.value) }
     inst_rows[#inst_rows + 1] = { kind = "back",
-        rect = fi_button(x + cfg.pad + bw + 10, y, bw, "BACK", st.btn, st.value) }
+        rect = fi_button(x + cfg.pad + 2 * bw + 20, y, bw, "BACK", st.btn, st.value) }
 end
 
 local function fi_coach_text(lesson)
@@ -1297,6 +1608,7 @@ end
 
 local function fi_draw_flying(cfg, st, x, top, w, lesson)
     local y = top - cfg.header_h - 16
+    local V = fi_snapshot()
 
     if not S.armed then
         txt(x + cfg.pad, y, "ARMED - " .. (lesson.waiting or "fly the setup"),
@@ -1306,10 +1618,21 @@ local function fi_draw_flying(cfg, st, x, top, w, lesson)
         local text, col = fi_coach_text(lesson)
         txt(x + cfg.pad, y, cx_fit(text, w - 2 * cfg.pad, 12), 12, col)
         y = y - 18
-        local readout = lesson.readout and lesson.readout(fi_snapshot(), S) or ""
+        local readout = lesson.readout and lesson.readout(V, S) or ""
         txt(x + cfg.pad, y, cx_fit(readout, w - 2 * cfg.pad, 10), 10, st.sub)
-        y = y - 18
+        y = y - 16
     end
+
+    local met = 0
+    for i = 1, #lesson.criteria do if S.met[i] then met = met + 1 end end
+    txt(x + cfg.pad, y, cx_fit(string.format(
+        "GEAR %s   FLAP %s   AP %s   NAV %s   |   %d OF %d ITEMS",
+        (V.gear_handle == 1) and "DN" or "UP",
+        fi_flap_name(V.flap),
+        (V.ap_on == 1) and "ON" or "OFF",
+        (V.nav1_h == 1) and "SIG" or "---",
+        met, #lesson.criteria), w - 2 * cfg.pad, 10), 10, st.dim)
+    y = y - 16
 
     for i, c in ipairs(lesson.criteria) do
         local done = S.met[i]
@@ -1344,7 +1667,11 @@ local function fi_draw_debrief(cfg, st, x, top, w, lesson)
         if S.met[i] then got = got + 1 end
     end
     txt(x + cfg.pad + 34, y, string.format("%d OF %d ITEMS", got, total), 12, st.dim)
-    y = y - 22
+    y = y - 18
+    local best = inst_progress[lesson.key] or 0
+    txt(x + cfg.pad, y, string.format("BEST %d%%%s", best,
+        (pct >= best) and "  NEW BEST" or ""), 10, st.dim)
+    y = y - 18
 
     for i, c in ipairs(lesson.criteria) do
         local done = S.met[i]
@@ -1400,7 +1727,8 @@ function fi_draw()
         cx_fit(inst_lesson and inst_lesson.title or "FLIGHT INSTRUCTOR",
             w - 2 * cfg.pad - 70, 18), 18, st.title)
     local caption = "12 GRADED LESSONS"
-    if inst_state == FI_STATE.FLYING then caption = "LESSON"
+    if inst_state == FI_STATE.FLYING then
+        caption = inst_setup_msg:find("^PLACED") and "SETUP OK" or "LESSON"
     elseif inst_state == FI_STATE.DEBRIEF then caption = "DEBRIEF"
     elseif inst_state == FI_STATE.BRIEF then caption = "BRIEF" end
     txt_right(x + w - cfg.pad, top - 22, caption, 10, st.sub)
@@ -1482,6 +1810,8 @@ function fi_mouse_click()
                 fi_brief(r.key)
             elseif r.kind == "reset" then
                 fi_reset_progress()
+            elseif r.kind == "setup" then
+                if inst_lesson then fi_setup(inst_lesson.key) end
             elseif r.kind == "start" then
                 fi_start(inst_lesson.key)
             elseif r.kind == "back" then

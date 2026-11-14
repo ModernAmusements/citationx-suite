@@ -32,6 +32,10 @@ aircraft's own PFD, EICAS and synoptics.
 | --- | --- | --- |
 | [![cabin](docs/img/panels/cabin.png)](docs/img/panels/cabin.png) | [![qrh](docs/img/panels/qrh.png)](docs/img/panels/qrh.png) | [![instructor](docs/img/panels/instructor.png)](docs/img/panels/instructor.png) |
 
+| Flight instructor — ILS brief |
+| --- |
+| [![instructor brief](docs/img/panels/instructor_brief.png)](docs/img/panels/instructor_brief.png) |
+
 ### Upscaled cockpit textures (work in progress)
 
 The cockpit panel was shipped only as a compressed 4K DXT1 texture; the 8K Cascade 3 panel
@@ -132,9 +136,14 @@ four sections — normal takeoff, rejected takeoff, engine failure at 400 ft, vi
 visual approach, crosswind, flaps-15 jam, ILS, RNAV, single-engine ILS, go-around and
 emergency descent.
 
-* Pick a lesson from the panel, read the brief and the sim setup, press `START`.
-* The panel grades the sim's own datarefs, item by item, and only awards an item when it
-  has been held for a moment. The brief is the standard; the debrief is the feedback.
+* Pick a lesson from the panel, read the brief, then press `SET ME UP` to be placed and
+  configured on the runway, final, downwind or cruise altitude — or `START` if you set the
+  scenario up yourself.
+* The brief shows the computed weight and Vref/VR/V2, the graded items, two lines of
+  technique, and whether the setup has been run; the flying panel adds a live status line
+  (gear, flap, autopilot, NAV signal, items met).
+* Each item is checked against the sim's own datarefs and only awarded after it has been
+  held for a moment, so a single lucky frame does not score.
 * Vref, VR and V2 come from the aeroplane's actual weight, so a heavy jet gets higher
   targets.
 * The best score per lesson is kept in `CitationX_TrainingProgress.txt`.

@@ -39,6 +39,8 @@ PLANE_ICAO = "C750"
 Control = {} ; Menu = {}
 
 local datarefs, commands, macros = {}, {}, {}
+local MOCK_POS = { lat = 33.9373695, lon = -118.3827247, elev = 38.1 }
+local MOCK_SET = {}
 local draw_cb, frame_cb
 
 function dataref(name, path, mode, index)
@@ -70,6 +72,14 @@ function toast() end
 function XPLMFindDataRef(p) return { path = p } end
 function XPLMGetDataf() return 0 end
 function XPLMGetDatai() return 0 end
+function XPLMGetDatad(h)
+  local p = type(h) == "table" and h.path or ""
+  if p:find("latitude")  then return MOCK_POS.lat end
+  if p:find("longitude") then return MOCK_POS.lon end
+  if p:find("elevation") then return MOCK_POS.elev end
+  return 0
+end
+function XPLMSetDatad(h, v) MOCK_SET[type(h) == "table" and h.path or "?"] = v end
 function XPLMSetDataf() end
 function XPLMSetDatai() end
 function XPLMSetGraphicsState() end
@@ -113,6 +123,8 @@ for _, lesson in ipairs(lessons) do
   check(type(lesson.title) == "string" and #lesson.title > 4, tag .. " has a title")
   check(type(lesson.section) == "string" and lesson.section ~= "", tag .. " has a section")
   check(type(lesson.brief) == "table" and #lesson.brief >= 2, tag .. " has a brief")
+  check(type(lesson.detail) == "table" and #lesson.detail >= 2, tag .. " has technique notes")
+  check(type(lesson.place) == "table" and lesson.place.runway ~= nil, tag .. " has an auto setup")
   check(type(lesson.setup) == "table" and #lesson.setup >= 2, tag .. " has a setup")
   check(type(lesson.waiting) == "string", tag .. " has a waiting hint")
   check(type(lesson.arm) == "function", tag .. " has an arm condition")
@@ -127,6 +139,12 @@ for _, lesson in ipairs(lessons) do
   for _, line in ipairs(lesson.setup) do
     check(#line <= 60, tag .. " setup line fits the panel", line)
   end
+  for _, line in ipairs(lesson.detail) do
+    check(#line <= 60, tag .. " technique line fits the panel", line)
+  end
+  check(lesson.place.kind == "final" or lesson.place.kind == "runway"
+    or lesson.place.kind == "downwind" or lesson.place.kind == "cruise",
+    tag .. " auto setup kind is known", lesson.place.kind)
 
   for i, c in ipairs(lesson.criteria) do
     total_criteria = total_criteria + 1
@@ -177,6 +195,22 @@ st = fi_state()
 check(st == 2, "fi_brief() moves to the brief", tostring(st))
 check(type(draw_cb) == "function", "draw callback registered")
 
+-- SET ME UP places the aeroplane and starts the lesson without any manual
+-- Flight Configuration. The mock starts sitting on the KLAX 25L threshold.
+local ok_setup, why_setup = fi_setup("ils")
+check(ok_setup == true, "SET ME UP places and starts the aircraft", why_setup)
+check(fi_state() == 3, "SET ME UP leaves the lesson flying")
+check(MOCK_SET["sim/flightmodel/position/local_x"] ~= nil,
+  "SET ME UP moves the local X coordinate")
+check((MOCK_SET["sim/flightmodel/position/local_x"] or 0) > 0,
+  "a 10 NM final east of KLAX moves the aircraft east")
+
+-- A distant field is refused instead of tearing the scenery.
+MOCK_POS.lat, MOCK_POS.lon = 0, 0
+local far_ok, far_why = fi_setup("ils")
+check(far_ok == false, "SET ME UP refuses a distant field", far_why)
+MOCK_POS.lat, MOCK_POS.lon = 33.9373695, -118.3827247
+
 fi_start("ils")
 st = fi_state()
 check(st == 3, "fi_start() moves to flying", tostring(st))
@@ -194,6 +228,7 @@ local function frame(agl, ias, fpm, hdef, vdef, extra)
   fi_fpm = fpm
   fi_hdef = hdef or 0
   fi_vdef = vdef or 0
+  fi_nav1_h, fi_nav1_v = 1, 1
   fi_gear = 1
   fi_flap = 1.0
   fi_n1_l, fi_n1_r = 62, 62

@@ -30,10 +30,18 @@ Open it from the Master Suite hub (`FLIGHT INSTRUCTOR`) or with the macro
 
 The flow is always **LESSON LIST → BRIEF → FLYING → DEBRIEF**.
 
-* **Brief.** Read the three-line brief and the setup. The setup tells you exactly how to
-  position the aeroplane with X-Plane's own Flight Configuration — the panel cannot
-  teleport you, and it should not: setting the scenario up is part of the lesson.
-* **Flying.** `START` arms the lesson. Most lessons wait until you are in the right place
+* **Brief.** Read the three-line brief and the setup, then the **TECHNIQUE** notes — the
+  two lines that explain how the item is actually flown. The brief also shows the weight
+  and the Vref/VR/V2 the panel will grade against, and the last `SETUP:` result.
+  `SET ME UP` places and configures the aeroplane for the lesson (runway threshold, final,
+  downwind or cruise), sets gear, flaps and power, disconnects the autopilot and tunes NAV1
+  for the ILS lessons. It works when you are within 40 NM of the field; otherwise it tells
+  you which airport to load first. `START` begins the lesson without moving the aeroplane,
+  for when you have set the scenario up yourself.
+* **Flying.** The coach line names the next missing item. The status line under it shows
+  gear, flap, autopilot, NAV signal and items met; the smaller line above is the lesson's
+  own readout (radio altitude, speed, needles, sink).
+* **Arming.** `START` arms the lesson. Most lessons wait until you are in the right place
   (rolling, established on final, above 20,000 ft) and say so: `ARMED - <what to do>`.
   Until then nothing is graded and the score stays at zero.
 * **Grading.** Each item self-checks against the simulator's datarefs and must be **held
@@ -61,6 +69,16 @@ duplicate switch list. Leaving the lesson clears the failure it injected.
 ---
 
 ## 2. Setting up a lesson in X-Plane
+
+The fast path is the **`SET ME UP`** button on the brief: it puts the aeroplane on the
+lesson's runway, final, downwind leg or cruise altitude, sets gear/flaps/power and
+disconnects the autopilot. It only moves you when you are within 40 NM of the field; if
+you are somewhere else, load the airport once (Flight Configuration) and press it again.
+
+What it does **not** set is weather. The crosswind lesson still needs a custom wind, and
+the visual lessons are best flown in CAVOK. Everything else is configured.
+
+If you prefer to do it by hand, the manual setup is still in each brief:
 
 1. **Aircraft.** `Cessna Citation X` (the `C750`). The instructor refuses to start in any
    other aeroplane — that is deliberate, every speed in it is a C750 number.

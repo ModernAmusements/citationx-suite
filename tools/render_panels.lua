@@ -135,6 +135,11 @@ new_frame("instructor")
 fi_toggle_panel(true)
 fi_draw()
 
+-- 7. flight instructor, ILS brief (speeds, technique, setup status)
+new_frame("instructor_brief")
+fi_brief("ils")
+fi_draw()
+
 ------------------------------------------------------------ JSON emitter -----
 local function esc(s)
   s = tostring(s):gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n")
