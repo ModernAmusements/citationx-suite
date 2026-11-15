@@ -1,8 +1,22 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-11-14
+Last updated: 2026-11-15
 
 ## Session handoff — read this first
+
+**2026-11-15 — SET ME UP is in-sim but unverified; weight and watcher added.** The first
+in-sim test reported that the setup "does not work … the airplane is overloaded or
+something else". `Log.txt` shows the aeroplane at **35,733 lb** (MTOW 36,100, MLW 31,800)
+and the realism pack calling `OVERWEIGHT`, so the setup now trims fuel/payload to a lesson
+weight (24,000 lb departure, 26,000 lb landing, 28,000 lb cruise) and the panel uses that
+weight for Vref/VR/V2 immediately. `CitationX_InstructorWatch.lua` was added to record what
+actually happens: while the instructor panel is open it writes
+`Scripts/CitationX_InstructorWatch.csv` at 1 Hz (position, local x/y/z, config, weight,
+`SETUP:` result/target, jump markers). Its first version was **quarantined by FlyWithLua**
+because it called `XPLMGetDatad` at load; it now reads only the instructor's existing
+dataref globals and uses read-only bindings. Commit `95fd313`, pushed. **Nothing in the
+SET ME UP placement itself has been confirmed on screen yet** — that is the first task next
+session. See §42.
 
 **2026-11-14 — Flight instructor added; 12 graded lessons.** `CitationX_FlightInstructor.lua`
 is the fifth panel: menu → brief → flying → debrief, 12 lessons in four sections, every item
@@ -2120,7 +2134,51 @@ system. The instructor can reposition the aeroplane, but only when the pilot pre
 - `smoke_hud_toggles`: 13 rows pass.
 - MasterSuite, Realism smoke tests unchanged and passing.
 
-**Not yet seen in-sim.** The instructor has only run under the mock harnesses. First in-sim
-checks: lesson list fits the screen at 1440p and 720p, the live coach line, a real ILS
-arming and grading, the QRH panel opening over the instructor, and the progress file in
-`Scripts/`.
+### Where we stopped (2026-11-15) — next session starts here
+
+First in-sim feedback: **SET ME UP did not visibly work**; the user suspected an overload.
+`Log.txt` confirms 35,733 lb and `CitationX Realism: CALLOUT OVERWEIGHT`, which is real but
+does **not** explain a failure to move. Two changes are committed but not yet confirmed
+on screen (commit `95fd313`):
+
+1. **Lesson weight.** `fi_set_weight` holds the current empty weight (`m_total - m_fuel -
+   m_fixed`) and writes `m_fuel1/2/3` (0.461/0.270/0.270 of the tank total) and `m_fixed`
+   to hit 24,000 lb (runway), 26,000 lb (landing/approach) or 28,000 lb (cruise).
+   `fi_start(key, weight_lb)` passes that target into `fi_reset_run`, so the brief/flying
+   speeds match even before the sim recomputes `m_total`.
+2. **Watcher.** `Scripts/CitationX_InstructorWatch.lua` writes
+   `Scripts/CitationX_InstructorWatch.csv` at 1 Hz while the instructor panel is open:
+   `sim_t, lat, lon, elev_ft, agl_ft, local_x/y/z, psi, ias, gs, gear, flap, ap, nav1,
+   state, setup, target, note, weight_lb, payload_lb, fuel_lb`.
+   `note` gets `JUMP <nm>` when the position moves >0.2 NM, `STATE n>m` and
+   `SETUP-CHANGED`. The first version was quarantined at load
+   (`CopyDataRefsToLua() failed`); the rewrite removes every XPLM call, binds only
+   read-only datarefs and reads the instructor's `fi_*` globals.
+
+**First actions next session:**
+
+1. Have the user reload Lua scripts (FlyWithLua → *Reload all Lua script files*) and press
+   `SET ME UP` on **ILS PRECISION APPROACH**.
+2. Check `Log.txt` for `FlyWithLua Error` / `Moved Bad Script` and confirm the watcher and
+   instructor loaded.
+3. Read `Scripts/CitationX_InstructorWatch.csv`:
+   * no rows → the instructor panel is not enabled or the watcher did not load;
+   * rows with `setup=NOT RUN` → the button was not pressed / state not FLYING;
+   * `setup=FAILED - …` → the exact Lua error is in the column;
+   * `setup=PLACED - KLAX_25L` plus a `JUMP` note → placement ran; compare `lat/lon` to the
+     `target` column and check `weight_lb ≈ 26000`;
+   * `JUMP` present but the aeroplane is mirrored about the field → the local **Z sign**
+     (`local_z -= dNorth`) is wrong; flip it;
+   * placement absent/no jump but `PLACED` → `XPLMSetDatad` is not taking effect; fall back
+     to one-shot `XPLMFindDataRef` + `XPLMSetDatad` verification or try the `dataref`
+     writable route (careful: a continuously writable local_x freezes the aeroplane).
+4. If weight did not change, check that `m_fuel1/2/3` and `m_fixed` are writable in this
+   build (149 bindings, 0 duplicate-writable problems) and that `m_fuel_total` is non-zero
+   when the setup runs.
+5. Once SET ME UP is confirmed, remove the watcher (`Scripts/CitationX_InstructorWatch.lua`
+   and its CSV) or set `WATCH_CONFIG.enabled = false`, then re-run the full validation and
+   commit.
+
+**Do not assume the placement maths is wrong yet** — the watcher exists to distinguish
+"button never ran", "Lua error", "moved but wrong place" and "weight unchanged" before
+changing code.
