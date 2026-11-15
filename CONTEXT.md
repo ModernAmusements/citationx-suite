@@ -25,10 +25,12 @@ pattern`) and the model ended inverted and nose-down. The placement path was sti
 one frame with the sim running, without zeroing angular rates. It now uses FlyWithLua's
 `get()`/`set()`/`set_array()` instead (no XPLM handles), pauses the sim for the write,
 zeroes `P/Q/R`, forces the gear legs down when the setup wants gear, and leaves the flight
-unpaused. The watcher was also fixed: `do_every_second` is not a documented FlyWithLua
-function (the manual has `do_sometimes`, `do_often`, `do_every_frame`), which is why it was
-quarantined twice; it now uses `do_often`. The watcher also logs theta/phi/local velocity
-and on-ground. **Not yet retested in-sim.** The current flight may still be a wreck — reset
+unpaused. Runway starts also hard-coded the threshold elevation, which put the jet about
+10 ft above the KLAX runway and dropped it onto the gear; they now start 100 ft up and snap
+to the real `y_agl` on the next frame, so it begins on the wheels. The watcher was fixed:
+`do_every_second` is not a documented FlyWithLua function (the manual has `do_sometimes`,
+`do_often`, `do_every_frame`), which is why it was quarantined twice; it uses `do_often` and
+also logs theta/phi/local velocity/on-ground. **Not yet retested in-sim.** The current flight may still be a wreck — reset
 the flight (or reload the aircraft) before pressing SET ME UP again.
 
 **2026-11-14 — Flight instructor added; 12 graded lessons.** `CitationX_FlightInstructor.lua`
@@ -2161,7 +2163,11 @@ committed but not yet confirmed on screen:
    to hit 24,000 lb (runway), 26,000 lb (landing/approach) or 28,000 lb (cruise).
    `fi_start(key, weight_lb)` passes that target into `fi_reset_run`, so the brief/flying
    speeds match even before the sim recomputes `m_total`.
-2. **Watcher.** `Scripts/CitationX_InstructorWatch.lua` writes
+2. **Runway height.** A threshold-elevation guess left the jet ~10 ft above KLAX and it
+   fell onto the gear ("simple start: 10 feet in the air, falls down and is broken").
+   Runway setups now place at +100 ft, then `fi_frame` subtracts the measured `y_agl` on
+   the next frame and zeroes the local velocities; it starts on the wheels.
+3. **Watcher.** `Scripts/CitationX_InstructorWatch.lua` writes
    `Scripts/CitationX_InstructorWatch.csv` at 1 Hz while the instructor panel is open:
    `sim_t, lat, lon, elev_ft, agl_ft, local_x/y/z, psi, ias, gs, gear, flap, ap, nav1,
    state, setup, target, note, weight_lb, payload_lb, fuel_lb, theta, phi, vx, vy, vz,

@@ -193,6 +193,7 @@ end
 
 local inst_setup_target = ""   -- last computed target, for the watcher
 local inst_setup_weight_lb = nil -- weight the last setup imposed, for the speeds
+local inst_ground_settle = 0      -- frames until a runway placement snaps to the surface
 
 -- ------------------------------------------------------------- AUTO SETUP ----
 -- "SET ME UP" places the aeroplane where the lesson begins instead of asking
@@ -305,8 +306,13 @@ local function fi_apply_place(place)
         pitch, fpm, ias = 2.0, -700, place.ias or 140
     elseif place.kind == "runway" then
         lat, lon = fi_move_latlon(rw.lat, rw.lon, hdg, 60)
-        elev_ft  = rw.elev_ft + 1
+        -- Park it well above the surface for one frame, then snap it to the
+        -- real terrain height (y_agl) on the next frame. Hard-coding the
+        -- threshold elevation put the aeroplane 10 ft up at KLAX and it fell
+        -- onto the gear.
+        elev_ft  = rw.elev_ft + 100
         ias      = 0
+        inst_ground_settle = 2
     elseif place.kind == "downwind" then
         -- Start before the threshold in the landing direction, offset left.
         lat, lon = fi_move_latlon(rw.lat, rw.lon, hdg, 1.5 * 1852)
@@ -1435,6 +1441,20 @@ function fi_frame()
     if inst_state ~= FI_STATE.FLYING or not inst_lesson then return end
 
     local V = fi_snapshot()
+
+    -- Runway placements: one frame after the move, snap the aeroplane down by
+    -- its actual height above the terrain, so it starts on the wheels instead
+    -- of falling the last few feet and breaking.
+    if inst_ground_settle > 0 then
+        inst_ground_settle = inst_ground_settle - 1
+        if inst_ground_settle == 0 and (V.agl or 0) > 0.2 then
+            set("sim/flightmodel/position/local_y",
+                get("sim/flightmodel/position/local_y") - V.agl * 0.3048)
+            set("sim/flightmodel/position/local_vx", 0)
+            set("sim/flightmodel/position/local_vy", 0)
+            set("sim/flightmodel/position/local_vz", 0)
+        end
+    end
 
     -- Track the touchdown so every landing lesson can grade the same way.
     if V.on_ground == 1 and not S.was_ground and S.armed then
