@@ -89,6 +89,12 @@ dataref("fi_on_ground",  "sim/flightmodel/failures/onground_any",       "readonl
 dataref("fi_ra",         "sim/cockpit2/gauges/indicators/radio_altimeter_height_ft_pilot", "readonly")
 dataref("fi_time",       "sim/time/total_running_time_sec",             "readonly")
 dataref("fi_weight_kg",  "sim/flightmodel/weight/m_total",              "readonly")
+dataref("fi_payload_kg", "sim/flightmodel/weight/m_fixed",              "writable")
+dataref("fi_fuel_kg",    "sim/flightmodel/weight/m_fuel_total",         "readonly")
+-- The C750's tank ratio is 0.461 / 0.270 / 0.270 (left, right, centre).
+dataref("fi_fuel_t0",    "sim/flightmodel/weight/m_fuel1",              "writable")
+dataref("fi_fuel_t1",    "sim/flightmodel/weight/m_fuel2",              "writable")
+dataref("fi_fuel_t2",    "sim/flightmodel/weight/m_fuel3",              "writable")
 
 -- Configuration.
 dataref("fi_gear",       "sim/cockpit2/controls/gear_handle_down",      "readonly")
@@ -185,6 +191,9 @@ local function fi_abs(x)
     return x and math.abs(x) or 999
 end
 
+local inst_setup_target = ""   -- last computed target, for the watcher
+local inst_setup_weight_lb = nil -- weight the last setup imposed, for the speeds
+
 -- ------------------------------------------------------------- AUTO SETUP ----
 -- "SET ME UP" places the aeroplane where the lesson begins instead of asking
 -- the pilot to do it in Flight Configuration. Thresholds and true headings are
@@ -276,6 +285,29 @@ local function fi_place_at(lat, lon, elev_ft, hdg, pitch, ias, fpm)
     return true
 end
 
+-- Set a lesson weight: hold the current payload/fuel split's empty weight and
+-- put the difference into fuel (distributed by the aircraft's own tank ratios),
+-- then payload. Keeps a 35,700 lb training aeroplane from landing 4,000 lb over
+-- MLW and triggering the realism pack's OVERWEIGHT callout.
+local function fi_set_weight(target_lb)
+    local target_kg = (target_lb or 0) * 0.45359237
+    local total   = fi_weight_kg or 0
+    local fuel    = fi_fuel_kg or 0
+    local payload = fi_payload_kg or 0
+    if total <= 1 or target_kg <= 1 then return false end
+    local empty = total - fuel - payload
+    if empty <= 1 or empty >= target_kg then return false end
+
+    local fuel_kg = math.min(fuel, target_kg - empty)
+    local payload_kg = math.max(0, target_kg - empty - fuel_kg)
+
+    fi_fuel_t0 = fuel_kg * 0.461
+    fi_fuel_t1 = fuel_kg * 0.270
+    fi_fuel_t2 = fuel_kg * 0.270
+    fi_payload_kg = payload_kg
+    return true
+end
+
 local function fi_apply_place(place)
     local rw = FI_RUNWAYS[place.runway]
     if not rw then return false, "no runway data" end
@@ -320,6 +352,8 @@ local function fi_apply_place(place)
         ias = ias * 1.7
     end
 
+    inst_setup_target = string.format("%.6f,%.6f,%.0f,%.1f", lat, lon, elev_ft, hdg)
+
     if not fi_place_at(lat, lon, elev_ft, hdg, pitch, ias, fpm) then
         return false, "no position"
     end
@@ -343,6 +377,14 @@ local function fi_apply_place(place)
         XPLMSetDatai(ref.nav1, rw.nav)
         command_once("sim/autopilot/hsi_select_nav_1")
     end
+
+    local target_lb = place.weight_lb
+        or ((place.kind == "runway") and 24000)
+        or ((place.kind == "cruise") and 28000)
+        or 26000
+    local okw, setw = pcall(fi_set_weight, target_lb)
+    inst_setup_weight_lb = (okw and setw) and target_lb or nil
+
     return true
 end
 
@@ -1085,7 +1127,7 @@ local inst_setup_msg = "NOT RUN" -- last SET ME UP result, shown in the brief
 -- Per-lesson run state.
 local S = {}
 
-local function fi_reset_run(lesson)
+local function fi_reset_run(lesson, weight_lb)
     S = {
         armed    = false,
         t0       = 0,
@@ -1098,7 +1140,7 @@ local function fi_reset_run(lesson)
         abort_ias = nil,
         was_ground = false,
     }
-    local wt = (fi_weight_kg or 0) * 2.20462
+    local wt = weight_lb or ((fi_weight_kg or 0) * 2.20462)
     if wt < 15000 then wt = 24000 end   -- cold-and-dark default before load
     S.weight_lb = wt
     S.vref = math.floor(fi_vref_lb(wt) + 0.5)
@@ -1185,7 +1227,7 @@ local function fi_clear_own_failure()
     S.injected = false
 end
 
-function fi_start(key)
+function fi_start(key, weight_lb)
     local lesson = fi_lesson_by_key(key)
     if not lesson then return end
     if FI_CONFIG.require_c750 and not inst_is_c750 then
@@ -1194,7 +1236,7 @@ function fi_start(key)
     end
     fi_clear_own_failure()
     inst_lesson = lesson
-    fi_reset_run(lesson)
+    fi_reset_run(lesson, weight_lb)
     inst_state = FI_STATE.FLYING
     if lesson.on_start then pcall(lesson.on_start, S) end
     fi_toast("LESSON START: " .. lesson.title)
@@ -1224,7 +1266,7 @@ function fi_setup(key)
         fi_toast("SETUP: " .. tostring(why))
         return false
     end
-    fi_start(lesson.key)
+    fi_start(lesson.key, inst_setup_weight_lb)
     inst_setup_msg = "PLACED - " .. tostring(lesson.place.runway)
     fi_toast("SETUP: " .. lesson.title)
     return true
@@ -1237,6 +1279,8 @@ function fi_brief(key)
     fi_reset_run(lesson)
     inst_state = FI_STATE.BRIEF
     inst_setup_msg = "NOT RUN"
+    inst_setup_target = ""
+    inst_setup_weight_lb = nil
 end
 
 function fi_finish(quiet)
@@ -1326,6 +1370,25 @@ end
 
 function fi_state()
     return inst_state, inst_lesson and inst_lesson.key or nil, fi_score_percent()
+end
+
+-- Read-only views for the watcher: what SET ME UP reported and where it aimed.
+function fi_setup_status()
+    return inst_setup_msg
+end
+
+function fi_setup_target()
+    return inst_setup_target
+end
+
+function fi_run_weight()
+    return S.weight_lb
+end
+
+function fi_run_met()
+    local out = {}
+    for i = 1, #inst_lesson.criteria do out[i] = S.met[i] and true or false end
+    return out
 end
 
 function fi_best(key)
@@ -1626,7 +1689,8 @@ local function fi_draw_flying(cfg, st, x, top, w, lesson)
     local met = 0
     for i = 1, #lesson.criteria do if S.met[i] then met = met + 1 end end
     txt(x + cfg.pad, y, cx_fit(string.format(
-        "GEAR %s   FLAP %s   AP %s   NAV %s   |   %d OF %d ITEMS",
+        "GW %d  GEAR %s  FLAP %s  AP %s  NAV %s  |  %d/%d",
+        math.floor((S.weight_lb or 0) + 0.5),
         (V.gear_handle == 1) and "DN" or "UP",
         fi_flap_name(V.flap),
         (V.ap_on == 1) and "ON" or "OFF",

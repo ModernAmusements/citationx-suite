@@ -80,6 +80,8 @@ function XPLMGetDatad(h)
   return 0
 end
 function XPLMSetDatad(h, v) MOCK_SET[type(h) == "table" and h.path or "?"] = v end
+function XPLMGetDatavf() return {0.46, 0.27, 0.27, 0, 0, 0, 0, 0, 0} end
+function XPLMSetDatavf() end
 function XPLMSetDataf() end
 function XPLMSetDatai() end
 function XPLMSetGraphicsState() end
@@ -99,10 +101,14 @@ function XPLMGetScreenSize() return 2560, 1440 end
 assert(loadfile("Scripts/CitationX_00_Core.lua"))()
 assert(loadfile("Scripts/CitationX_FailureTrainer.lua"))()
 assert(loadfile(script))()
+assert(loadfile("Scripts/CitationX_InstructorWatch.lua"))()
 
 check(type(FI_CONFIG) == "table", "FI_CONFIG exists")
 check(type(FI_STYLE) == "table", "FI_STYLE exists")
 check(FI_CONFIG.panel_enabled == true, "instructor panel is visible at load")
+
+-- A realistic loaded aeroplane: 35,733 lb, most of it fuel and payload.
+fi_weight_kg, fi_fuel_kg, fi_payload_kg = 16208, 3040, 1400
 
 -- ---------- syllabus ----------
 local lessons = fi_lessons()
@@ -174,6 +180,7 @@ check(#macros >= 4, "menu macros registered", tostring(#macros))
 -- All fi_* datarefs read 0 here, i.e. a cold and dark C750.
 local S0 = { met = {}, hold = {}, elapsed = 0, vref = 110, vr = 116, v2 = 129 }
 for _, d in ipairs(datarefs) do _G[d.name] = 0 end
+fi_weight_kg, fi_fuel_kg, fi_payload_kg = 16208, 3040, 1400
 local V0 = fi_snapshot()
 for _, lesson in ipairs(lessons) do
   local ok_arm, err_arm = pcall(lesson.arm, V0, S0)
@@ -187,6 +194,23 @@ end
 -- ---------- the state machine ----------
 fi_toggle_panel(true)
 check(FI_CONFIG.panel_enabled == true, "panel opens")
+
+-- The watcher is a diagnostic; it must write a header and one row per call
+-- while the instructor panel is open.
+watch_log()
+watch_log()
+local wf = io.open(SCRIPT_DIRECTORY .. "CitationX_InstructorWatch.csv", "r")
+check(wf ~= nil, "watcher writes its CSV file")
+if wf then
+  local body = wf:read("*a")
+  wf:close()
+  local lines = select(2, body:gsub("\n", ""))
+  check(lines >= 3, "watcher wrote a header and two rows", lines)
+  check(body:find("sim_t\tlat\tlon", 1, true) ~= nil, "watcher header is present")
+  local first = body:match("\n([^\n]+)")
+  local fields = select(2, (first or ""):gsub("\t", "")) + 1
+  check(fields == 22, "watcher row has 22 fields", fields)
+end
 local st = fi_state()
 check(st == 1, "opening the panel shows the lesson list", tostring(st))
 
@@ -200,6 +224,7 @@ check(type(draw_cb) == "function", "draw callback registered")
 local ok_setup, why_setup = fi_setup("ils")
 check(ok_setup == true, "SET ME UP places and starts the aircraft", why_setup)
 check(fi_state() == 3, "SET ME UP leaves the lesson flying")
+check(fi_run_weight() == 26000, "SET ME UP sets the lesson weight", tostring(fi_run_weight()))
 check(MOCK_SET["sim/flightmodel/position/local_x"] ~= nil,
   "SET ME UP moves the local X coordinate")
 check((MOCK_SET["sim/flightmodel/position/local_x"] or 0) > 0,
@@ -211,7 +236,7 @@ local far_ok, far_why = fi_setup("ils")
 check(far_ok == false, "SET ME UP refuses a distant field", far_why)
 MOCK_POS.lat, MOCK_POS.lon = 33.9373695, -118.3827247
 
-fi_start("ils")
+fi_start("ils", 26000)
 st = fi_state()
 check(st == 3, "fi_start() moves to flying", tostring(st))
 

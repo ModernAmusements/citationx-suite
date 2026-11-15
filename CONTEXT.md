@@ -10,7 +10,7 @@ self-checked against the sim and held for 0.6 s (2 s for the ones that matter), 
 computed from actual weight, best score in `CitationX_TrainingProgress.txt`. Three lessons
 inject their own failure through the QRH trainer and grade its real checklist state, so the
 two panels share one failure lifecycle. The written syllabus is `docs/FLIGHT_TRAINING.md`.
-The hub went from 12 to 13 rows and the tree from 104 to 138 dataref bindings. Two
+The hub went from 12 to 13 rows and the tree from 104 to 149 dataref bindings. Two
 pre-existing load-time bugs surfaced while testing and were fixed: `is_c750` (QRH) and
 `inst_is_c750` (instructor) started `false` and were only refreshed in their frame loops, so
 an action taken before the first frame got a spurious "C750 ONLY" refusal. Both now
@@ -42,7 +42,7 @@ Current suite: `CitationX_MasterSuite.lua` (hub + wheel/recorder/optimizer), `Ci
 `CitationX_FailureTrainer.lua`, `CitationX_FlightInstructor.lua`, `CitationX_CabinOps.lua`, loaded
 after `CitationX_00_Core.lua`. The hub shows 13 rows; the only pilot input the suite reads is the
 mouse wheel (thumbwheel → heading bug, wheel 2 → ALT SEL). The QRH trainer has 14 scenarios and
-the instructor has 12 lessons. 138 dataref bindings, 0 load failures, 0 binding problems.
+the instructor has 12 lessons. 149 dataref bindings, 0 load failures, 0 binding problems.
 
 ## Older handoff notes (2026-10-30)
 
@@ -2021,6 +2021,9 @@ system. The instructor can reposition the aeroplane, but only when the pilot pre
   progress file, the QRH failure lifecycle and the panel.
 - `docs/FLIGHT_TRAINING.md` — ground school, limitations, speeds, the 12 lesson plans, SoCal
   fields and a ten-flight study plan.
+- `Scripts/CitationX_InstructorWatch.lua` — diagnostic: while the instructor panel is open,
+  writes `CitationX_InstructorWatch.csv` at 1 Hz (position, local coords, config, SETUP
+  result/target, jump markers). Not a panel and not part of the suite; delete when done.
 - Edits to `CitationX_FailureTrainer.lua` (`qrh_is_complete`, `qrh_active_key`),
   `CitationX_MasterSuite.lua` (hub row), `tests/smoke_hud_toggles.lua` (13 rows),
   `tests/smoke_panel_geometry.lua` (instructor in all four states).
@@ -2029,6 +2032,9 @@ system. The instructor can reposition the aeroplane, but only when the pilot pre
 
 - **SET ME UP.** The brief has a setup button that places and configures the aeroplane:
   threshold, 3/5/10 NM final, downwind or FL350, with gear/flaps/throttle/autopilot/NAV1.
+  It also trims fuel and payload to a lesson weight (24,000 lb departure, 26,000 lb landing,
+  28,000 lb cruise) so the default full-fuel C750 stops tripping the realism pack's
+  OVERWEIGHT callout.
   Threshold coordinates and true headings come from X-Plane's own `apt.dat`, and the move
   is a delta on the writable `local_x/z/y` doubles, so it works without teleporting via a
   read-only lat/lon. It refuses beyond 40 NM (`setup_max_nm`) rather than tear the scenery.
@@ -2103,9 +2109,9 @@ system. The instructor can reposition the aeroplane, but only when the pilot pre
 ### Validation
 
 - `luac -p Scripts/*.lua` clean.
-- `check_datarefs`: 120 declarations across the five panel scripts (instructor 34),
+- `check_datarefs`: 131 declarations across the five panel scripts and the watcher (instructor 39, watcher 6),
   0 problems.
-- `probe_load_order`: 10 scripts, 138 bindings, 0 load failures, 0 binding problems.
+- `probe_load_order`: 11 scripts, 149 bindings, 0 load failures, 0 binding problems.
 - `check_kpcrew_modules C750`: 0 missing.
 - `smoke_instructor`: all pass (syllabus shape, cold-airframe safety, ILS 100%, bad run
   < 50%, progress file, QRH injection/clear, four panel states, click/drag).

@@ -137,8 +137,9 @@ visual approach, crosswind, flaps-15 jam, ILS, RNAV, single-engine ILS, go-aroun
 emergency descent.
 
 * Pick a lesson from the panel, read the brief, then press `SET ME UP` to be placed and
-  configured on the runway, final, downwind or cruise altitude — or `START` if you set the
-  scenario up yourself.
+  configured on the runway, final, downwind or cruise altitude — including a lesson weight
+  (24,000 lb departure, 26,000 lb landing) so a full-fuel jet is not over MLW — or `START`
+  if you set the scenario up yourself.
 * The brief shows the computed weight and Vref/VR/V2, the graded items, two lines of
   technique, and whether the setup has been run; the flying panel adds a live status line
   (gear, flap, autopilot, NAV signal, items met).

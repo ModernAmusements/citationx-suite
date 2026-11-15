@@ -71,9 +71,12 @@ duplicate switch list. Leaving the lesson clears the failure it injected.
 ## 2. Setting up a lesson in X-Plane
 
 The fast path is the **`SET ME UP`** button on the brief: it puts the aeroplane on the
-lesson's runway, final, downwind leg or cruise altitude, sets gear/flaps/power and
-disconnects the autopilot. It only moves you when you are within 40 NM of the field; if
-you are somewhere else, load the airport once (Flight Configuration) and press it again.
+lesson's runway, final, downwind leg or cruise altitude, sets gear/flaps/power, disconnects
+the autopilot and tunes NAV1. It also sets a lesson weight — 24,000 lb for departure,
+26,000 lb for landings, 28,000 lb for the cruise — by trimming fuel and payload, so a
+default full-fuel C750 does not land 4,000 lb over MLW. It only moves you when you are
+within 40 NM of the field; if you are somewhere else, load the airport once (Flight
+Configuration) and press it again.
 
 What it does **not** set is weather. The crosswind lesson still needs a custom wind, and
 the visual lessons are best flown in CAVOK. Everything else is configured.
