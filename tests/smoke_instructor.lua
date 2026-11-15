@@ -48,8 +48,14 @@ function dataref(name, path, mode, index)
   _G[name] = 0
 end
 function dataref_table(path) return setmetatable({}, { __index = function() return 0 end }) end
-function get() return 0 end
-function set() end
+function get(path)
+  if path:find("latitude")  then return MOCK_POS.lat end
+  if path:find("longitude") then return MOCK_POS.lon end
+  if path:find("elevation") then return MOCK_POS.elev end
+  return 0
+end
+function set(path, v) MOCK_SET[path] = v end
+function set_array() end
 function logMsg(s) if os.getenv("VERBOSE") then print("      [log] " .. tostring(s)) end end
 function create_command(name) commands[#commands + 1] = name return { name = name } end
 function add_macro(name) macros[#macros + 1] = name end
@@ -209,7 +215,7 @@ if wf then
   check(body:find("sim_t\tlat\tlon", 1, true) ~= nil, "watcher header is present")
   local first = body:match("\n([^\n]+)")
   local fields = select(2, (first or ""):gsub("\t", "")) + 1
-  check(fields == 22, "watcher row has 22 fields", fields)
+  check(fields == 28, "watcher row has 28 fields", fields)
 end
 local st = fi_state()
 check(st == 1, "opening the panel shows the lesson list", tostring(st))

@@ -18,13 +18,26 @@ dataref globals and uses read-only bindings. Commit `95fd313`, pushed. **Nothing
 SET ME UP placement itself has been confirmed on screen yet** — that is the first task next
 session. See §42.
 
+**2026-11-15, later — SET ME UP put the aeroplane upside down and nose down.** The user
+tried `SET ME UP` on `VISUAL PATTERN & LANDING` (Log: `Citation X Instructor: started
+pattern`) and the model ended inverted and nose-down. The placement path was still using
+`XPLMGetDatad`/`XPLMSetDatad`/`XPLMSetDataf` and wrote position, attitude and velocity in
+one frame with the sim running, without zeroing angular rates. It now uses FlyWithLua's
+`get()`/`set()`/`set_array()` instead (no XPLM handles), pauses the sim for the write,
+zeroes `P/Q/R`, forces the gear legs down when the setup wants gear, and leaves the flight
+unpaused. The watcher was also fixed: `do_every_second` is not a documented FlyWithLua
+function (the manual has `do_sometimes`, `do_often`, `do_every_frame`), which is why it was
+quarantined twice; it now uses `do_often`. The watcher also logs theta/phi/local velocity
+and on-ground. **Not yet retested in-sim.** The current flight may still be a wreck — reset
+the flight (or reload the aircraft) before pressing SET ME UP again.
+
 **2026-11-14 — Flight instructor added; 12 graded lessons.** `CitationX_FlightInstructor.lua`
 is the fifth panel: menu → brief → flying → debrief, 12 lessons in four sections, every item
 self-checked against the sim and held for 0.6 s (2 s for the ones that matter), Vref/VR/V2
 computed from actual weight, best score in `CitationX_TrainingProgress.txt`. Three lessons
 inject their own failure through the QRH trainer and grade its real checklist state, so the
 two panels share one failure lifecycle. The written syllabus is `docs/FLIGHT_TRAINING.md`.
-The hub went from 12 to 13 rows and the tree from 104 to 149 dataref bindings. Two
+The hub went from 12 to 13 rows and the tree from 104 to 152 dataref bindings. Two
 pre-existing load-time bugs surfaced while testing and were fixed: `is_c750` (QRH) and
 `inst_is_c750` (instructor) started `false` and were only refreshed in their frame loops, so
 an action taken before the first frame got a spurious "C750 ONLY" refusal. Both now
@@ -56,7 +69,7 @@ Current suite: `CitationX_MasterSuite.lua` (hub + wheel/recorder/optimizer), `Ci
 `CitationX_FailureTrainer.lua`, `CitationX_FlightInstructor.lua`, `CitationX_CabinOps.lua`, loaded
 after `CitationX_00_Core.lua`. The hub shows 13 rows; the only pilot input the suite reads is the
 mouse wheel (thumbwheel → heading bug, wheel 2 → ALT SEL). The QRH trainer has 14 scenarios and
-the instructor has 12 lessons. 149 dataref bindings, 0 load failures, 0 binding problems.
+the instructor has 12 lessons. 152 dataref bindings, 0 load failures, 0 binding problems.
 
 ## Older handoff notes (2026-10-30)
 
@@ -2123,9 +2136,9 @@ system. The instructor can reposition the aeroplane, but only when the pilot pre
 ### Validation
 
 - `luac -p Scripts/*.lua` clean.
-- `check_datarefs`: 131 declarations across the five panel scripts and the watcher (instructor 39, watcher 6),
+- `check_datarefs`: 134 declarations across the five panel scripts and the watcher (instructor 39, watcher 9),
   0 problems.
-- `probe_load_order`: 11 scripts, 149 bindings, 0 load failures, 0 binding problems.
+- `probe_load_order`: 11 scripts, 152 bindings, 0 load failures, 0 binding problems.
 - `check_kpcrew_modules C750`: 0 missing.
 - `smoke_instructor`: all pass (syllabus shape, cold-airframe safety, ILS 100%, bad run
   < 50%, progress file, QRH injection/clear, four panel states, click/drag).
@@ -2138,8 +2151,10 @@ system. The instructor can reposition the aeroplane, but only when the pilot pre
 
 First in-sim feedback: **SET ME UP did not visibly work**; the user suspected an overload.
 `Log.txt` confirms 35,733 lb and `CitationX Realism: CALLOUT OVERWEIGHT`, which is real but
-does **not** explain a failure to move. Two changes are committed but not yet confirmed
-on screen (commit `95fd313`):
+does **not** explain a failure to move. A later test on `pattern` left the aeroplane
+**upside down and nose down**, so the placement path was changed from XPLM classic writes to
+`get()`/`set()` with the sim paused, `P/Q/R` zeroed and the gear legs forced down. Changes
+committed but not yet confirmed on screen:
 
 1. **Lesson weight.** `fi_set_weight` holds the current empty weight (`m_total - m_fuel -
    m_fixed`) and writes `m_fuel1/2/3` (0.461/0.270/0.270 of the tank total) and `m_fixed`
@@ -2149,16 +2164,22 @@ on screen (commit `95fd313`):
 2. **Watcher.** `Scripts/CitationX_InstructorWatch.lua` writes
    `Scripts/CitationX_InstructorWatch.csv` at 1 Hz while the instructor panel is open:
    `sim_t, lat, lon, elev_ft, agl_ft, local_x/y/z, psi, ias, gs, gear, flap, ap, nav1,
-   state, setup, target, note, weight_lb, payload_lb, fuel_lb`.
+   state, setup, target, note, weight_lb, payload_lb, fuel_lb, theta, phi, vx, vy, vz,
+   onground`.
    `note` gets `JUMP <nm>` when the position moves >0.2 NM, `STATE n>m` and
-   `SETUP-CHANGED`. The first version was quarantined at load
-   (`CopyDataRefsToLua() failed`); the rewrite removes every XPLM call, binds only
-   read-only datarefs and reads the instructor's `fi_*` globals.
+   `SETUP-CHANGED`. It was quarantined twice: first because it called `XPLMGetDatad` at
+   load, then because it used `do_every_second`, which is not a documented FlyWithLua
+   function. It now uses `do_often` (once per second), binds only read-only datarefs and
+   reads the instructor's `fi_*` globals.
 
 **First actions next session:**
 
-1. Have the user reload Lua scripts (FlyWithLua → *Reload all Lua script files*) and press
-   `SET ME UP` on **ILS PRECISION APPROACH**.
+0. **Reset the flight first** (Flight Configuration → load the C750 again, or reload the
+   aircraft). The current session may still be the inverted wreck; moving a wreck just moves
+   the wreck.
+1. Reload Lua scripts (FlyWithLua → *Reload all Lua script files*), confirm the instructor
+   and `CitationX_InstructorWatch.lua` both load (the watcher was quarantined twice before
+   the `do_often` fix), and press `SET ME UP` on **ILS PRECISION APPROACH**.
 2. Check `Log.txt` for `FlyWithLua Error` / `Moved Bad Script` and confirm the watcher and
    instructor loaded.
 3. Read `Scripts/CitationX_InstructorWatch.csv`:
@@ -2169,11 +2190,11 @@ on screen (commit `95fd313`):
      `target` column and check `weight_lb ≈ 26000`;
    * `JUMP` present but the aeroplane is mirrored about the field → the local **Z sign**
      (`local_z -= dNorth`) is wrong; flip it;
-   * placement absent/no jump but `PLACED` → `XPLMSetDatad` is not taking effect; fall back
-     to one-shot `XPLMFindDataRef` + `XPLMSetDatad` verification or try the `dataref`
-     writable route (careful: a continuously writable local_x freezes the aeroplane).
+   * placement absent/no jump but `PLACED` → the `get()`/`set()` path is not landing;
+     check the exact column values before changing it again. Attitude `theta/phi` and
+     velocity `vx/vy/vz` are now logged precisely because the first attempt ended inverted.
 4. If weight did not change, check that `m_fuel1/2/3` and `m_fixed` are writable in this
-   build (149 bindings, 0 duplicate-writable problems) and that `m_fuel_total` is non-zero
+   build (152 bindings, 0 duplicate-writable problems) and that `m_fuel_total` is non-zero
    when the setup runs.
 5. Once SET ME UP is confirmed, remove the watcher (`Scripts/CitationX_InstructorWatch.lua`
    and its CSV) or set `WATCH_CONFIG.enabled = false`, then re-run the full validation and

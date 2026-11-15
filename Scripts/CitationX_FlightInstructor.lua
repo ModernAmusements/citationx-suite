@@ -214,35 +214,6 @@ local FI_RUNWAYS = {
                  elev_ft =  56, nav = 11175, icao = "KSNA" },  -- ILS ISNA 111.75
 }
 
-local FI_REF = {}   -- XPLM handles, resolved once on the first setup
-
-local function fi_ref(name)
-    return XPLMFindDataRef(name)
-end
-
-local function fi_setup_refs()
-    if FI_REF.lat then return FI_REF end
-    FI_REF.lat      = fi_ref("sim/flightmodel/position/latitude")
-    FI_REF.lon      = fi_ref("sim/flightmodel/position/longitude")
-    FI_REF.elev     = fi_ref("sim/flightmodel/position/elevation")
-    FI_REF.lx       = fi_ref("sim/flightmodel/position/local_x")
-    FI_REF.ly       = fi_ref("sim/flightmodel/position/local_y")
-    FI_REF.lz       = fi_ref("sim/flightmodel/position/local_z")
-    FI_REF.psi      = fi_ref("sim/flightmodel/position/psi")
-    FI_REF.theta    = fi_ref("sim/flightmodel/position/theta")
-    FI_REF.phi      = fi_ref("sim/flightmodel/position/phi")
-    FI_REF.vx       = fi_ref("sim/flightmodel/position/local_vx")
-    FI_REF.vy       = fi_ref("sim/flightmodel/position/local_vy")
-    FI_REF.vz       = fi_ref("sim/flightmodel/position/local_vz")
-    FI_REF.gear     = fi_ref("sim/cockpit2/controls/gear_handle_down")
-    FI_REF.flap     = fi_ref("sim/cockpit2/controls/flap_handle_request_ratio")
-    FI_REF.brake    = fi_ref("sim/cockpit2/controls/speedbrake_ratio")
-    FI_REF.park     = fi_ref("sim/flightmodel/controls/parkbrake")
-    FI_REF.throttle = fi_ref("sim/cockpit2/engine/actuators/throttle_ratio_all")
-    FI_REF.nav1     = fi_ref("sim/cockpit2/radios/actuators/nav1_frequency_hz")
-    return FI_REF
-end
-
 -- Move a lat/lon by a distance (metres) along a true heading.
 local function fi_move_latlon(lat, lon, hdg_deg, dist_m)
     local r  = math.rad(hdg_deg)
@@ -262,33 +233,36 @@ end
 -- Put the aeroplane at a target position/attitude/speed. Everything is a delta
 -- on the OpenGL local frame (+X east, +Y up, +Z south), which is writable.
 local function fi_place_at(lat, lon, elev_ft, hdg, pitch, ias, fpm)
-    local ref = fi_setup_refs()
-    local lat0  = XPLMGetDatad(ref.lat)
-    local lon0  = XPLMGetDatad(ref.lon)
-    local elev0 = XPLMGetDatad(ref.elev)
+    local lat0  = get("sim/flightmodel/position/latitude")
+    local lon0  = get("sim/flightmodel/position/longitude")
+    local elev0 = get("sim/flightmodel/position/elevation")
     if not lat0 or not lon0 or not elev0 then return false end
 
     local dn = (lat - lat0) * 111320.0
     local de = (lon - lon0) * 111320.0 * math.cos(math.rad((lat + lat0) / 2))
-    XPLMSetDatad(ref.lx, XPLMGetDatad(ref.lx) + de)
-    XPLMSetDatad(ref.lz, XPLMGetDatad(ref.lz) - dn)
-    XPLMSetDatad(ref.ly, XPLMGetDatad(ref.ly) + (elev_ft * 0.3048 - elev0))
+    set("sim/flightmodel/position/local_x",
+        get("sim/flightmodel/position/local_x") + de)
+    set("sim/flightmodel/position/local_z",
+        get("sim/flightmodel/position/local_z") - dn)
+    set("sim/flightmodel/position/local_y",
+        get("sim/flightmodel/position/local_y") + (elev_ft * 0.3048 - elev0))
 
-    XPLMSetDataf(ref.psi,   hdg)
-    XPLMSetDataf(ref.theta, pitch or 0)
-    XPLMSetDataf(ref.phi,   0)
+    -- Level the aeroplane and kill any residual rotation before the physics
+    -- sees the new position: a leftover spin after a teleport flips the model.
+    set("sim/flightmodel/position/psi",   hdg)
+    set("sim/flightmodel/position/theta", pitch or 0)
+    set("sim/flightmodel/position/phi",   0)
+    set("sim/flightmodel/position/P", 0)
+    set("sim/flightmodel/position/Q", 0)
+    set("sim/flightmodel/position/R", 0)
 
     local gs = (ias or 0) * 0.514444
-    XPLMSetDataf(ref.vx,  gs * math.sin(math.rad(hdg)))
-    XPLMSetDataf(ref.vz, -gs * math.cos(math.rad(hdg)))
-    XPLMSetDataf(ref.vy,  (fpm or 0) * 0.00508)
+    set("sim/flightmodel/position/local_vx",  gs * math.sin(math.rad(hdg)))
+    set("sim/flightmodel/position/local_vz", -gs * math.cos(math.rad(hdg)))
+    set("sim/flightmodel/position/local_vy",  (fpm or 0) * 0.00508)
     return true
 end
 
--- Set a lesson weight: hold the current payload/fuel split's empty weight and
--- put the difference into fuel (distributed by the aircraft's own tank ratios),
--- then payload. Keeps a 35,700 lb training aeroplane from landing 4,000 lb over
--- MLW and triggering the realism pack's OVERWEIGHT callout.
 local function fi_set_weight(target_lb)
     local target_kg = (target_lb or 0) * 0.45359237
     local total   = fi_weight_kg or 0
@@ -312,8 +286,8 @@ local function fi_apply_place(place)
     local rw = FI_RUNWAYS[place.runway]
     if not rw then return false, "no runway data" end
 
-    local ref = fi_setup_refs()
-    local lat0, lon0 = XPLMGetDatad(ref.lat), XPLMGetDatad(ref.lon)
+    local lat0 = get("sim/flightmodel/position/latitude")
+    local lon0 = get("sim/flightmodel/position/longitude")
     if not lat0 or not lon0 then return false, "no position" end
     if fi_dist_nm(lat0, lon0, rw.lat, rw.lon) > (FI_CONFIG.setup_max_nm or 40) then
         return false, "load " .. tostring(rw.icao) .. " first"
@@ -354,18 +328,28 @@ local function fi_apply_place(place)
 
     inst_setup_target = string.format("%.6f,%.6f,%.0f,%.1f", lat, lon, elev_ft, hdg)
 
+    -- Do the move with the sim frozen so one frame cannot integrate the old
+    -- attitude/velocity into the new position and tumble the model.
+    local was_paused = get("sim/time/paused")
+    set("sim/time/paused", 1)
+
     if not fi_place_at(lat, lon, elev_ft, hdg, pitch, ias, fpm) then
+        set("sim/time/paused", was_paused or 0)
         return false, "no position"
     end
 
-    if ref.gear     then XPLMSetDatai(ref.gear, place.gear or 0) end
-    if ref.flap     then XPLMSetDataf(ref.flap, place.flap or 0) end
-    if ref.brake    then XPLMSetDataf(ref.brake, 0) end
-    if ref.park     then XPLMSetDataf(ref.park, 0) end
-    if ref.throttle then
-        XPLMSetDataf(ref.throttle,
-            place.throttle or (place.kind == "runway" and 0.0 or 0.60))
+    set("sim/cockpit2/controls/gear_handle_down", place.gear or 0)
+    -- Force the legs down in the same frame: a runway placement one foot above
+    -- the surface with the handle down but the gear still retracting is a
+    -- belly landing (and reads as "the plane broke").
+    if (place.gear or 0) == 1 then
+        for i = 0, 9 do set_array("sim/aircraft/parts/acf_gear_deploy", i, 1) end
     end
+    set("sim/cockpit2/controls/flap_handle_request_ratio", place.flap or 0)
+    set("sim/cockpit2/controls/speedbrake_ratio", 0)
+    set("sim/flightmodel/controls/parkbrake", 0)
+    set("sim/cockpit2/engine/actuators/throttle_ratio_all",
+        place.throttle or (place.kind == "runway" and 0.0 or 0.60))
 
     if place.ap then
         command_once("sim/autopilot/servos_on")
@@ -373,8 +357,8 @@ local function fi_apply_place(place)
         command_once("sim/autopilot/servos_fdir_off")
     end
 
-    if place.nav and rw.nav and ref.nav1 then
-        XPLMSetDatai(ref.nav1, rw.nav)
+    if place.nav and rw.nav then
+        set("sim/cockpit2/radios/actuators/nav1_frequency_hz", rw.nav)
         command_once("sim/autopilot/hsi_select_nav_1")
     end
 
@@ -385,6 +369,7 @@ local function fi_apply_place(place)
     local okw, setw = pcall(fi_set_weight, target_lb)
     inst_setup_weight_lb = (okw and setw) and target_lb or nil
 
+    set("sim/time/paused", was_paused or 0)
     return true
 end
 

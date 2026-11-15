@@ -31,6 +31,9 @@ dataref("wx_lx", "sim/flightmodel/position/local_x", "readonly")
 dataref("wx_ly", "sim/flightmodel/position/local_y", "readonly")
 dataref("wx_lz", "sim/flightmodel/position/local_z", "readonly")
 dataref("wx_nav1", "sim/cockpit2/radios/actuators/nav1_frequency_hz", "readonly")
+dataref("wx_vx", "sim/flightmodel/position/local_vx", "readonly")
+dataref("wx_vy", "sim/flightmodel/position/local_vy", "readonly")
+dataref("wx_vz", "sim/flightmodel/position/local_vz", "readonly")
 
 local watch = {
     rows = 0,
@@ -54,7 +57,7 @@ local function watch_start()
     end
     fh:write("sim_t\tlat\tlon\telev_ft\tagl_ft\tlocal_x\tlocal_y\tlocal_z"
         .. "\tpsi\tias\tgs\tgear\tflap\tap\tnav1\tstate\tsetup\ttarget\tnote"
-        .. "\tweight_lb\tpayload_lb\tfuel_lb\n")
+        .. "\tweight_lb\tpayload_lb\tfuel_lb\ttheta\tphi\tvx\tvy\tvz\tonground\n")
     fh:close()
 end
 
@@ -95,7 +98,7 @@ function watch_log()
 
     local line = string.format("%.1f\t%.7f\t%.7f\t%.1f\t%.1f\t%.3f\t%.3f\t%.3f"
         .. "\t%.1f\t%.1f\t%.1f\t%d\t%.2f\t%d\t%d\t%s\t%s\t%s\t%s"
-        .. "\t%.0f\t%.0f\t%.0f\n",
+        .. "\t%.0f\t%.0f\t%.0f\t%.1f\t%.1f\t%.2f\t%.2f\t%.2f\t%d\n",
         fi_time or 0, lat, lon,
         (fi_elev_m or 0) * 3.28084, (fi_agl_m or 0) * 3.28084,
         wx_lx or 0, wx_ly or 0, wx_lz or 0,
@@ -103,7 +106,9 @@ function watch_log()
         fi_gear or 0, fi_flap_handle or 0, fi_ap_on or 0, wx_nav1 or 0,
         tostring(state or ""), setup, target, note,
         (fi_weight_kg or 0) * 2.20462, (fi_payload_kg or 0) * 2.20462,
-        (fi_fuel_kg or 0) * 2.20462)
+        (fi_fuel_kg or 0) * 2.20462,
+        fi_pitch or 0, fi_roll or 0, wx_vx or 0, wx_vy or 0, wx_vz or 0,
+        fi_on_ground or 0)
 
     local fh = io.open(watch_path(), "a")
     if not fh then watch.failed = true return end
@@ -114,6 +119,6 @@ end
 
 if WATCH_CONFIG.enabled then
     watch_start()
-    do_every_second("watch_log()")
+    do_often("watch_log()")
     logMsg("Citation X Instructor watcher: " .. watch_path())
 end
