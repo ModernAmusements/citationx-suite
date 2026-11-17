@@ -14,6 +14,14 @@ InstructorWatch CSV stops on other aircraft too. The realism smoke test now sets
 `PLANE_ICAO = "C750"` like the other harnesses, and the hub/instructor/realism tests assert
 that nothing draws or grades on a non-C750.
 
+Validated: `luac -p`, `tests/check_datarefs.lua`, `tests/check_kpcrew_modules.lua C750`,
+`tests/probe_load_order.lua` (152 bindings, 0 load failures, 0 binding problems),
+`smoke_mastersuite`, `smoke_hud_toggles`, `smoke_realism`, `smoke_instructor` and
+`smoke_panel_geometry` (221 checks). Commit `9f0635f`, pushed to `origin main`.
+**Not yet confirmed in-sim:** reload Lua in X-Plane, load a non-C750 aircraft and verify no
+Citation X panel is drawn, then switch back and verify the hub, realism panel and instructor
+panel return with their previous on/off state.
+
 ## Session handoff — read this first
 
 **2026-11-15 — SET ME UP is in-sim but unverified; weight and watcher added.** The first
@@ -1447,7 +1455,8 @@ interior pass and the AviTab in-cockpit screen on `Cessna Citation X_mods`.
 ## Validation performed
 - `luac -p` on every script in `Scripts/`, including the KPCrew ones.
 - Every `dataref(...)` declaration in `Scripts/CitationX_*.lua` checked with
-  `tests/check_datarefs.lua`: 0 problems across 5 suite scripts (104 bindings).
+  `tests/check_datarefs.lua`: 0 problems across 7 suite scripts (`probe_load_order` reports
+  152 bindings).
 - Every `require()` reachable for the C750 checked with
   `tests/check_kpcrew_modules.lua C750`: 0 missing (`--all` sweeps every aircraft).
 - Every `laminar/CitX/...` command and runtime dataref checked against the Citation X's own
@@ -1457,14 +1466,18 @@ interior pass and the AviTab in-cockpit screen on `Cessna Citation X_mods`.
     drives the heading bug, heading-bug/light commands, axis optimizer override ownership,
     flight recorder, emergency generator, livery cycler, module registry, panel drag/hide and
     clean shutdown.
-  - `tests/smoke_hud_toggles.lua` — 12 rows well formed, unique keys, sibling toggles safe
-    with the other scripts absent, overlay draws zero primitives when everything is off, and
-    only the realism panel + hub are visible at load.
+  - `tests/smoke_hud_toggles.lua` — 13 rows well formed, unique keys, sibling toggles safe
+    with the other scripts absent, overlay draws zero primitives when everything is off, the
+    realism panel + hub + instructor panel are visible at load in the C750, and nothing draws
+    after switching to a non-C750 aircraft.
   - `tests/smoke_realism.lua` — takeoff/approach callouts fire once, gear-up delay, load-shed
     command after generator loss, brake fan on/off, flap overspeed, icing, Vmo, takeoff config,
-    stabilised approach, gear-down, anti-ice, cabin altitude, the handling curve and the HUD's
-    draw/click/drag behaviour.
-  - `tests/smoke_panel_geometry.lua` — renders all four panels into a recording canvas and
+    stabilised approach, gear-down, anti-ice, cabin altitude, the handling curve, the HUD's
+    draw/click/drag behaviour, and the non-C750 gate.
+  - `tests/smoke_instructor.lua` — the whole state machine, a 100% ILS, a bad run, the progress
+    file, the QRH failure lifecycle, the panel, and abandoning a running lesson when the
+    aircraft changes.
+  - `tests/smoke_panel_geometry.lua` — renders all five panels into a recording canvas and
     asserts: everything fits 2560×1440 (and the realism panel at 1280×720), no vertical text
     collisions, no text overflows its panel, the default positions do not collide, a click
     sweep reaches every row, and every header drag moves its panel by the mouse delta. It now
