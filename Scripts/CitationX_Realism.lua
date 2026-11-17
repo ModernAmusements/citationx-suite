@@ -206,6 +206,10 @@ dataref("real_wind_speed_kt",
 dataref("real_heading_deg",
     "sim/cockpit2/gauges/indicators/heading_AHARS_deg_mag_pilot", "readonly")
 
+-- The suite is C750-only. FlyWithLua keeps all scripts loaded across an
+-- aircraft change, so every frame/draw/click path checks this first.
+local real_is_c750 = (PLANE_ICAO == "C750")
+
 -- Pilot input, for the handling curve.
 dataref("real_joy_pitch", "sim/joystick/joy_mapped_axis_value", "readonly", 1)
 dataref("real_joy_roll",  "sim/joystick/joy_mapped_axis_value", "readonly", 2)
@@ -1102,6 +1106,11 @@ end
 
 -- ---------------------------------------------------------------- FRAME ------
 function real_frame()
+    real_is_c750 = (PLANE_ICAO == "C750")
+    if not real_is_c750 then
+        release_handling()
+        return
+    end
     if not REAL_CONFIG.enabled then
         release_handling()
         return
@@ -1547,6 +1556,7 @@ function real_set_hud(on)
 end
 
 function real_draw()
+    if not real_is_c750 then return end
     if not REAL_CONFIG.hud_enabled then return end
     local sw = SCREEN_WIDTH  or 1920
     local sh = SCREEN_HIGHT or 1080
@@ -1628,6 +1638,10 @@ function real_draw()
 end
 
 function real_mouse_click()
+    if not real_is_c750 then
+        real_drag.active = false
+        return
+    end
     if not REAL_CONFIG.hud_enabled then
         real_drag.active = false
         return

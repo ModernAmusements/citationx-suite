@@ -64,7 +64,8 @@ end
 function watch_log()
     if not WATCH_CONFIG.enabled or watch.failed then return end
     if watch.rows >= (WATCH_CONFIG.max_rows or 20000) then return end
-    -- Only while the instructor is actually on screen.
+    -- Only while the instructor is actually on screen, and only in the C750.
+    if PLANE_ICAO ~= "C750" then return end
     if type(FI_CONFIG) ~= "table" or not FI_CONFIG.panel_enabled then return end
 
     local lat, lon = wx_lat or 0, wx_lon or 0

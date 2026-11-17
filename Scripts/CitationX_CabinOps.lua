@@ -93,7 +93,7 @@ local cb_frame_last  = nil
 local cb_rows        = {}
 local cb_toast_text  = nil
 local cb_toast_until = 0
-local is_c750        = false
+local is_c750        = (PLANE_ICAO == "C750")   -- refreshed every frame
 
 local PHASE_NAME = { "STANDBY", "BOARDING", "PREP / PUSH", "DEPARTED" }
 
@@ -237,6 +237,10 @@ end
 -- ----------------------------------------------------------- FRAME LOOP ----
 function cab_frame()
     is_c750 = (PLANE_ICAO == "C750")
+    if CAB_CONFIG.require_c750 and not is_c750 then
+        if phase ~= PHASE_STANDBY then cab_reset() end
+        return
+    end
 
     local now = cab_sim_time or 0
     if now >= cb_retry_at then
@@ -318,6 +322,11 @@ local cab_footer_rect = nil
 local cab_drag = { active = false, dx = 0, dy = 0 }
 
 function cab_draw()
+    if CAB_CONFIG.require_c750 and not is_c750 then
+        cab_drag.active = false
+        cb_rows = {}
+        return
+    end
     if not CAB_CONFIG.panel_enabled then
         cab_drag.active = false
         return
@@ -446,6 +455,10 @@ local CAB_ACTIONS = {
 }
 
 function cab_mouse_click()
+    if CAB_CONFIG.require_c750 and not is_c750 then
+        cab_drag.active = false
+        return
+    end
     if not CAB_CONFIG.panel_enabled then
         cab_drag.active = false
         return

@@ -539,6 +539,12 @@ end
 -- ----------------------------------------------------------- FRAME LOOP ----
 function qrh_frame()
     is_c750 = (PLANE_ICAO == "C750")
+    -- A scenario is a C750 failure; clear it and stop polling when another
+    -- aircraft is selected, so nothing stays injected behind the scenes.
+    if TRAINER_CONFIG.require_c750 and not is_c750 then
+        if active then qrh_clear() end
+        return
+    end
 
     local now = ft_sim_time or 0
     if now >= tr_retry_at then
@@ -583,6 +589,11 @@ local qrh_footer_rect = nil
 local qrh_drag = { active = false, dx = 0, dy = 0 }
 
 function qrh_draw()
+    if TRAINER_CONFIG.require_c750 and not is_c750 then
+        qrh_drag.active = false
+        qrh_rows = {}
+        return
+    end
     if not TRAINER_CONFIG.panel_enabled then
         qrh_drag.active = false
         return
@@ -727,6 +738,10 @@ end
 
 -- --------------------------------------------------------------- MOUSE -----
 function qrh_mouse_click()
+    if TRAINER_CONFIG.require_c750 and not is_c750 then
+        qrh_drag.active = false
+        return
+    end
     if not TRAINER_CONFIG.panel_enabled then
         qrh_drag.active = false
         return

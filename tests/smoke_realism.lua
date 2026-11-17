@@ -23,6 +23,7 @@ end
 -- ---------- mock FlyWithLua ----------
 SCREEN_WIDTH, SCREEN_HIGHT = 1920, 1080
 SCRIPT_DIRECTORY = "/tmp/citx-test/"
+PLANE_ICAO = "C750"
 
 local logs, played, commands, toasts = {}, {}, {}, {}
 local fmod_loaded, fmod_played = {}, {}
@@ -507,6 +508,18 @@ check(has("(wav bus)"), "legacy load_WAV_file path is the fallback", logs[1])
 check(#played == 0, "nothing is played at load time")
 real_test_callout()
 check(#played == 1, "legacy play_sound used for the test callout", #played)
+
+-- ---------- inert on another aircraft --------------------------------------
+PLANE_ICAO = "B738"
+real_frame()
+drawn = {}
+real_draw()
+check(#drawn == 0, "panel stays hidden on another aircraft", #drawn)
+PLANE_ICAO = "C750"
+real_frame()
+drawn = {}
+real_draw()
+check(#drawn > 40, "panel returns on the C750", #drawn)
 
 -- ---------- report ----------
 print("")

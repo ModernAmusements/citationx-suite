@@ -180,7 +180,7 @@ local log_fd           = nil
 local optimizer_active = false
 local emergency_left   = 0.0
 local emergency_armed  = true
-local is_c750          = true
+local is_c750          = (PLANE_ICAO == "C750")
 
 -- --------------------------------------------------- TEXTURE (LIVERY) NAME --
 -- acf_livery_path is a *slow* dataref (it builds a string), and the panel asks
@@ -670,6 +670,7 @@ function citationx_mouse_wheel()
     local wheel  = MOUSE_WHEEL_NUMBER or 0
     wheel_last_number, wheel_last_clicks = wheel, clicks
     RESUME_MOUSE_WHEEL = false
+    if not is_c750 then return end
     if clicks == 0 then return end
 
     if wheel == CONFIG.wheel_altitude_number then
@@ -773,6 +774,19 @@ function citationx_frame()
     last_frame_time = now
 
     is_c750 = (PLANE_ICAO == "C750")
+
+    -- The suite belongs to the C750. When another aircraft is loaded, stop all
+    -- aircraft-specific work and hand the joystick overrides back; the panels
+    -- are hidden by the same flag further down.
+    if not is_c750 then
+        if optimizer_active then
+            ovr_joystick_pitch = 0
+            ovr_joystick_roll  = 0
+            optimizer_active   = false
+            logMsg("Citation X Suite: axis optimizer released (not a C750)")
+        end
+        return
+    end
 
     -- 1. Axis optimizer. Only pitch/roll: yaw, brakes, throttle and every
     --    button stay exactly as X-Plane has them.
@@ -969,6 +983,7 @@ local function draw_axis_monitor()
 end
 
 function citationx_overlay()
+    if not is_c750 then return end
     local screen_w = SCREEN_WIDTH  or 1920
     local screen_h = SCREEN_HIGHT or 1080
 
@@ -998,6 +1013,10 @@ end
 -- Panel dragging and clickable rows only. No keystroke handler and no button
 -- remap; the wheel is handled separately, and only wheels 1 and 2 are consumed.
 function citationx_mouse_click()
+    if not is_c750 then
+        panel_drag.active = false
+        return
+    end
     if not CONFIG.status_enabled then
         panel_drag.active = false
         return

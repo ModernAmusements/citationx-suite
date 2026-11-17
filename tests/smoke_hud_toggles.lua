@@ -208,6 +208,18 @@ primitives = 0
 citationx_overlay()
 check(primitives > 20, "control panel draws content", primitives .. " primitive(s)")
 
+-- ---------- nothing draws on another aircraft ------------------------------
+PLANE_ICAO = "B738"
+citationx_frame()
+primitives = 0
+citationx_overlay()
+check(primitives == 0, "overlay draws nothing on a non-C750", primitives .. " primitive(s)")
+PLANE_ICAO = "C750"
+citationx_frame()
+primitives = 0
+citationx_overlay()
+check(primitives > 20, "control panel returns on the C750", primitives .. " primitive(s)")
+
 -- ---------- draw callback survives ----------
 check(type(draw_cb) == "function", "draw callback registered")
 if draw_cb then

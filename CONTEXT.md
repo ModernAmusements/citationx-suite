@@ -1,6 +1,18 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-11-15
+Last updated: 2026-11-17
+
+**2026-11-17 — the suite is C750-only at runtime, not just at load.** FlyWithLua keeps every
+script loaded when the aircraft changes, so the instructor panel (visible at load) and the
+hub were appearing on every aeroplane. Every suite surface and per-frame path now checks
+`PLANE_ICAO == "C750"` before drawing, grading, injecting a failure or reading input:
+`citationx_overlay`/`citationx_frame`/click/wheel in the hub, `fi_draw`/`fi_frame`/click in
+the instructor, `qrh_*`, `cab_*` and `real_*`. Switching away clears any injected QRH failure,
+abandons a running lesson, returns cabin ops to STANDBY and releases the axis/handling
+overrides; switching back restores the panels with their previous on/off state. The
+InstructorWatch CSV stops on other aircraft too. The realism smoke test now sets
+`PLANE_ICAO = "C750"` like the other harnesses, and the hub/instructor/realism tests assert
+that nothing draws or grades on a non-C750.
 
 ## Session handoff — read this first
 
@@ -2076,9 +2088,11 @@ system. The instructor can reposition the aeroplane, but only when the pilot pre
 - **One state machine.** `MENU → BRIEF → FLYING → DEBRIEF`. `fi_start` refuses if
   `PLANE_ICAO ~= "C750"`; `fi_menu` clears any injected failure; `fi_brief` resets the run
   but does not arm.
-- **Visible at load.** The panel starts on screen (bottom-right, next to the realism panel
-  and hub) so the lesson list is one glance away. Hiding it via the footer or the hub
-  abandons the run and clears the instructor's own failure; reopening shows the list.
+- **Visible at load, but only in the C750.** The panel starts on screen (bottom-right, next
+  to the realism panel and hub) so the lesson list is one glance away; on any other aircraft
+  it is not drawn at all, and `fi_frame` abandons a running lesson rather than keep grading.
+  Hiding it via the footer or the hub abandons the run and clears the instructor's own
+  failure; reopening shows the list.
 - **Grading model.** Every criterion is `check(v, s)` against a snapshot of the sim's own
   datarefs, and is awarded only after being continuously true for `hold` seconds (0.6
   default, 1.5–2 s for speed/attitude/path items). This is the QRH trainer's "switch held"

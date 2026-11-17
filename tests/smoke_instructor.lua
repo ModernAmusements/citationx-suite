@@ -406,6 +406,16 @@ check(RESUME_MOUSE_CLICK == false, "click outside the panel is not consumed")
 fi_toggle_panel(false)
 check(FI_CONFIG.panel_enabled == false, "panel closes")
 
+-- ---------- inert on another aircraft --------------------------------------
+fi_toggle_panel(true)
+fi_start("pattern")
+check(fi_state() == 3, "lesson running before the aircraft change")
+PLANE_ICAO = "B738"
+frame_cb()
+check(fi_state() == 1, "another aircraft abandons the lesson and returns to the list")
+PLANE_ICAO = "C750"
+frame_cb()
+
 -- ---------- report ----------
 print("")
 if fails == 0 then

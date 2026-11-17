@@ -1433,6 +1433,11 @@ end
 
 function fi_frame()
     inst_is_c750 = (PLANE_ICAO == "C750")
+    -- Do not grade (or leave a lesson's failure injected) on another aircraft.
+    if FI_CONFIG.require_c750 and not inst_is_c750 then
+        if inst_state ~= FI_STATE.MENU or S.injected then fi_menu() end
+        return
+    end
     local now = fi_now()
     local dt  = now - (S.last_time or now)
     if dt < 0 or dt > 1.0 then dt = 0 end
@@ -1760,6 +1765,13 @@ local function fi_draw_debrief(cfg, st, x, top, w, lesson)
 end
 
 function fi_draw()
+    -- C750-only: FlyWithLua keeps every script loaded across aircraft changes,
+    -- so the panel must disappear when another aeroplane is selected.
+    if FI_CONFIG.require_c750 and not inst_is_c750 then
+        inst_drag.active = false
+        inst_rows = {}
+        return
+    end
     if not FI_CONFIG.panel_enabled then
         inst_drag.active = false
         return
@@ -1828,6 +1840,10 @@ end
 
 -- ----------------------------------------------------------------- MOUSE ----
 function fi_mouse_click()
+    if FI_CONFIG.require_c750 and not inst_is_c750 then
+        inst_drag.active = false
+        return
+    end
     if not FI_CONFIG.panel_enabled then
         inst_drag.active = false
         return
