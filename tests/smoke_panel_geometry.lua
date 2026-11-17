@@ -200,6 +200,19 @@ do
   assert_row_spacing("control panel")
   assert_text_inside_panel("control panel")
 
+  -- The FLOWS page is the hub's second tab: same shell, same palette, its own
+  -- layout and hit rectangles. It must fit and read as cleanly as CONTROL.
+  citationx_set_flow_tab("flows")
+  reset()
+  citationx_overlay()
+  check(#drawn > 20, "FLOWS page draws a meaningful number of primitives", #drawn)
+  assert_on_screen("flows", nil)
+  assert_row_spacing("flows")
+  assert_text_inside_panel("flows")
+  citationx_set_flow_tab("control")
+  reset()
+  citationx_overlay()   -- rebuild the CONTROL page hit rectangles
+
   -- Drag the header and confirm the panel follows the mouse.
   local st = SUITE_STYLE
   local x0, top0 = st.x, st.top

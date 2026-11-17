@@ -375,6 +375,7 @@ local S = {
     pos_done        = false,
     gear_done       = false,
     thousand_done   = false,
+    thousand_desc_done = false,  -- one-shot for the 1000 ft AGL descent call
     five_done       = false,
     one_done        = false,
     minima_done     = false,
@@ -602,6 +603,7 @@ local function reset_takeoff_state()
     S.pos_done      = false
     S.gear_done     = false
     S.thousand_done = false
+    S.thousand_desc_done = false
     S.five_done     = false
     S.one_done      = false
     S.minima_done   = false
@@ -655,10 +657,20 @@ local function callouts_tick(now, agl_ft)
         S.thousand_done = true
         callout("thousand", "ONE THOUSAND")
     end
+    -- A go-around, or a climb back above the gate, re-arms the descent call.
+    if agl_ft > 1200.0 then S.thousand_desc_done = false end
 
     -- Approach: descending, gear down, radio-altimeter style calls.
     local approach = (not S.was_ground) and vs < -300.0 and gear > 0.9
     if approach then
+        -- The standard RA sequence starts at 1000 ft. The WAV is shared with
+        -- the climb-out call, but the approach needs its own one-shot. Skip it
+        -- when the gear only comes down below 500 ft: FIVE HUNDRED owns that
+        -- call, and two WAVs in one tick would only mask each other.
+        if not S.thousand_desc_done and agl_ft <= 1000.0 and agl_ft > 500.0 then
+            S.thousand_desc_done = true
+            callout("thousand", "ONE THOUSAND")
+        end
         if not S.five_done and agl_ft <= 500.0 then
             S.five_done = true
             callout("five_hund", "FIVE HUNDRED")

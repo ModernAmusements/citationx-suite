@@ -101,6 +101,19 @@ check(type(SUITE_STYLE) == "table", "SUITE_STYLE exists")
 -- ---------- at load only the hub is on screen ------------------------------
 check(CONFIG.status_enabled == true, "control panel is visible at load")
 check(CONFIG.axis_monitor == false, "axis monitor starts hidden")
+check(CONFIG.flow_tab == "control", "the hub starts on the CONTROL page")
+check(type(citationx_set_flow_tab) == "function", "the FLOWS page has a public tab switch")
+check(type(citationx_debrief_poll) == "function", "the debrief poll is registered")
+
+local command_names = {}
+for _, c in ipairs(commands) do command_names[c.name] = true end
+for _, name in ipairs({
+  "CitationXSuite/flows_toggle", "CitationXSuite/flows_next",
+  "CitationXSuite/flows_back", "CitationXSuite/flows_reset",
+  "CitationXSuite/debrief_write", "CitationXSuite/debrief_report",
+}) do
+  check(command_names[name] == true, "command exists: " .. name)
+end
 
 -- ---------- and nothing else is switched on -------------------------------
 local on_at_load = {}

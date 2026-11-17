@@ -24,6 +24,8 @@
 --    6. Axis monitor     - opt-in diagnostic readout of the live raw axes
 --    7. Texture cycler   - steps through the installed liveries from the panel
 --    8. Panel hub        - opens the sibling panels (QRH, cabin, realism)
+--    9. FLOWS page       - guided, self-checking normal procedures in the hub
+--   10. Debrief CSV      - one end-of-flight summary row on engine shutdown
 --
 --  There is deliberately NO telemetry overlay and NO C750 systems readback:
 --  the aircraft's own PFD, EICAS and synoptics already show airspeed, altitude,
@@ -43,6 +45,13 @@ CONFIG = {
     -- Control panel ---------------------------------------------------------
     status_enabled         = true,    -- the hub is the one panel shown at load
     status_clickable       = true,    -- click a row to toggle / cycle it
+    flow_tab               = "control", -- "control" = module rows, "flows" = procedures
+
+    -- End-of-flight debrief --------------------------------------------------
+    -- Written once when both fuel flows stay at zero after a qualifying flight.
+    -- A test harness may override debrief_path with a scratch file.
+    debrief_enabled        = true,
+    debrief_path           = nil,
 
     -- Axis optimizer --------------------------------------------------------
     -- Reshapes the pitch/roll axes on their way into X-Plane: deadzone, expo
@@ -384,14 +393,47 @@ end
 
 -- ------------------------------------------------------------------ STATE ---
 local recorder_path    = "(none)"
+local recorder_samples = 0
 local last_tick_time   = 0
 local last_frame_time  = 0
 local smooth_pitch     = 0.0
 local smooth_roll      = 0.0
 
+-- FLOWS page: one independent step cursor and one done flag per step.
+local flow_state = {
+    active = nil,        -- key of the flow currently shown
+    step   = {},         -- key -> current step index (1-based)
+    done   = {},         -- key -> { [step_index] = true }
+}
+
+-- Debrief accumulator. Only datarefs already bound above are sampled; the
+-- landing score is borrowed read-only from LandingPerformance's shared globals.
+local debrief = {
+    phase          = "idle",     -- idle -> running -> cooldown -> idle
+    start_time     = 0.0,
+    end_time       = 0.0,
+    low_flow_time  = 0.0,
+    max_alt_ft     = 0.0,
+    max_ias_kts    = 0.0,
+    max_mach       = 0.0,
+    max_g          = 0.0,
+    max_bank_deg   = 0.0,
+    max_pitch_deg  = 0.0,
+    fuel_kg        = 0.0,
+    score          = nil,
+    rating         = "",
+    landing_rate   = nil,
+    last_row       = nil,
+    last_path      = "(none)",
+    written        = false,
+}
+
+local toast            -- forward declaration: FLOWS controls call it above
 local toast_text       = nil
 local toast_until      = 0.0
 local status_rects     = {}
+local panel_tab_rects  = {}
+local flow_rects       = {}
 local panel_footer_rect = nil
 local panel_header_rect = nil
 local panel_drag = { active = false, dx = 0, dy = 0 }
@@ -427,6 +469,7 @@ local function arm_recorder()
     if log_fd then
         log_fd:write(LOG_HEADER)
         log_fd:flush()
+        recorder_samples = 0
         recorder_path = tostring(path)
         logMsg("Citation X Suite: flight recorder armed -> " .. recorder_path)
         return true
@@ -446,6 +489,228 @@ end
 
 local function total_fuel_flow_kg_h()
     return ((fuel_flow_kg_sec[0] or 0.0) + (fuel_flow_kg_sec[1] or 0.0)) * 3600.0
+end
+
+-- ------------------------------------------------------------------ FLOWS ---
+-- Guided normal procedures. Each step is a short procedural prompt; `check`
+-- is either nil (visual only) or a predicate over datarefs this file already
+-- binds. No new DataRef or aircraft command is introduced here.
+CONFIG.flows = {
+    {
+        key = "cold_dark", label = "COLD & DARK",
+        steps = {
+            { text = "Walk around; confirm doors, gear and control locks.", check = nil },
+            { text = "Establish electrical power and verify EICAS is alive.", check = nil },
+            { text = "Set parking brake; confirm flaps and trim as required.", check = nil },
+            { text = "Review ATIS, route, FMS and clearance.", check = nil },
+            { text = "Call for push/start when the engines may be started.",
+              check = function() return total_fuel_flow_kg_h() < 100.0 end,
+              check_label = "FUEL FLOW < 100 KG/H (ENGINES OFF)" },
+        },
+    },
+    {
+        key = "before_start", label = "BEFORE START",
+        steps = {
+            { text = "Doors closed; external power connected or APU available.", check = nil },
+            { text = "Set PFD/ND sources, radios and autopilot modes.", check = nil },
+            { text = "Set heading bug to the departure runway.",
+              check = function() return citationx_hdg_sel_deg ~= nil end,
+              check_label = "HEADING BUG SET" },
+            { text = "Set ALT SEL to the cleared altitude.",
+              check = function() return (citationx_alt_sel_ft or 0) > 0 end,
+              check_label = "ALT SEL ABOVE ZERO" },
+            { text = "Start engines; verify fuel flow on both EICAS engines.",
+              check = function() return total_fuel_flow_kg_h() > 200.0 end,
+              check_label = "FUEL FLOW > 200 KG/H" },
+        },
+    },
+    {
+        key = "taxi", label = "TAXI",
+        steps = {
+            { text = "Obtain taxi clearance; taxi light ON.", check = nil },
+            { text = "Release parking brake and taxi clear of the ramp.",
+              check = function() return (ias_kts or 0) >= 1.0 end,
+              check_label = "IAS >= 1 KT" },
+            { text = "Hold short; set parking brake.",
+              check = function() return (ias_kts or 0) < 5.0 end,
+              check_label = "IAS < 5 KT" },
+            { text = "Review takeoff data and complete the departure brief.", check = nil },
+        },
+    },
+    {
+        key = "before_takeoff", label = "BEFORE TAKEOFF",
+        steps = {
+            { text = "Landing lights ON, taxi light OFF; transponder ALT.", check = nil },
+            { text = "Flight controls free; flaps and pitch trim set.", check = nil },
+            { text = "Confirm heading bug matches the takeoff runway.",
+              check = function() return citationx_hdg_sel_deg ~= nil end,
+              check_label = "HEADING BUG SET" },
+            { text = "Confirm ALT SEL matches the cleared altitude.",
+              check = function() return (citationx_alt_sel_ft or 0) > 0 end,
+              check_label = "ALT SEL ABOVE ZERO" },
+            { text = "Hold on the brakes; verify airspeed is alive before takeoff.",
+              check = function() return (ias_kts or 0) < 60.0 end,
+              check_label = "IAS < 60 KT" },
+        },
+    },
+    {
+        key = "after_landing", label = "AFTER LANDING",
+        steps = {
+            { text = "Clear the runway; taxi light ON.", check = nil },
+            { text = "Landing lights OFF; speedbrakes and flaps stowed.", check = nil },
+            { text = "Verify speed is below the taxi limit.",
+              check = function() return (ias_kts or 0) < 40.0 end,
+              check_label = "IAS < 40 KT" },
+            { text = "Complete the after-landing checklist and call for parking.", check = nil },
+        },
+    },
+    {
+        key = "shutdown", label = "SHUTDOWN",
+        steps = {
+            { text = "Park the aircraft; set the parking brake.",
+              check = function() return (ias_kts or 0) < 1.0 end,
+              check_label = "IAS < 1 KT" },
+            { text = "Throttles cutoff; verify both fuel flows at zero.",
+              check = function() return total_fuel_flow_kg_h() < 100.0 end,
+              check_label = "FUEL FLOW < 100 KG/H" },
+            { text = "Lights, packs and bleeds OFF; doors as required.", check = nil },
+            { text = "Debrief CSV is written automatically at shutdown.", check = nil },
+        },
+    },
+}
+
+local function flow_by_key(key)
+    for i = 1, #CONFIG.flows do
+        if CONFIG.flows[i].key == key then return CONFIG.flows[i] end
+    end
+    return nil
+end
+
+local function flow_current_key()
+    return flow_state.active or CONFIG.flows[1].key
+end
+
+local function flow_step_index(key)
+    local n = #(flow_by_key(key).steps)
+    local i = flow_state.step[key] or 1
+    if i < 1 then i = 1 end
+    if i > n then i = n end
+    return i
+end
+
+local function flow_step_done(key, i)
+    local marks = flow_state.done[key]
+    return marks ~= nil and marks[i] == true
+end
+
+local function flow_all_done(key)
+    local flow = flow_by_key(key)
+    if not flow then return false end
+    for i = 1, #flow.steps do
+        if not flow_step_done(key, i) then return false end
+    end
+    return true
+end
+
+local function flow_step_check(key, i)
+    local flow = flow_by_key(key)
+    if not flow then return false end
+    local step = flow.steps[i]
+    return step ~= nil and step.check ~= nil and step.check() == true
+end
+
+-- Tick the visible step's self-check. Clicking NEXT still advances a step whose
+-- predicate is false: the pilot stays in control of the flow.
+function citationx_flow_poll()
+    if CONFIG.flow_tab ~= "flows" then return end
+    local key = flow_current_key()
+    local i = flow_step_index(key)
+    if flow_step_check(key, i) then
+        flow_state.done[key] = flow_state.done[key] or {}
+        flow_state.done[key][i] = true
+    end
+end
+
+function citationx_flows() return CONFIG.flows end
+
+function citationx_flow_state()
+    local out = { tab = CONFIG.flow_tab, active = flow_current_key(), step = {}, done = {} }
+    for _, flow in ipairs(CONFIG.flows) do
+        out.step[flow.key] = flow_step_index(flow.key)
+        out.done[flow.key] = {}
+        for i = 1, #flow.steps do
+            out.done[flow.key][i] = flow_step_done(flow.key, i)
+        end
+    end
+    return out
+end
+
+function citationx_set_flow_tab(tab)
+    if tab ~= "flows" then tab = "control" end
+    CONFIG.flow_tab = tab
+    if tab == "flows" then
+        if not flow_by_key(flow_state.active) then
+            flow_state.active = CONFIG.flows[1].key
+        end
+        citationx_flow_poll()
+    end
+end
+
+function citationx_flows_toggle()
+    citationx_set_flow_tab(CONFIG.flow_tab == "flows" and "control" or "flows")
+    if not CONFIG.status_enabled then citationx_set_status(true) end
+    toast("FLOWS: " .. string.upper(CONFIG.flow_tab))
+end
+
+function citationx_flow_select(key)
+    if not flow_by_key(key) then return end
+    flow_state.active = key
+    CONFIG.flow_tab = "flows"
+    citationx_flow_poll()
+    toast(flow_by_key(key).label)
+end
+
+function citationx_flow_next()
+    local key = flow_current_key()
+    local flow = flow_by_key(key)
+    local i = flow_step_index(key)
+    flow_state.done[key] = flow_state.done[key] or {}
+    flow_state.done[key][i] = true
+    if i < #flow.steps then
+        flow_state.step[key] = i + 1
+    else
+        -- Revisiting a finished flow starts a fresh pass.
+        flow_state.step[key] = 1
+        flow_state.done[key] = {}
+    end
+    citationx_flow_poll()
+end
+
+function citationx_flow_back()
+    local key = flow_current_key()
+    local i = flow_step_index(key)
+    if i > 1 then flow_state.step[key] = i - 1 end
+    citationx_flow_poll()
+end
+
+function citationx_flow_reset()
+    local key = flow_current_key()
+    flow_state.step[key] = 1
+    flow_state.done[key] = {}
+    toast("FLOW RESET")
+end
+
+function citationx_flow_report()
+    logMsg("Citation X Suite: FLOWS report ------------------------------------")
+    logMsg("  page = " .. CONFIG.flow_tab)
+    for _, flow in ipairs(CONFIG.flows) do
+        local done_count = 0
+        for i = 1, #flow.steps do
+            if flow_step_done(flow.key, i) then done_count = done_count + 1 end
+        end
+        logMsg(string.format("  %-16s : %d/%d, cursor %d",
+            flow.label, done_count, #flow.steps, flow_step_index(flow.key)))
+    end
 end
 
 -- Deadzone -> expo -> sign, so both axes share one response curve.
@@ -471,10 +736,11 @@ local function write_log_line(now)
         roll_deg or 0.0,
         g_nrml or 1.0,
         total_fuel_flow_kg_h()))
+    recorder_samples = recorder_samples + 1
     log_fd:flush()
 end
 
-local function toast(text)
+function toast(text)
     toast_text  = text
     toast_until = (citationx_sim_time or 0.0) + 2.0
 end
@@ -487,6 +753,214 @@ end
 
 local function toast_state(name, on)
     toast(name .. (on and ": ON" or ": OFF"))
+end
+
+-- ------------------------------------------------------------- DEBRIEF CSV ---
+-- One row per flight, appended when both engines stay at zero fuel flow for a
+-- few seconds. Only existing bindings are sampled. LandingPerformance's score
+-- is borrowed read-only; this file never writes to that script's globals.
+local DEBRIEF_HEADER = "Timestamp,Start_Sec,End_Sec,Duration_Sec,Max_Alt_FT,"
+    .. "Max_IAS_KTS,Max_Mach,Max_G,Max_Bank_Deg,Max_Pitch_Deg,Fuel_Burned_Kg,"
+    .. "Recorder_Samples,Recorder_File,Landing_Score,Landing_Rating,Landing_Rate_FPM\n"
+local DEBRIEF_START_FLOW_KG_S = 0.05
+local DEBRIEF_OFF_FLOW_KG_S   = 0.01
+local DEBRIEF_OFF_HOLD_SEC    = 3.0
+local DEBRIEF_MIN_IAS_KTS     = 60.0
+local DEBRIEF_MIN_MACH        = 0.08
+
+local function debrief_path_candidates()
+    if CONFIG.debrief_path and CONFIG.debrief_path ~= "" then
+        return { CONFIG.debrief_path }
+    end
+    local dir = SCRIPT_DIRECTORY or ""
+    if dir ~= "" and dir:sub(-1) ~= "/" then dir = dir .. "/" end
+    -- Scripts/ -> FlyWithLua/ -> plugins/ -> Resources/ -> X-Plane 12/
+    local out = {}
+    if dir ~= "" then out[1] = dir .. "../../../../Output/CitationX_Debrief.csv" end
+    out[#out + 1] = "Output/CitationX_Debrief.csv"
+    if dir ~= "" then out[#out + 1] = dir .. "CitationX_Debrief.csv" end
+    return out
+end
+
+function citationx_debrief_path()
+    return debrief_path_candidates()[1] or "(none)"
+end
+
+local function csv_cell(value)
+    local s = tostring(value or "")
+    if s:find('[",\r\n]') then s = '"' .. s:gsub('"', '""') .. '"' end
+    return s
+end
+
+local function debrief_number(value, fmt)
+    if type(value) ~= "number" then return "" end
+    return string.format(fmt, value)
+end
+
+local function debrief_reset(now)
+    debrief.phase         = "running"
+    debrief.start_time    = now
+    debrief.end_time      = now
+    debrief.low_flow_time = 0.0
+    debrief.max_alt_ft    = 0.0
+    debrief.max_ias_kts   = 0.0
+    debrief.max_mach      = 0.0
+    debrief.max_g         = 0.0
+    debrief.max_bank_deg  = 0.0
+    debrief.max_pitch_deg = 0.0
+    debrief.fuel_kg       = 0.0
+    debrief.score         = nil
+    debrief.rating        = ""
+    debrief.landing_rate  = nil
+end
+
+local function debrief_borrow_landing_score()
+    if debrief.score ~= nil then return end
+    if type(la_score) ~= "number" then return end
+    debrief.score = la_score
+    if type(la_rating) == "string" then debrief.rating = la_rating end
+    if type(la_landingRate) == "number" then debrief.landing_rate = la_landingRate end
+end
+
+local function debrief_finalize(now)
+    debrief.end_time      = now
+    debrief.phase         = "cooldown"
+    debrief.low_flow_time = 0.0
+    debrief.written       = false
+
+    local qualified = debrief.max_ias_kts >= DEBRIEF_MIN_IAS_KTS
+        or debrief.max_mach >= DEBRIEF_MIN_MACH
+    if not qualified then
+        logMsg("Citation X Suite: debrief skipped - no qualifying flight segment")
+        toast("DEBRIEF: NO FLIGHT")
+        return
+    end
+
+    local row = table.concat({
+        os.date("%Y-%m-%d %H:%M:%S"),
+        debrief_number(debrief.start_time, "%.1f"),
+        debrief_number(debrief.end_time, "%.1f"),
+        debrief_number(debrief.end_time - debrief.start_time, "%.1f"),
+        debrief_number(debrief.max_alt_ft, "%.0f"),
+        debrief_number(debrief.max_ias_kts, "%.1f"),
+        debrief_number(debrief.max_mach, "%.3f"),
+        debrief_number(debrief.max_g, "%.2f"),
+        debrief_number(debrief.max_bank_deg, "%.1f"),
+        debrief_number(debrief.max_pitch_deg, "%.1f"),
+        debrief_number(debrief.fuel_kg, "%.1f"),
+        tostring(recorder_samples),
+        csv_cell(recorder_path),
+        debrief_number(debrief.score, "%.0f"),
+        csv_cell(debrief.rating),
+        debrief_number(debrief.landing_rate, "%.0f"),
+    }, ",")
+
+    for _, path in ipairs(debrief_path_candidates()) do
+        local probe = io.open(path, "r")
+        local empty = true
+        if probe then
+            local first = probe:read(1)
+            if first then empty = false end
+            probe:close()
+        end
+        local fd = io.open(path, "a")
+        if fd then
+            if empty then fd:write(DEBRIEF_HEADER) end
+            fd:write(row .. "\n")
+            fd:flush()
+            fd:close()
+            debrief.last_path = path
+            debrief.last_row  = row
+            debrief.written   = true
+            logMsg("Citation X Suite: debrief written -> " .. path)
+            toast("DEBRIEF SAVED")
+            return
+        end
+    end
+    logMsg("Citation X Suite: WARNING - could not write the debrief CSV")
+    toast("DEBRIEF: NO FILE")
+end
+
+function citationx_debrief_poll(now, dt)
+    if not CONFIG.debrief_enabled then return end
+    if dt < 0.0 then dt = 0.0 end
+    -- Cap the fuel integral on a time jump, but keep the shutdown hold honest
+    -- at low frame rates (a 1 Hz test sim still sees a real 3 s).
+    local hold_dt = math.min(dt, 1.0)
+    local fuel_dt = math.min(dt, 0.5)
+
+    local left  = fuel_flow_kg_sec[0] or 0.0
+    local right = fuel_flow_kg_sec[1] or 0.0
+    local both_on  = left >= DEBRIEF_START_FLOW_KG_S and right >= DEBRIEF_START_FLOW_KG_S
+    local both_off = left <= DEBRIEF_OFF_FLOW_KG_S and right <= DEBRIEF_OFF_FLOW_KG_S
+
+    if debrief.phase == "idle" or debrief.phase == "cooldown" then
+        if both_on then debrief_reset(now) end
+        return
+    end
+    if debrief.phase ~= "running" then return end
+
+    debrief.fuel_kg = debrief.fuel_kg + (left + right) * fuel_dt
+    local alt_ft = (elevation_m or 0.0) * 3.28084
+    if alt_ft > debrief.max_alt_ft then debrief.max_alt_ft = alt_ft end
+    if (ias_kts or 0.0) > debrief.max_ias_kts then debrief.max_ias_kts = ias_kts end
+    if (mach_no or 0.0) > debrief.max_mach then debrief.max_mach = mach_no end
+    if (g_nrml or 0.0) > debrief.max_g then debrief.max_g = g_nrml end
+    if math.abs(roll_deg or 0.0) > debrief.max_bank_deg then
+        debrief.max_bank_deg = math.abs(roll_deg)
+    end
+    if math.abs(pitch_deg or 0.0) > debrief.max_pitch_deg then
+        debrief.max_pitch_deg = math.abs(pitch_deg)
+    end
+    debrief_borrow_landing_score()
+
+    if both_off then
+        debrief.low_flow_time = debrief.low_flow_time + hold_dt
+    else
+        debrief.low_flow_time = 0.0
+    end
+    if debrief.low_flow_time >= DEBRIEF_OFF_HOLD_SEC then debrief_finalize(now) end
+end
+
+function citationx_debrief_state()
+    return {
+        enabled   = CONFIG.debrief_enabled,
+        phase     = debrief.phase,
+        start     = debrief.start_time,
+        end_time  = debrief.end_time,
+        max_ias   = debrief.max_ias_kts,
+        max_mach  = debrief.max_mach,
+        score     = debrief.score,
+        rating    = debrief.rating,
+        written   = debrief.written,
+        path      = debrief.last_path,
+        row       = debrief.last_row,
+    }
+end
+
+function citationx_debrief_write()
+    if debrief.phase ~= "running" then
+        logMsg("Citation X Suite: no active flight to debrief")
+        toast("DEBRIEF: NO FLIGHT")
+        return false
+    end
+    debrief_finalize(citationx_sim_time or 0.0)
+    return debrief.written
+end
+
+function citationx_debrief_toggle(on)
+    CONFIG.debrief_enabled = (on == true)
+    toast_state("DEBRIEF CSV", CONFIG.debrief_enabled)
+end
+
+function citationx_debrief_report()
+    logMsg("Citation X Suite: debrief report -----------------------------------")
+    logMsg(string.format("  enabled = %s, phase = %s", tostring(CONFIG.debrief_enabled), debrief.phase))
+    logMsg("  file = " .. citationx_debrief_path())
+    logMsg(string.format("  max IAS %.1f kt, max Mach %.3f, fuel %.1f kg, score %s",
+        debrief.max_ias_kts, debrief.max_mach, debrief.fuel_kg,
+        tostring(debrief.score or "n/a")))
+    if debrief.last_row then logMsg("  last row = " .. debrief.last_row) end
 end
 
 local function maybe_start_emergency()
@@ -764,6 +1238,10 @@ function citationx_status_report()
         local m = SUITE_MODULES[i]
         logMsg(string.format("  %-18s : %s", m.label, m.state()))
     end
+    logMsg(string.format("  flows page     : %s, active %s",
+        CONFIG.flow_tab, flow_current_key()))
+    logMsg(string.format("  debrief        : %s, %s",
+        CONFIG.debrief_enabled and "ON" or "OFF", citationx_debrief_path()))
 end
 
 -- ------------------------------------------------------------- FRAME LOOP ---
@@ -787,6 +1265,11 @@ function citationx_frame()
         end
         return
     end
+
+    -- Guided flows and the end-of-flight debrief both read only bindings that
+    -- were already declared above; neither draws an aircraft readback.
+    citationx_flow_poll()
+    citationx_debrief_poll(now, dt)
 
     -- 1. Axis optimizer. Only pitch/roll: yaw, brakes, throttle and every
     --    button stay exactly as X-Plane has them.
@@ -872,9 +1355,37 @@ local function draw_footer_button(x, bottom, w, label)
     return cx_footer_button(x, bottom, w, label, st.footer_h, st.pad)
 end
 
--- header (38) + sub-header (22) + rows + footer + padding
+-- Flow page geometry. `top` is the panel's top edge (FlyWithLua y grows up).
+-- The same layout drives drawing and hit testing, so a clicked row is always
+-- the row the pilot sees.
+local function flow_layout(st, top)
+    local first_y = top - st.header_h - st.sub_h - 15
+    local rows = {}
+    for i = 1, #CONFIG.flows do
+        rows[i] = first_y + st.row_h - (i - 1) * st.row_h   -- row top edge
+    end
+    local last_bottom = rows[#rows] - st.row_h
+    local prompt_y = last_bottom - 16
+    local check_y  = prompt_y - 18
+    local nav_top  = check_y - 16
+    local nav_bottom = nav_top - (st.row_h - 8)
+    local footer_top = nav_bottom - 14
+    return {
+        first_y = first_y, rows = rows,
+        prompt_y = prompt_y, check_y = check_y,
+        nav_top = nav_top, nav_bottom = nav_bottom,
+        footer_top = footer_top,
+        bottom = footer_top - st.footer_h - 8,
+    }
+end
+
+-- Control page: header + sub-header + rows + footer + padding.
+-- Flows page: the shared layout above decides the bottom edge.
 function control_panel_height()
     local st = SUITE_STYLE
+    if CONFIG.flow_tab == "flows" then
+        return -flow_layout(st, 0).bottom
+    end
     return st.header_h + st.sub_h + 14
         + #SUITE_MODULES * st.row_h + st.footer_h + 8
 end
@@ -900,44 +1411,130 @@ local function draw_control_panel(screen_h)
     local bottom = top - h
     local body_top = top - st.header_h
 
-    status_rects = {}
+    status_rects, panel_tab_rects, flow_rects = {}, {}, {}
 
     draw_shell(x, top, w, h, "CITATION X", "MASTER SUITE 3.0")
 
-    -- sub-header: what the hub is, so the intent is visible in the cockpit
-    suite_text(x + pad, body_top - 15, "SUITE CONTROL", 10, st.sub)
+    -- Sub-header: the two hub pages. CONTROL keeps the original module rows;
+    -- FLOWS shows the guided normal procedures. Neither page owns a keybind.
+    local sub_y = body_top - 15
+    suite_text(x + pad, sub_y, "HUB", 10, st.dim)
+    local tab_x = x + pad + cx_measure("HUB", 10) + 12
+    local function add_tab(label, key)
+        local tw = cx_measure(label, 10)
+        local active = (CONFIG.flow_tab == key)
+        suite_text(tab_x, sub_y, label, 10, active and st.accent or st.sub)
+        if active then
+            draw_bar(tab_x, body_top - st.sub_h + 2, tab_x + tw,
+                body_top - st.sub_h + 3, st.accent, 1.0)
+        end
+        panel_tab_rects[#panel_tab_rects + 1] = {
+            key = key, x0 = tab_x - 4, x1 = tab_x + tw + 4,
+            y0 = body_top - st.sub_h, y1 = body_top,
+        }
+        tab_x = tab_x + tw + 18
+    end
+    add_tab("CONTROL", "control")
+    add_tab("FLOWS", "flows")
+
     local note = "MOUSE ONLY - NO KEYBINDS"
     local nw = measure_string(note, "Helvetica_10") or measure_string(note)
-    suite_text(x + w - pad - nw, body_top - 15, note, 10, st.dim)
+    suite_text(x + w - pad - nw, sub_y, note, 10, st.dim)
     draw_bar(x, body_top - st.sub_h, body_top, w, st.hairline, 0.45)
 
-    local first_y = body_top - st.sub_h - 15
-    for i = 1, #SUITE_MODULES do
-        local m = SUITE_MODULES[i]
-        local row_top = first_y + st.row_h - (i - 1) * st.row_h
-        local y = row_top - 15
-        local text = m.state()
-        local col  = m.cycle and st.value or state_color(text)
-
-        -- alternating body tone keeps 11 rows readable at a glance
-        if i % 2 == 0 then
-            draw_bar(x + 1, row_top - st.row_h, row_top, w - 2, st.bg_alt, 0.55)
+    if CONFIG.flow_tab == "flows" then
+        -- Flow index rows ---------------------------------------------------
+        local L = flow_layout(st, top)
+        local flow = flow_by_key(flow_current_key())
+        for i = 1, #CONFIG.flows do
+            local f = CONFIG.flows[i]
+            local row_top = L.rows[i]
+            local y = row_top - 15
+            local active = (f.key == flow.key)
+            local done_all = flow_all_done(f.key)
+            local col = active and st.accent or (done_all and st.ok or st.label)
+            if active or i % 2 == 0 then
+                draw_bar(x + 1, row_top - st.row_h, row_top, w - 2,
+                    st.bg_alt, active and 0.85 or 0.55)
+            end
+            glColor4f(col[1], col[2], col[3], 1.0)
+            glRectf(x + pad, y - 1, x + pad + 5, y + 8)
+            suite_text(x + pad + 12, y,
+                fit_text(string.format("%d. %s", i, f.label), w * 0.52), 12, col)
+            local marks = 0
+            for s = 1, #f.steps do
+                if flow_step_done(f.key, s) then marks = marks + 1 end
+            end
+            suite_text_right(x + w - pad, y,
+                done_all and "DONE" or string.format("%d/%d", marks, #f.steps),
+                12, done_all and st.ok or st.dim)
+            flow_rects[#flow_rects + 1] = {
+                key = f.key, x0 = x, x1 = x + w,
+                y0 = row_top - st.row_h, y1 = row_top,
+            }
         end
 
-        -- status dot (a 5x5 square reads sharper than a circle at this size)
-        glColor4f(col[1], col[2], col[3], 1.0)
-        glRectf(x + pad, y - 1, x + pad + 5, y + 8)
+        -- Current step and its optional self-check --------------------------
+        local idx = flow_step_index(flow.key)
+        local step = flow.steps[idx]
+        suite_text(x + pad + 16, L.prompt_y,
+            fit_text(string.format("STEP %d/%d  %s", idx, #flow.steps, step.text),
+                w - pad * 2 - 32), 12, st.label)
+        local check_ok = flow_step_check(flow.key, idx)
+        local check_line
+        if step.check then
+            check_line = (check_ok and "[X] " or "[ ] ") .. step.check_label
+        else
+            check_line = "[ ] VISUAL CHECK - VERIFY ON COCKPIT DISPLAYS"
+        end
+        local check_col = step.check and (check_ok and st.ok or st.sub) or st.dim
+        suite_text(x + pad + 16, L.check_y,
+            fit_text(check_line, w - pad * 2 - 32), 10, check_col)
 
-        suite_text(x + pad + 12, y, m.label, 12, st.label)
-        local value_max = w - pad * 2 - 12 - measure_string(m.label) - 16
-        local shown = fit_text(tostring(text), math.max(60, value_max))
-        suite_text_right(x + w - pad, y, shown, 12, col)
+        -- Navigation buttons -----------------------------------------------
+        local labels = { "BACK", "NEXT", "RESET" }
+        local gap, btn_w = 8, (w - pad * 2 - 16) / 3
+        for i, label in ipairs(labels) do
+            local bx = x + pad + (i - 1) * (btn_w + gap)
+            draw_bar(bx, L.nav_bottom, L.nav_top, btn_w, st.btn)
+            draw_bar(bx, L.nav_top - 1, L.nav_top, btn_w, st.hairline, 0.6)
+            local bcol = label == "NEXT" and st.accent or st.label
+            suite_text(bx + (btn_w - cx_measure(label, 10)) / 2,
+                L.nav_bottom + 6, label, 10, bcol)
+            flow_rects[#flow_rects + 1] = {
+                key = string.lower(label), x0 = bx, x1 = bx + btn_w,
+                y0 = L.nav_bottom, y1 = L.nav_top,
+            }
+        end
+    else
+        local first_y = body_top - st.sub_h - 15
+        for i = 1, #SUITE_MODULES do
+            local m = SUITE_MODULES[i]
+            local row_top = first_y + st.row_h - (i - 1) * st.row_h
+            local y = row_top - 15
+            local text = m.state()
+            local col  = m.cycle and st.value or state_color(text)
 
-        status_rects[#status_rects + 1] = {
-            key = m.key,
-            x0 = x, x1 = x + w,
-            y0 = row_top - st.row_h, y1 = row_top,
-        }
+            -- alternating body tone keeps the rows readable at a glance
+            if i % 2 == 0 then
+                draw_bar(x + 1, row_top - st.row_h, row_top, w - 2, st.bg_alt, 0.55)
+            end
+
+            -- status dot (a 5x5 square reads sharper than a circle at this size)
+            glColor4f(col[1], col[2], col[3], 1.0)
+            glRectf(x + pad, y - 1, x + pad + 5, y + 8)
+
+            suite_text(x + pad + 12, y, m.label, 12, st.label)
+            local value_max = w - pad * 2 - 12 - measure_string(m.label) - 16
+            local shown = fit_text(tostring(text), math.max(60, value_max))
+            suite_text_right(x + w - pad, y, shown, 12, col)
+
+            status_rects[#status_rects + 1] = {
+                key = m.key,
+                x0 = x, x1 = x + w,
+                y0 = row_top - st.row_h, y1 = row_top,
+            }
+        end
     end
 
     panel_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
@@ -1055,10 +1652,35 @@ function citationx_mouse_click()
 
     if not CONFIG.status_clickable or MOUSE_STATUS ~= "down" then return end
 
+    -- Hub tabs are part of the same draggable panel.
+    for i = 1, #panel_tab_rects do
+        local r = panel_tab_rects[i]
+        if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
+            citationx_set_flow_tab(r.key)
+            RESUME_MOUSE_CLICK = true
+            return
+        end
+    end
+
     local f = panel_footer_rect
     if f and mx >= f.x0 and mx <= f.x1 and my >= f.y0 and my <= f.y1 then
         citationx_set_status(false)
         RESUME_MOUSE_CLICK = true
+        return
+    end
+
+    if CONFIG.flow_tab == "flows" then
+        for i = 1, #flow_rects do
+            local r = flow_rects[i]
+            if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
+                if r.key == "back" then citationx_flow_back()
+                elseif r.key == "next" then citationx_flow_next()
+                elseif r.key == "reset" then citationx_flow_reset()
+                else citationx_flow_select(r.key) end
+                RESUME_MOUSE_CLICK = true
+                return
+            end
+        end
         return
     end
 
@@ -1130,6 +1752,54 @@ create_command("CitationXSuite/test_emergency",
 create_command("CitationXSuite/status_report",
     "CitationX Suite: write the active-system report to Log.txt",
     "citationx_status_report()", "", "")
+
+-- FLOWS page: every control is a real command and a macro. Nothing is bound to
+-- a key or a controller button by the suite itself.
+create_command("CitationXSuite/flows_toggle",
+    "CitationX Suite: show or hide the FLOWS page in the hub",
+    "citationx_flows_toggle()", "", "")
+for _, flow in ipairs(CONFIG.flows) do
+    create_command("CitationXSuite/flows_select_" .. flow.key,
+        "CitationX Suite: show the " .. flow.label .. " flow",
+        "citationx_flow_select('" .. flow.key .. "')", "", "")
+    add_macro("CitationX Suite: flow " .. flow.label,
+        "citationx_flow_select('" .. flow.key .. "')")
+end
+create_command("CitationXSuite/flows_next",
+    "CitationX Suite: complete the current flow step and advance",
+    "citationx_flow_next()", "", "")
+create_command("CitationXSuite/flows_back",
+    "CitationX Suite: return to the previous flow step",
+    "citationx_flow_back()", "", "")
+create_command("CitationXSuite/flows_reset",
+    "CitationX Suite: reset the current flow",
+    "citationx_flow_reset()", "", "")
+create_command("CitationXSuite/flows_report",
+    "CitationX Suite: write the FLOWS progress report to Log.txt",
+    "citationx_flow_report()", "", "")
+
+-- Debrief CSV: normally automatic at engine shutdown, with manual controls for
+-- checking the path and forcing a row while a flight is still running.
+create_command("CitationXSuite/debrief_toggle",
+    "CitationX Suite: enable or disable the end-of-flight debrief CSV",
+    "citationx_debrief_toggle(false)", "citationx_debrief_toggle(true)",
+    CONFIG.debrief_enabled and "activate" or "deactivate")
+create_command("CitationXSuite/debrief_write",
+    "CitationX Suite: write the current flight's debrief row now",
+    "citationx_debrief_write()", "", "")
+create_command("CitationXSuite/debrief_report",
+    "CitationX Suite: write the debrief report to Log.txt",
+    "citationx_debrief_report()", "", "")
+add_macro("CitationX Suite: FLOWS page", "citationx_flows_toggle()")
+add_macro("CitationX Suite: next flow step", "citationx_flow_next()")
+add_macro("CitationX Suite: previous flow step", "citationx_flow_back()")
+add_macro("CitationX Suite: reset flow", "citationx_flow_reset()")
+add_macro("CitationX Suite: log FLOWS report", "citationx_flow_report()")
+add_macro("CitationX Suite: end-of-flight debrief", "citationx_debrief_toggle(true)",
+    "citationx_debrief_toggle(false)",
+    CONFIG.debrief_enabled and "activate" or "deactivate")
+add_macro("CitationX Suite: write debrief now", "citationx_debrief_write()")
+add_macro("CitationX Suite: log debrief report", "citationx_debrief_report()")
 
 -- Mouse actions as real commands: point another mouse button, a gesture or a
 -- second wheel at these from X-Plane's joystick screen (or the mouse driver).

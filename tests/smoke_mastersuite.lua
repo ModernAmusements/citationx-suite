@@ -33,10 +33,12 @@ function dataref(name)
 end
 
 local livery_bytes = {}
-local axis_values, axis_assign
+local axis_values, axis_assign, test_fuel_flow
 function dataref_table(path)
     local t = setmetatable({}, { __index = function() return 0 end })
-    if path == "sim/joystick/joystick_axis_values" then
+    if path == "sim/cockpit2/engine/indicators/fuel_flow_kg_sec" then
+        test_fuel_flow = t
+    elseif path == "sim/joystick/joystick_axis_values" then
         axis_values = t
     elseif path == "sim/joystick/joystick_axis_assignments" then
         axis_assign = t
@@ -383,6 +385,106 @@ drawn = {}
 draw_cb()
 check(#drawn == 0, "a hidden panel draws nothing", #drawn)
 citationx_set_status(true)
+
+-- ---------- FLOWS page: six guided pages and click-through steps ----------
+check(CONFIG.flow_tab == "control", "the hub starts on the CONTROL page")
+local flows = citationx_flows()
+check(#flows == 6, "the FLOWS page has six procedures", #flows)
+local flow_keys = {}
+for _, f in ipairs(flows) do flow_keys[f.key] = true end
+for _, key in ipairs({ "cold_dark", "before_start", "taxi", "before_takeoff",
+                       "after_landing", "shutdown" }) do
+  check(flow_keys[key] == true, "flow present: " .. key)
+end
+
+citationx_set_flow_tab("flows")
+check(CONFIG.flow_tab == "flows", "the hub can switch to the FLOWS page")
+drawn = {}
+draw_cb()
+local flow_text = table.concat(drawn, "\n")
+check(flow_text:find("FLOWS", 1, true) ~= nil, "the FLOWS tab is drawn")
+check(flow_text:find("COLD & DARK", 1, true) ~= nil, "the flow index is drawn")
+check(flow_text:find("STEP 1/5", 1, true) ~= nil, "the current step is drawn")
+
+-- Select the TAXI flow, advance one step, then let its self-check auto-mark.
+citationx_flow_select("taxi")
+check(citationx_flow_state().active == "taxi", "a flow can be selected")
+check(citationx_flow_state().step.taxi == 1, "a selected flow starts at step 1")
+citationx_flow_next()
+check(citationx_flow_state().step.taxi == 2, "NEXT advances the step")
+check(citationx_flow_state().done.taxi[1] == true, "NEXT marks the step complete")
+ias_kts = 12
+citationx_flow_poll()
+check(citationx_flow_state().done.taxi[2] == true, "the IAS self-check auto-marks")
+citationx_flow_back()
+check(citationx_flow_state().step.taxi == 1, "BACK returns to the previous step")
+citationx_flow_reset()
+check(citationx_flow_state().step.taxi == 1
+  and citationx_flow_state().done.taxi[2] == false, "RESET clears the marks")
+check(logged("FLOWS report") == false, "no flows report before it is requested")
+citationx_flow_report()
+check(logged("FLOWS report"), "the flows report is written to the log")
+
+-- Clicking a flow row and the NEXT button must be handled by the panel.
+SUITE_STYLE.x, SUITE_STYLE.top = 470, 1416
+drawn = {}
+draw_cb()
+local ftop = SUITE_STYLE.top
+local flow_row_y = ftop - 53 - 5 * SUITE_STYLE.row_h - 11  -- row 6 (SHUTDOWN)
+click(SUITE_STYLE.x + 40, flow_row_y)
+check(citationx_flow_state().active == "shutdown", "clicking a flow row selects it")
+local btn_w = (SUITE_STYLE.width - SUITE_STYLE.pad * 2 - 16) / 3
+local next_x = SUITE_STYLE.x + SUITE_STYLE.pad + btn_w + 8 + btn_w / 2
+local nav_y = ftop - 242
+click(next_x, nav_y)
+check(citationx_flow_state().step.shutdown == 2, "clicking NEXT advances the flow")
+check(RESUME_MOUSE_CLICK == true, "the FLOWS click is consumed")
+citationx_set_flow_tab("control")
+
+-- ---------- debrief CSV: one row on engine shutdown -----------------------
+check(test_fuel_flow ~= nil, "the fuel-flow array is bound for the debrief")
+CONFIG.debrief_path = TMP .. "CitationX_Debrief.csv"
+local debrief_path = citationx_debrief_path()
+check(debrief_path == CONFIG.debrief_path, "the debrief path can be overridden for tests")
+
+local base = 300.0
+test_fuel_flow[0], test_fuel_flow[1] = 0.12, 0.12
+ias_kts, elevation_m, mach_no = 140.0, 3000.0, 0.70
+g_nrml, roll_deg, pitch_deg = 1.4, 12.0, 5.0
+frame(base)
+frame(base + 1)
+frame(base + 2)
+check(citationx_debrief_state().phase == "running", "fuel flow starts a debrief flight")
+la_score, la_rating, la_landingRate = 88, "GOOD", -120
+test_fuel_flow[0], test_fuel_flow[1] = 0.0, 0.0
+frame(base + 3)
+frame(base + 4)
+frame(base + 5)
+local ds = citationx_debrief_state()
+check(ds.written == true, "zero fuel flow writes the debrief row", ds.phase)
+check(ds.max_ias >= 140 and ds.max_mach >= 0.70, "the debrief keeps flight maxima",
+  ds.max_ias .. "/" .. ds.max_mach)
+local deb = io.open(debrief_path, "r")
+local deb_body = deb and deb:read("*a") or ""
+if deb then deb:close() end
+check(deb ~= nil, "the debrief CSV is created")
+check(deb_body:find("Landing_Score,Landing_Rating,Landing_Rate_FPM", 1, true) ~= nil,
+  "the debrief CSV has a header")
+check(deb_body:find("140.0,0.700", 1, true) ~= nil, "the row carries IAS and Mach maxima")
+check(deb_body:find("88,GOOD,-120", 1, true) ~= nil, "the row carries the landing score")
+local row_count = 0
+for _ in deb_body:gmatch("[^\n]+") do row_count = row_count + 1 end
+frame(base + 6)
+local deb2 = io.open(debrief_path, "r")
+local deb_body2 = deb2 and deb2:read("*a") or ""
+if deb2 then deb2:close() end
+local row_count2 = 0
+for _ in deb_body2:gmatch("[^\n]+") do row_count2 = row_count2 + 1 end
+check(row_count2 == row_count, "a second shutdown frame does not duplicate the row",
+  row_count2 .. " vs " .. row_count)
+citationx_debrief_report()
+check(logged("debrief report"), "the debrief report is written to the log")
+test_fuel_flow[0], test_fuel_flow[1] = 0.0, 0.0
 
 -- ---------- shutdown ----------
 exit_cb()
