@@ -1,558 +1,124 @@
 --[[
-  smoke_panel_geometry.lua — render the suite panels into a recording canvas and
-  assert the layout is actually sane.
+  smoke_panel_geometry.lua — verify every suite panel fits and stays in style.
 
-  This replaces "somebody should look at it on screen" with measurable checks:
-    * every panel fits inside the screen
-    * no text overlaps the row above/below it
-    * no text overflows the panel's own width
-    * rows sit in the right vertical order (FlyWithLua's y grows upward)
-    * every clickable row's hit rectangle is non-degenerate
+  Since 2026-11-22 all panels are ImGui floating windows built with CXUI. There
+  are no GL rectangles or hand-rolled hit tests left to measure, so this harness
+  now checks the equivalent ImGui invariants:
+
+    * every window fits inside the screen
+    * every builder balances its style/font stacks
+    * all rounding style variables are zero (square corners)
+    * only the regular Neo Grotesque aliases are pushed
+    * no orange is pushed anywhere
+    * each panel exposes its expected controls
 
   Usage:
     luajit tests/smoke_panel_geometry.lua
 --]]
 
-local screen_w, screen_h = 2560, 1440
-local fails, checks = 0, 0
+local M = dofile("tests/fwl_imgui_mock.lua")
+M.setup({ width = 2560, height = 1440, aircraft = "C750" })
 
-local function check(ok, label, detail)
-  checks = checks + 1
-  if not ok then
-    fails = fails + 1
-    print("FAIL  " .. label .. (detail and ("  -> " .. tostring(detail)) or ""))
+local scripts = {
+  "Scripts/CitationX_00_Core.lua",
+  "Scripts/CitationX_00_ImGuiKit.lua",
+  "Scripts/CitationX_01_ControlCenter.lua",
+  "Scripts/CitationX_MasterSuite.lua",
+  "Scripts/CitationX_Realism.lua",
+  "Scripts/CitationX_CabinOps.lua",
+  "Scripts/CitationX_FailureTrainer.lua",
+  "Scripts/CitationX_FlightInstructor.lua",
+  "Scripts/CitationX_InstructorWatch.lua",
+}
+for _, path in ipairs(scripts) do
+  local ok, err = pcall(M.load, path)
+  M.check(ok, "loads " .. path, err)
+end
+
+-- ---------------------------------------------------------------- windows ----
+M.check(#M.windows == 6, "one ImGui window per suite panel", #M.windows)
+
+local titles = {}
+for _, wnd in ipairs(M.windows) do
+  titles[#titles + 1] = wnd.title
+  M.check(wnd.w > 200 and wnd.h > 200,
+    "window has sane dimensions: " .. tostring(wnd.title),
+    tostring(wnd.w) .. "x" .. tostring(wnd.h))
+  local x, y = wnd.x or 0, wnd.y or 0
+  M.check(x >= 0 and y >= 0,
+    "window origin is on screen: " .. tostring(wnd.title),
+    x .. "," .. y)
+  M.check(x + (wnd.w or 0) <= 2560 and y + (wnd.h or 0) <= 1440,
+    "window fits inside the screen: " .. tostring(wnd.title),
+    (x + (wnd.w or 0)) .. "," .. (y + (wnd.h or 0)))
+end
+
+local expected_titles = {
+  "Citation X Control Center", "Citation X Master Suite",
+  "Citation X Realism", "Citation X Cabin Ops",
+  "Citation X QRH Trainer", "Citation X Flight Instructor",
+}
+for _, title in ipairs(expected_titles) do
+  local found = false
+  for _, actual in ipairs(titles) do
+    if actual == title then found = true end
+  end
+  M.check(found, "panel window exists: " .. title)
+end
+
+-- ---------------------------------------------------------------- builders ---
+-- Open every panel (the Control Center is the only one visible at load).
+if SUITE_MODULES then
+  for _, m in ipairs(SUITE_MODULES) do
+    if m.key == "status" then pcall(m.set, true) end
+  end
+end
+CONFIG.axis_optimizer_enabled = true
+REAL_CONFIG.enabled = true
+REAL_CONFIG.hud_enabled = true
+CAB_CONFIG.panel_enabled = true
+TRAINER_CONFIG.panel_enabled = true
+FI_CONFIG.panel_enabled = true
+
+local panels = {
+  { builder = "cc_on_build",               title = "Control Center",  ids = { "cc_status", "cc_hide" } },
+  { builder = "citationx_on_build",        title = "Master Suite",    ids = { "hub_tab_control", "hub_tab_flows", "hub_hide" } },
+  { builder = "real_on_build",             title = "Realism",         ids = { "real_hide" } },
+  { builder = "cab_on_build",              title = "Cabin Ops",       ids = { "cab_gpu", "cab_hide" } },
+  { builder = "qrh_on_build",              title = "QRH Trainer",     ids = { "qrh_random", "qrh_hide" } },
+  { builder = "fi_on_build",               title = "Flight Instructor", ids = { "fi_hide" } },
+}
+
+for _, panel in ipairs(panels) do
+  M.reset_capture()
+  local ok, err = pcall(M.build, panel.builder)
+  M.check(ok, panel.title .. " builder runs", err)
+
+  local content = #M.text + #M.buttons
+  M.check(content > 8, panel.title .. " builder draws real content", content)
+  M.check_stacks_balanced()
+  M.check_apple_style()
+
+  for _, id in ipairs(panel.ids) do
+    M.check(M.has_button(id), panel.title .. " has control: " .. id)
   end
 end
 
------------------------------------------------------------- mock FlyWithLua --
--- Recording canvas: every primitive lands in `drawn`.
-SCREEN_WIDTH, SCREEN_HIGHT = screen_w, screen_h
-PLANE_ICAO, PLANE_TAILNUMBER = "C750", "N750XP"
-VKEY, CKEY, MOUSE_X, MOUSE_Y, MOUSE_STATUS = 0, "", 0, 0, "up"
-MOUSE_WHEEL_NUMBER, MOUSE_WHEEL_CLICKS = 0, 0
-
-local drawn = {}          -- { kind=, x=, y=, x2=, y2=, text=, w= }
-local function reset() drawn = {} end
-
--- Approximate FlyWithLua's default draw_string font.
-local CHAR_W = 7
-function measure_string(t) return #tostring(t) * CHAR_W end
-
-function draw_string(x, y, text) drawn[#drawn + 1] = { kind = "text", x = x, y = y, text = tostring(text) } end
-function draw_string_Helvetica_10(x, y, text) drawn[#drawn + 1] = { kind = "text", x = x, y = y, text = tostring(text) } end
-function draw_string_Helvetica_12(x, y, text) drawn[#drawn + 1] = { kind = "text", x = x, y = y, text = tostring(text) } end
-function draw_string_Helvetica_18(x, y, text) drawn[#drawn + 1] = { kind = "text", x = x, y = y, text = tostring(text) } end
-function glRectf(x0, y0, x1, y1) drawn[#drawn + 1] = { kind = "rect", x = x0, y = y0, x2 = x1, y2 = y1 } end
-function glColor4f() end
-function XPLMSetGraphicsState() end
-
-function dataref(name, path, mode, index)
-  _G[name] = 0
-  return 0
+-- The AXIS MONITOR is a dark ImGui section; it must never push a white border
+-- colour or leave a GL primitive behind.
+CONFIG.axis_monitor = true
+M.reset_capture()
+local ok_ax, err_ax = pcall(M.build, "citationx_on_build")
+M.check(ok_ax, "AXIS MONITOR section builds", err_ax)
+M.check(M.has_text("AXIS MONITOR"), "AXIS MONITOR section is present")
+for id, col in pairs(M.colors) do
+  local r, g, b = M.rgb(col)
+  M.check(not (r > 220 and g > 220 and b > 220),
+    "AXIS MONITOR pushes no white border: colour " .. tostring(id),
+    string.format("#%02X%02X%02X", r, g, b))
 end
-function dataref_table() return setmetatable({}, { __index = function() return 0 end }) end
-function get() return 0 end
-function set() end
-function logMsg() end
-function create_command() return {} end
-function add_macro() end
-function do_every_draw() end
-function do_every_frame() end
-function do_often() end
-function do_sometimes() end
-function do_every_second() end
-function do_on_exit() end
-function do_on_keystroke() end
-function do_on_mouse_click() end
-function do_on_mouse_wheel() end
-function command_once() end
-function toast() end
-function float_wnd_create() return {} end
-function float_wnd_set_title() end
-function float_wnd_set_imgui_builder() end
-function float_wnd_set_onclose() end
-function float_wnd_set_ondraw() end
-function float_wnd_set_onclick() end
-function float_wnd_destroy() end
-function XPLMFindDataRef(p) return { path = p } end
-function XPLMGetDataf() return 0 end
-function XPLMGetDatai() return 0 end
-function XPLMSetDataf() end
-function XPLMSetDatai() end
-function XPLMGetScreenSize() return screen_w, screen_h end
-function load_preferences() end
-function save_preferences() end
-function read_preferences() end
-_G.imgui = setmetatable({}, { __index = function() return function() return false end end })
+M.check_stacks_balanced()
+M.check_apple_style()
 
--- optional modules
-_G.CAB_CONFIG = { panel_enabled = true, panel_w = 430, row_h = 21, pax_total = 12 }
-_G.TRAINER_CONFIG = { panel_enabled = true, panel_x = 24, panel_w = 430, row_h = 21 }
-_G.CABV = nil
-
---------------------------------------------------------------- assertions ----
-local function text_boxes()
-  local boxes = {}
-  for _, d in ipairs(drawn) do
-    if d.kind == "text" then
-      boxes[#boxes + 1] = { x0 = d.x, x1 = d.x + measure_string(d.text), y = d.y, text = d.text }
-    end
-  end
-  return boxes
-end
-
-local function rect_boxes()
-  local out = {}
-  for _, d in ipairs(drawn) do
-    if d.kind == "rect" then out[#out + 1] = d end
-  end
-  return out
-end
-
--- Every primitive is inside the screen and inside the panel that owns it.
-local function assert_on_screen(tag, bounds)
-  local worst_x, worst_y = 0, 0
-  for _, d in ipairs(drawn) do
-    if d.kind == "text" then
-      local x2 = d.x + measure_string(d.text)
-      if x2 > screen_w then worst_x = math.max(worst_x, x2) end
-      if d.x < 0 then worst_x = math.max(worst_x, -d.x) end
-      if d.y < 0 then worst_y = math.max(worst_y, -d.y) end
-      if d.y > screen_h then worst_y = math.max(worst_y, d.y - screen_h) end
-    else
-      if d.x2 > screen_w then worst_x = math.max(worst_x, d.x2) end
-      if d.x < 0 then worst_x = math.max(worst_x, -d.x) end
-      if d.y < 0 then worst_y = math.max(worst_y, -d.y) end
-      if d.y2 > screen_h then worst_y = math.max(worst_y, d.y2 - screen_h) end
-    end
-  end
-  check(worst_x == 0, tag .. ": nothing exceeds screen width", "+" .. worst_x .. " px")
-  check(worst_y == 0, tag .. ": nothing exceeds screen height", "+" .. worst_y .. " px")
-end
-
--- Rows must not collide: for each panel, group text by x-origin, then confirm
--- successive baselines are at least 14 px apart (a 12 px font needs that).
-local function assert_row_spacing(tag)
-  local boxes = text_boxes()
-  local by_x = {}
-  for _, b in ipairs(boxes) do
-    local k = math.floor(b.x0 + 0.5)
-    by_x[k] = by_x[k] or {}
-    by_x[k][#by_x[k] + 1] = b
-  end
-  local collisions = 0
-  for _, col in pairs(by_x) do
-    table.sort(col, function(a, b) return a.y > b.y end)
-    for i = 2, #col do
-      local gap = col[i - 1].y - col[i].y
-      if gap > 0 and gap < 14 then
-        collisions = collisions + 1
-        if collisions <= 3 then
-          print(string.format("      tight: %.1f px between %q and %q",
-            gap, col[i - 1].text:sub(1, 18), col[i].text:sub(1, 18)))
-        end
-      end
-    end
-  end
-  check(collisions == 0, tag .. ": no vertical text collisions", collisions .. " pair(s)")
-end
-
--- Text must stay inside the panel background it belongs to.
-local function assert_text_inside_panel(tag)
-  local rects = rect_boxes()
-  if #rects == 0 then return end
-  -- widest, tallest rect is the panel body
-  local panel = rects[1]
-  for _, r in ipairs(rects) do
-    if (r.x2 - r.x) * (r.y2 - r.y) > (panel.x2 - panel.x) * (panel.y2 - panel.y) then panel = r end
-  end
-  local overflow = 0
-  for _, b in ipairs(text_boxes()) do
-    -- only text belonging to this panel (starts inside its x range)
-    if b.x0 >= panel.x - 1 and b.x0 <= panel.x2
-       and b.y >= panel.y - 2 and b.y <= panel.y2 + 16 then
-      if b.x1 > panel.x2 + 1 then
-        overflow = overflow + 1
-        if overflow <= 3 then
-          print(string.format("      overflows by %.0f px: %q", b.x1 - panel.x2, b.text:sub(1, 28)))
-        end
-      end
-    end
-  end
-  check(overflow == 0, tag .. ": text stays inside its panel", overflow .. " overflow(s)")
-end
-
------------------------------------------------------------------- MasterSuite
--- FlyWithLua loads Scripts/ alphabetically; the shared core always comes first.
-assert(loadfile("Scripts/CitationX_00_Core.lua"))()
-print("== CitationX_MasterSuite.lua ==")
-do
-  local chunk = assert(loadfile("Scripts/CitationX_MasterSuite.lua"))
-  chunk()
-  -- The ImGui Control Center is the only surface at load; open the legacy hub
-  -- explicitly for the layout sweep below.
-  check(CONFIG.status_enabled == false, "legacy hub is hidden at load")
-  CONFIG.status_enabled = true
-
-  reset()
-  citationx_overlay()
-  local n = #drawn
-  check(n > 20, "control panel draws a meaningful number of primitives", n)
-  assert_on_screen("control panel", nil)
-  assert_row_spacing("control panel")
-  assert_text_inside_panel("control panel")
-
-  -- The FLOWS page is the hub's second tab: same shell, same palette, its own
-  -- layout and hit rectangles. It must fit and read as cleanly as CONTROL.
-  citationx_set_flow_tab("flows")
-  reset()
-  citationx_overlay()
-  check(#drawn > 20, "FLOWS page draws a meaningful number of primitives", #drawn)
-  assert_on_screen("flows", nil)
-  assert_row_spacing("flows")
-  assert_text_inside_panel("flows")
-  citationx_set_flow_tab("control")
-  reset()
-  citationx_overlay()   -- rebuild the CONTROL page hit rectangles
-
-  -- Drag the header and confirm the panel follows the mouse.
-  local st = SUITE_STYLE
-  local x0, top0 = st.x, st.top
-  MOUSE_STATUS = "down"
-  MOUSE_X, MOUSE_Y = x0 + 20, top0 - 10
-  RESUME_MOUSE_CLICK = false
-  citationx_mouse_click()
-  check(RESUME_MOUSE_CLICK == true, "header press starts a drag")
-  MOUSE_STATUS = "drag"
-  MOUSE_X, MOUSE_Y = x0 + 20 - 120, top0 - 10 - 70
-  citationx_mouse_click()
-  check(math.abs(st.x - (x0 - 120)) < 1 and math.abs(st.top - (top0 - 70)) < 1,
-    "panel follows the mouse while dragging",
-    string.format("%.0f/%.0f vs %.0f/%.0f", st.x, st.top, x0 - 120, top0 - 70))
-  MOUSE_STATUS = "up"
-  citationx_mouse_click()
-  check(st.x == x0 - 120, "drag position is kept after release")
-  st.x, st.top = x0, top0
-
-  -- The control panel is the suite's only surface. With it switched off the
-  -- overlay must draw nothing at all (no telemetry HUD, no systems readback).
-  CONFIG.status_enabled = false
-  reset()
-  citationx_overlay()
-  check(#drawn == 0, "nothing is drawn when the control panel is off", #drawn .. " primitive(s)")
-  CONFIG.status_enabled = true
-
-  -- Behaviour-level click test: sweep the panel vertically and confirm each
-  -- click hits at most one row and actually toggles something. The HIDE footer
-  -- is excluded here; it is checked separately.
-  local hit_count = 0
-  local errors = 0
-  for y = 40, screen_h - 40, 4 do
-    MOUSE_STATUS = "down"
-    MOUSE_X = st.x + st.width / 2
-    MOUSE_Y = y
-    RESUME_MOUSE_CLICK = false
-    local ok = pcall(citationx_mouse_click)
-    if not ok then errors = errors + 1 end
-    if RESUME_MOUSE_CLICK then
-      hit_count = hit_count + 1
-    end
-    -- a row hit may toggle the panel itself off; keep sweeping
-    CONFIG.status_enabled = true
-    MOUSE_STATUS = "up"
-  end
-  check(errors == 0, "click sweep over the control panel never errors", errors .. " error(s)")
-  check(hit_count >= #SUITE_MODULES, "click sweep hits at least one row per module",
-    hit_count .. " hits for " .. #SUITE_MODULES .. " modules")
-
-  -- clicking far outside the panel must not be consumed
-  MOUSE_STATUS = "down"
-  MOUSE_X, MOUSE_Y = 5, 5
-  RESUME_MOUSE_CLICK = false
-  pcall(citationx_mouse_click)
-  check(RESUME_MOUSE_CLICK == false, "click outside the panel is not consumed")
-  MOUSE_STATUS = "up"
-
-  -- HIDE button closes the hub
-  reset()
-  citationx_overlay()
-  CONFIG.status_enabled = true
-  reset()
-  citationx_overlay()
-  MOUSE_X = st.x + st.width / 2
-  MOUSE_Y = st.top - (34 + 20 + 16 + #SUITE_MODULES * st.row_h + 34 + 8) + 20
-  MOUSE_STATUS = "down"
-  RESUME_MOUSE_CLICK = false
-  citationx_mouse_click()
-  check(CONFIG.status_enabled == false, "HIDE PANEL footer button closes the hub")
-  CONFIG.status_enabled = true
-end
-
---------------------------------------------------------------- CabinOps ----
-print("== CitationX_CabinOps.lua ==")
-do
-  CAB_CONFIG = nil
-  local chunk = assert(loadfile("Scripts/CitationX_CabinOps.lua"))
-  chunk()
-  cab_toggle_panel(true)       -- hidden at load; the hub opens it
-
-  reset()
-  cab_draw()
-  check(#drawn > 10, "cabin panel draws content", #drawn)
-  assert_on_screen("cabin", nil)
-  assert_row_spacing("cabin")
-  assert_text_inside_panel("cabin")
-
-  -- header drag
-  local cx0, ctop0 = CAB_CONFIG.panel_x, CAB_CONFIG.panel_top
-  MOUSE_STATUS = "down"
-  MOUSE_X, MOUSE_Y = cx0 + 20, ctop0 - 10
-  RESUME_MOUSE_CLICK = false
-  cab_mouse_click()
-  check(RESUME_MOUSE_CLICK == true, "cabin header press starts a drag")
-  MOUSE_STATUS = "drag"
-  MOUSE_X, MOUSE_Y = cx0 + 20 - 80, ctop0 - 10 - 60
-  cab_mouse_click()
-  check(math.abs(CAB_CONFIG.panel_x - (cx0 - 80)) < 1
-    and math.abs(CAB_CONFIG.panel_top - (ctop0 - 60)) < 1,
-    "cabin panel follows the mouse while dragging")
-  MOUSE_STATUS = "up"
-  cab_mouse_click()
-  CAB_CONFIG.panel_x, CAB_CONFIG.panel_top = cx0, ctop0
-
-  -- behaviour-level: clicking inside the panel is consumed, outside is not
-  local hit = 0
-  for y = ctop0 - 260, ctop0, 6 do
-    MOUSE_STATUS = "down"; MOUSE_X = cx0 + 60; MOUSE_Y = y
-    RESUME_MOUSE_CLICK = false
-    pcall(cab_mouse_click)
-    if RESUME_MOUSE_CLICK then hit = hit + 1 end
-    CAB_CONFIG.panel_enabled = true
-    MOUSE_STATUS = "up"
-  end
-  check(hit > 0, "cabin panel consumes clicks on its rows", hit .. " hit(s)")
-end
-
------------------------------------------------------------- FailureTrainer --
-print("== CitationX_FailureTrainer.lua ==")
-do
-  TRAINER_CONFIG = nil
-  local chunk = assert(loadfile("Scripts/CitationX_FailureTrainer.lua"))
-  chunk()
-  qrh_toggle_panel(true)       -- hidden at load; the hub opens it
-
-  reset()
-  qrh_draw()
-  check(#drawn > 10, "QRH panel draws content", #drawn)
-  assert_on_screen("qrh", nil)
-  assert_row_spacing("qrh")
-  assert_text_inside_panel("qrh")
-
-  local qx0, qtop0 = TRAINER_CONFIG.panel_x, TRAINER_CONFIG.panel_top
-  MOUSE_STATUS = "down"
-  MOUSE_X, MOUSE_Y = qx0 + 20, qtop0 - 10
-  RESUME_MOUSE_CLICK = false
-  qrh_mouse_click()
-  check(RESUME_MOUSE_CLICK == true, "QRH header press starts a drag")
-  MOUSE_STATUS = "drag"
-  MOUSE_X, MOUSE_Y = qx0 + 20 + 120, qtop0 - 10 - 60
-  qrh_mouse_click()
-  check(math.abs(TRAINER_CONFIG.panel_x - (qx0 + 120)) < 1
-    and math.abs(TRAINER_CONFIG.panel_top - (qtop0 - 60)) < 1,
-    "QRH panel follows the mouse while dragging")
-  MOUSE_STATUS = "up"
-  qrh_mouse_click()
-  TRAINER_CONFIG.panel_x, TRAINER_CONFIG.panel_top = qx0, qtop0
-
-  local hit = 0
-  for y = qtop0 - 300, qtop0, 6 do
-    MOUSE_STATUS = "down"; MOUSE_X = qx0 + 40; MOUSE_Y = y
-    RESUME_MOUSE_CLICK = false
-    pcall(qrh_mouse_click)
-    if RESUME_MOUSE_CLICK then hit = hit + 1 end
-    TRAINER_CONFIG.panel_enabled = true
-    MOUSE_STATUS = "up"
-  end
-  check(hit > 0, "QRH panel consumes clicks on its rows", hit .. " hit(s)")
-
-  -- active procedure: long step labels must still fit the narrower panel
-  TRAINER_CONFIG.require_c750 = false
-  qrh_inject_by_key("engine_fire_l")
-  reset()
-  qrh_draw()
-  check(#drawn > 10, "active QRH procedure draws content", #drawn)
-  assert_on_screen("qrh-active", nil)
-  assert_row_spacing("qrh-active")
-  assert_text_inside_panel("qrh-active")
-  qrh_clear()
-
-  -- every scenario must inject, draw inside the panel and tear down again
-  for _, sc in ipairs(qrh_scenarios()) do
-    qrh_inject(sc)
-    reset()
-    qrh_draw()
-    check(#drawn > 10, "scenario " .. sc.key .. " draws content", #drawn)
-    assert_on_screen("qrh-" .. sc.key, nil)
-    assert_row_spacing("qrh-" .. sc.key)
-    assert_text_inside_panel("qrh-" .. sc.key)
-    qrh_clear()
-  end
-  check(#qrh_scenarios() >= 14, "QRH exposes the expanded scenario set",
-    tostring(#qrh_scenarios()))
-
-  -- the 14-row scenario list must survive a 720p screen too
-  SCREEN_WIDTH, SCREEN_HIGHT = 1280, 720
-  TRAINER_CONFIG.panel_top = nil
-  reset()
-  qrh_draw()
-  assert_on_screen("qrh-720p", nil)
-  SCREEN_WIDTH, SCREEN_HIGHT = screen_w, screen_h
-  TRAINER_CONFIG.require_c750 = true
-end
-
------------------------------------------------------------------ Instructor ---
-print("== CitationX_FlightInstructor.lua ==")
-do
-  -- The progress file lives in the FlyWithLua Scripts folder; give the harness
-  -- a scratch directory so a run can never touch the live one.
-  local tmp = os.getenv("TMPDIR") or os.getenv("TMP") or "/tmp/"
-  if tmp:sub(-1) ~= "/" then tmp = tmp .. "/" end
-  SCRIPT_DIRECTORY = tmp .. "citationx_instructor_geometry/"
-  os.execute("mkdir -p '" .. SCRIPT_DIRECTORY .. "'")
-
-  local chunk = assert(loadfile("Scripts/CitationX_FlightInstructor.lua"))
-  chunk()
-  fi_toggle_panel(true)        -- hidden at load; the hub opens it
-
-  reset()
-  fi_draw()
-  check(#drawn > 40, "instructor menu draws content", #drawn)
-  assert_on_screen("instructor-menu", nil)
-  assert_row_spacing("instructor-menu")
-  assert_text_inside_panel("instructor-menu")
-
-  -- header drag
-  local ix0, itop0 = FI_CONFIG.panel_x, FI_CONFIG.panel_top
-  MOUSE_STATUS = "down"
-  MOUSE_X, MOUSE_Y = ix0 + 20, itop0 - 10
-  RESUME_MOUSE_CLICK = false
-  fi_mouse_click()
-  check(RESUME_MOUSE_CLICK == true, "instructor header press starts a drag")
-  MOUSE_STATUS = "drag"
-  MOUSE_X, MOUSE_Y = ix0 + 20 - 90, itop0 - 10 - 60
-  fi_mouse_click()
-  check(math.abs(FI_CONFIG.panel_x - (ix0 - 90)) < 1
-    and math.abs(FI_CONFIG.panel_top - (itop0 - 60)) < 1,
-    "instructor panel follows the mouse while dragging")
-  MOUSE_STATUS = "up"
-  fi_mouse_click()
-  FI_CONFIG.panel_x, FI_CONFIG.panel_top = ix0, itop0
-
-  -- clicking the menu rows must be consumed, and never throw
-  local hit = 0
-  for y = itop0 - 20, 40, -6 do
-    MOUSE_STATUS = "down"; MOUSE_X = ix0 + 60; MOUSE_Y = y
-    RESUME_MOUSE_CLICK = false
-    local ok = pcall(fi_mouse_click)
-    check(ok, "instructor menu click at y=" .. y .. " does not error")
-    if RESUME_MOUSE_CLICK then hit = hit + 1 end
-    FI_CONFIG.panel_enabled = true
-    MOUSE_STATUS = "up"
-  end
-  check(hit > 0, "instructor menu consumes clicks on its rows", hit .. " hit(s)")
-
-  -- brief, flying and debrief all have their own layout
-  fi_menu()
-  fi_brief("ils")
-  reset()
-  fi_draw()
-  check(#drawn > 30, "instructor brief draws content", #drawn)
-  assert_on_screen("instructor-brief", nil)
-  assert_row_spacing("instructor-brief")
-  assert_text_inside_panel("instructor-brief")
-
-  fi_start("ils")
-  reset()
-  fi_draw()
-  check(#drawn > 30, "instructor flying panel draws content", #drawn)
-  assert_on_screen("instructor-flying", nil)
-  assert_row_spacing("instructor-flying")
-  assert_text_inside_panel("instructor-flying")
-
-  fi_finish(true)
-  reset()
-  fi_draw()
-  check(#drawn > 30, "instructor debrief draws content", #drawn)
-  assert_on_screen("instructor-debrief", nil)
-  assert_row_spacing("instructor-debrief")
-  assert_text_inside_panel("instructor-debrief")
-
-  -- the 17-row lesson list must survive a 720p screen too
-  SCREEN_WIDTH, SCREEN_HIGHT = 1280, 720
-  FI_CONFIG.panel_top = nil
-  fi_menu()
-  reset()
-  fi_draw()
-  assert_on_screen("instructor-menu-720p", nil)
-  SCREEN_WIDTH, SCREEN_HIGHT = screen_w, screen_h
-  FI_CONFIG.panel_top = nil
-
-  -- the HIDE PANEL footer closes it
-  reset()
-  fi_draw()
-  local bottom = FI_CONFIG.panel_top - fi_panel_height()
-  MOUSE_STATUS = "down"
-  MOUSE_X = FI_CONFIG.panel_x + FI_CONFIG.panel_w / 2
-  MOUSE_Y = bottom + FI_CONFIG.footer_h - 8
-  RESUME_MOUSE_CLICK = false
-  fi_mouse_click()
-  check(FI_CONFIG.panel_enabled == false, "instructor HIDE PANEL button closes the panel")
-  MOUSE_STATUS = "up"
-end
-
-------------------------------------------------------------------- Realism ---
-print("== CitationX_Realism.lua ==")
-do
-  local chunk = assert(loadfile("Scripts/CitationX_Realism.lua"))
-  chunk()
-  real_set_hud(true)  -- the Control Center keeps it closed at load
-  reset()
-  real_draw()
-  check(#drawn > 40, "realism panel draws content", #drawn)
-  assert_on_screen("realism", nil)
-  assert_row_spacing("realism")
-  assert_text_inside_panel("realism")
-
-  local rx0, rtop0 = REAL_STYLE.x, REAL_STYLE.y
-  MOUSE_STATUS = "down"
-  MOUSE_X, MOUSE_Y = rx0 + 20, rtop0 - 10
-  RESUME_MOUSE_CLICK = false
-  real_mouse_click()
-  check(RESUME_MOUSE_CLICK == true, "realism header press starts a drag")
-  MOUSE_STATUS = "drag"
-  MOUSE_X, MOUSE_Y = rx0 + 20 + 80, rtop0 - 10 - 50
-  real_mouse_click()
-  check(math.abs(REAL_STYLE.x - (rx0 + 80)) < 1
-    and math.abs(REAL_STYLE.y - (rtop0 - 50)) < 1,
-    "realism panel follows the mouse while dragging")
-  MOUSE_STATUS = "up"
-  real_mouse_click()
-  REAL_STYLE.x, REAL_STYLE.y = rx0, rtop0
-
-  -- the panel must survive a small screen too
-  SCREEN_WIDTH, SCREEN_HIGHT = 1280, 720
-  reset()
-  real_draw()
-  assert_on_screen("realism-720p", nil)
-  SCREEN_WIDTH, SCREEN_HIGHT = screen_w, screen_h
-end
-
-------------------------------------------------------------------- result ----
-print("")
-if fails == 0 then
-  print(string.format("ALL PANEL GEOMETRY TESTS PASSED (%d checks)", checks))
-  os.exit(0)
-else
-  print(string.format("%d FAILURE(S) out of %d checks", fails, checks))
-  os.exit(1)
-end
+-- ---------------------------------------------------------------- report -----
+M.report("PANEL GEOMETRY")

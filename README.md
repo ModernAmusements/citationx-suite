@@ -17,16 +17,16 @@ wheel — and everything else is a panel, a diagnostic or a command you can bind
 
 ## Screenshots
 
-### The panels (rendered offline from the actual draw calls)
+### The panels
 
-The legacy Helvetica panels: the Master Suite hub, the realism pack panel, the
-flight-instructor lesson list, cabin ops and the QRH trainer. They are now **hidden at load**;
-the only visible surface is the Neo Grotesque ImGui Control Center, which cannot be rendered
-by the offline draw-call harness. There is no telemetry HUD —
+Historical renders of the old Helvetica panels are kept below for reference. Since 2026-11-22
+every suite panel is an **ImGui floating window** in regular Neo Grotesque with square corners
+and a neutral dark palette, so these offline draw-call images no longer match the live UI. All
+panels are hidden at load; only the Control Center is visible. There is no telemetry HUD —
 airspeed, altitude, heading, Mach, G, fuel flow, electrics, fuel and anti-ice stay on the
 aircraft's own PFD, EICAS and synoptics.
 
-| Load view (hub + realism panel) | Hub | Realism panel |
+| Old load view (historical) | Old hub (historical) | Old realism panel (historical) |
 | --- | --- | --- |
 | [![load](docs/img/panels/load.png)](docs/img/panels/load.png) | [![hub](docs/img/panels/hub.png)](docs/img/panels/hub.png) | [![realism](docs/img/panels/realism.png)](docs/img/panels/realism.png) |
 
@@ -61,9 +61,10 @@ transplant is backed up. **The textures themselves live in the aircraft mod**
 
 | File | Purpose |
 | --- | --- |
-| `Scripts/CitationX_00_Core.lua` | Shared core, loaded first: the MA dark palette (`CX`) and the `cx_*` bar/text/fit/footer helpers. No datarefs, commands or callbacks. |
-| `Scripts/CitationX_01_ControlCenter.lua` | ImGui Control Center: the one surface shown at load. Apple-like grouped rows in Neo Grotesque open or close the legacy hub, realism, cabin, QRH, instructor and landing-report panels; the axis monitor and two shortcuts sit below. Uses the existing `SUITE_MODULES` mapping, binds no datarefs, and hides itself off the C750. |
-| `Scripts/CitationX_MasterSuite.lua` | The hub. Axis optimizer (pitch/roll deadzone, expo, smoothing), 1 Hz flight recorder CSV, simulated bleed-air/pressurization emergency, opt-in axis monitor, aircraft texture cycler (X-Plane's own next/previous livery), AviTab app shortcuts, and the draggable control panel. The thumbwheel moves the heading bug and wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. Taxi and landing lights are published as commands. No keystrokes, no button map, no telemetry HUD. |
+| `Scripts/CitationX_00_Core.lua` | Shared core, loaded first: the MA dark palette (`CX`) and the `cx_*` bar/text/fit/footer helpers for the remaining toast/diagnostic draw calls. No datarefs, commands or callbacks. |
+| `Scripts/CitationX_00_ImGuiKit.lua` | Shared ImGui kit, loaded second: the Apple-like `CXUI` palette and `cxui_*` primitives. Square corners, regular Neo Grotesque only, and a neutral palette (green = ON, blue = ACTIVE, grey = off) — no orange. No windows, datarefs or callbacks. |
+| `Scripts/CitationX_01_ControlCenter.lua` | ImGui Control Center: the one surface shown at load. Rows open or close the hub, realism, cabin, QRH, instructor and landing-report panels; SHOW ALL / HIDE ALL, the axis monitor and two shortcuts sit below. Uses the existing `SUITE_MODULES` mapping, binds no datarefs, and hides itself off the C750. |
+| `Scripts/CitationX_MasterSuite.lua` | The hub. Axis optimizer (pitch/roll deadzone, expo, smoothing), 1 Hz flight recorder CSV, simulated bleed-air/pressurization emergency, opt-in axis monitor, aircraft texture cycler (X-Plane's own next/previous livery), AviTab app shortcuts, and the ImGui hub window (CONTROL / FLOWS tabs plus the dark AXIS MONITOR section). The thumbwheel moves the heading bug and wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. Taxi and landing lights are published as commands. No keystrokes, no button map, no telemetry HUD. |
 | `Scripts/CitationX_FailureTrainer.lua` | 14 QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulic A/B, flap actuator, gear indication, APU fail-to-start, pitot/static, trim runaway, cabin decompression) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_FlightInstructor.lua` | 12 graded lessons in four sections (departure, pattern & landing, instrument, emergency), each with a written brief and a sim setup, graded against the sim's own datarefs and held for a moment so a lucky frame does not score. Speeds from actual weight; best score per lesson in `CitationX_TrainingProgress.txt`; three lessons inject their own failure through the QRH trainer. Written syllabus: [`docs/FLIGHT_TRAINING.md`](docs/FLIGHT_TRAINING.md). |
 | `Scripts/CitationX_CabinOps.lua` | Boarding / ground-power / cabin-lights flow with a clickable panel, passenger progress and automatic phase handling. |
@@ -72,9 +73,8 @@ transplant is backed up. **The textures themselves live in the aircraft mod**
 
 ## Control panel
 
-**One panel is on screen at load: the ImGui Control Center.** Its PANELS rows open the legacy
-hub, realism, cabin, QRH, instructor and landing-report panels; SHOW ALL / HIDE ALL work on
-those six. Reopen the Control Center with `CitationXSuite/control_center` or the FlyWithLua
+**One panel is on screen at load: the ImGui Control Center.** Its rows open the hub, realism,
+cabin, QRH, instructor and landing-report panels; SHOW ALL / HIDE ALL work on those six. Reopen the Control Center with `CitationXSuite/control_center` or the FlyWithLua
 macro *Citation X Control Center: show* if you close it.
 
 The suite registers no keystroke handler and no controller-button map, so every key and every
@@ -101,18 +101,17 @@ Options+, SteerMouse, …) at `CitationXSuite/taxi_light_toggle` and
 your driver can only send a keystroke, bind that keystroke **in X-Plane** to the command; the
 suite never reads a key.
 
-The Control Center uses **Neo Grotesque** (regular for rows, bold for the title), a dark
-native window, rounded grouped buttons and green/amber state pills. The font lives in
-`Custom_Fonts/` and is registered through `fwl_prefs.ini` aliases (`CCTitle`, `CCHeading`,
-`CCBody`, `CCSmall`); FlyWithLua reloads the font atlas when you reload all Lua scripts. The
-legacy panels keep their MA-dark language: black body, grey 1 px border, white Helvetica 18
-title, grey 10 px sub-header, 12 px rows, 22 px row pitch and a 34 px footer with a **HIDE
-PANEL** button. **Drag any panel by its header** to move it; the position is kept for the
-session.
+All suite panels share one look: **Neo Grotesque REGULAR** (no bold faces), **square corners**,
+a dark native window with grouped rows, and neutral state pills — green for ON, blue for
+ACTIVE, grey for off. There is no orange accent anywhere. The font lives in `Custom_Fonts/`
+and is registered through `fwl_prefs.ini` (`CCBody`, `CCSmall`, plus `UseCustomFonts = 1` so
+the standalone landing-report window matches). FlyWithLua reloads the font atlas when you
+reload all Lua scripts. The shared palette and primitives are in
+`Scripts/CitationX_00_ImGuiKit.lua`; ImGui handles dragging and clicking for every panel.
 
-The legacy hub lists every subsystem with a live state. Click a row to toggle it. The same
-toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as FlyWithLua
-macro menu entries. Its realism row now switches the **panel**, not the background pack.
+The hub lists every subsystem with a live state. Click a row to toggle it. The same toggles
+are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as FlyWithLua macro
+menu entries. Its realism row switches the **panel**, not the background pack.
 
 The MasterSuite panel is the only surface *it* draws. There is no telemetry HUD and no C750
 systems readback: the aircraft's PFD, EICAS and synoptics already show airspeed, altitude,

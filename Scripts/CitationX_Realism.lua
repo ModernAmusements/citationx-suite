@@ -4,8 +4,10 @@
 --  Version 1.1
 -- ----------------------------------------------------------------------------
 --  Adds the things the aircraft and X-Plane do not do on their own. Everything
---  is audio or Log.txt, plus ONE black, sans-serif panel (item 14) listing the
---  pack's controls and live state.
+--  is audio or Log.txt, plus one ImGui floating panel (item 14) listing the
+--  pack's controls and live state. The panel uses the suite's regular-weight
+--  Neo Grotesque, square corners and the neutral CXUI palette (green ON, blue
+--  ACTIVE/attention, grey inactive); ImGui owns its dragging and clicking.
 --
 --    1. Takeoff/approach callouts (V1, rotate, positive rate, gear up,
 --       1000/500/100, minimums) from the POM's operating speeds.
@@ -29,8 +31,8 @@
 --   13. Flight-controls check before takeoff: pitch, roll and rudder must each
 --       reach 60 % of travel while on the ground, or the takeoff-config
 --       warning says CONTROL CHECK.
---   14. One black, sans-serif panel (Helvetica) with every control and its live
---       state; click a row to toggle it. CitationXRealism/hud hides it.
+--   14. One ImGui floating panel with every control and its live state; click a
+--       row to toggle it. CitationXRealism/hud opens/closes the window.
 --   15. Takeoff trim gate: elevator trim must sit in the aircraft checklist's
 --       green band for the selected flap detent, aileron/rudder trim neutral.
 --   16. Fuel-balance monitor: left/right wing tank difference above 200 lb.
@@ -1225,13 +1227,12 @@ function real_test_callout()
     if idx then play_callout_sound(idx) end
 end
 
--- ------------------------------------------------------------------- HUD -----
--- The pack's one on-screen surface. Every row is an *instrument*, not a
--- readout: on/off states are LEDs, and the four measured quantities (trim,
--- fuel balance, weight, crosswind) are bar gauges with a green band and a red
--- limit tick. Nothing here is a bare number.
--- Geometry only; colours come from the shared MA dark field (CX). The two
--- bottom-bar buttons are brand green with near-black labels.
+-- ------------------------------------------------------------------- PANEL ---
+-- The pack's one on-screen surface, converted 2026-11-22 to a native ImGui
+-- floating window. The live-value functions and REAL_HUD_ROWS below are kept
+-- as-is; only the renderer changed. Colours come from the shared CXUI kit:
+-- green = normal, blue = attention/active, grey = inactive. No orange, no
+-- rounded corners, regular font only. ImGui owns dragging and clicks.
 REAL_STYLE = {
     x = 24, top = 24, width = 470, pad = 14,
     header_h = 34, row_h = 22, footer_h = 34,
@@ -1249,43 +1250,17 @@ REAL_STYLE = {
     warn      = CX.warn,
     bad       = CX.bad,
     btn       = CX.btn,
-    accent    = CX.accent,
     footer_bg = CX.footer_bg,
     footer_fg = CX.footer_fg,
 }
 
-local hud_hits = {}
-local real_header_rect = nil
-local real_drag = { active = false, dx = 0, dy = 0 }
-
-local function hud_bar(x0, y0, x1, y1, col, alpha)
-    cx_bar(x0, y0, x1, y1, col, alpha)
-end
-
-local function hud_text(x, y, text, size, col)
-    cx_text(x, y, text, size, col)
-end
-
-local function hud_text_right(x_right, y, text, size, col)
-    cx_text_right(x_right, y, text, size, col)
-end
+local real_wnd = nil
+local real_closed = false
 
 -- ------------------------------------------------------------- INSTRUMENTS --
--- LEDs and bar gauges. A row either shows a state light or a needle on a
--- track; neither prints a raw number at the pilot.
-local function hud_led(x, y, col, on)
-    local st = REAL_STYLE
-    if on then
-        hud_bar(x, y, x + 6, y + 6, col, 1.0)
-    else
-        hud_bar(x, y, x + 6, y + 6, st.track, 1.0)
-        hud_bar(x, y, x + 6, y + 1, st.border, 1.0)
-        hud_bar(x, y + 5, x + 6, y + 6, st.border, 1.0)
-        hud_bar(x, y, x + 1, y + 6, st.border, 1.0)
-        hud_bar(x + 5, y, x + 6, y + 6, st.border, 1.0)
-    end
-end
-
+-- The row value()/gauge() functions below still own the live readback. The
+-- legacy LEDs and bar gauges are gone: ImGui draws text values and progress
+-- bars in the kit's neutral palette, translated by real_row_color().
 local function hud_clamp01(v)
     if v < 0 then return 0 end
     if v > 1 then return 1 end
@@ -1295,34 +1270,6 @@ end
 local function hud_frac(v, lo, hi)
     if v == nil or hi == lo then return 0 end
     return hud_clamp01((v - lo) / (hi - lo))
-end
-
--- spec = { at, lo, hi, band = {a,b}, limit, color, ticks = {a,b,...} }
-local function hud_gauge(x, y, w, spec)
-    local st  = REAL_STYLE
-    local y0  = y + 3
-    local h   = 8
-    local col = spec.color or st.value
-
-    hud_bar(x, y0, x + w, y0 + h, st.track, 1.0)
-    if spec.band then
-        local a = hud_frac(spec.band[1], spec.lo, spec.hi)
-        local b = hud_frac(spec.band[2], spec.lo, spec.hi)
-        hud_bar(x + a * w, y0, x + b * w, y0 + h, st.ok, 0.30)
-    end
-
-    local f = hud_frac(spec.at, spec.lo, spec.hi)
-    hud_bar(x, y0, x + f * w, y0 + h, col, 0.80)
-
-    if spec.limit then
-        local l = hud_frac(spec.limit, spec.lo, spec.hi)
-        hud_bar(x + l * w - 1, y0 - 2, x + l * w + 1, y0 + h + 2, st.bad, 1.0)
-    end
-
-    -- hairline frame + a 3 px needle so the eye finds the value first
-    hud_bar(x, y0 - 1, x + w, y0, st.border, 1.0)
-    hud_bar(x, y0 + h, x + w, y0 + h + 1, st.border, 1.0)
-    hud_bar(x + f * w - 1, y0 - 1, x + f * w + 1, y0 + h + 1, st.value, 1.0)
 end
 
 local function hud_fit(text, max_chars)
@@ -1401,8 +1348,9 @@ local function hud_xwind()
 end
 
 -- ---------------------------------------------------------- GAUGE SPECS ----
--- One spec per measured row: where the needle is, the scale, the green band
--- and the red limit. The panel draws these as bars, never as numbers.
+-- One spec per measured row: the current value and its scale. The ImGui panel
+-- renders the fraction as a neutral progress bar; the old band/limit colours
+-- are ignored so no amber or red reaches the screen.
 local function gauge_trim()
     local flap = real_flap_rat or 0.0
     local trim = real_elev_trim or 0.0
@@ -1559,149 +1507,101 @@ REAL_HUD_ROWS = {
     },
 }
 
-local function hud_height()
-    local st = REAL_STYLE
-    return st.header_h + 10 + #REAL_HUD_ROWS * st.row_h + st.footer_h + 8
+-- Legacy CX status colours never reach ImGui: warn/bad become blue attention,
+-- ok/value become green and dim stays grey. No orange, no red, no bold faces.
+local function real_row_color(col)
+    if col == REAL_STYLE.warn or col == REAL_STYLE.bad then
+        return CXUI.color.active
+    end
+    if col == REAL_STYLE.dim then
+        return CXUI.color.dim
+    end
+    return CXUI.color.on
 end
 
 function real_set_hud(on)
     REAL_CONFIG.hud_enabled = (on == true)
     logMsg("Citation X Realism: HUD " .. (REAL_CONFIG.hud_enabled and "ON" or "OFF"))
+    if type(cxui_show) == "function" then cxui_show(real_wnd, REAL_CONFIG.hud_enabled) end
 end
 
-function real_draw()
-    if not real_is_c750 then return end
-    if not REAL_CONFIG.hud_enabled then return end
-    local sw = SCREEN_WIDTH  or 1920
-    local sh = SCREEN_HIGHT or 1080
-    local st = REAL_STYLE
-    local x, w, pad = st.x, st.width, st.pad
-    x = math.max(0, math.min(x, sw - w))
-    local top = st.y or (sh - st.top)
-    if top > sh - 4 then top = sh - 4 end
-    local box_h = hud_height()
-    local bottom = top - box_h
-    if bottom < 8 then
-        bottom = 8
-        top = bottom + box_h
-    end
-    st.x, st.y = x, top
+-- ------------------------------------------------------------- IMGUI BUILD --
+-- Called by FlyWithLua every frame while the floating window is visible.
+-- It is a pure readback of REAL_HUD_ROWS: no new telemetry, no dataref binds.
+function real_on_build(wnd, x, y)
+    local _ = wnd
+    local _x = x
+    local _y = y
+    if PLANE_ICAO ~= "C750" then return end
+    if REAL_CONFIG.hud_enabled == false then return end
+    if type(imgui) ~= "table" then return end
 
-    XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
-    hud_hits = {}
+    local style = cxui_begin_style()
 
-    hud_bar(x, bottom, x + w, top, st.bg)
-    hud_bar(x, top - 1, x + w, top, st.border)
-    hud_bar(x, bottom, x + 1, top, st.border)
-    hud_bar(x + w - 1, bottom, x + w, top, st.border)
-    hud_bar(x, bottom, x + w, bottom + 1, st.border)
-    hud_bar(x, top - st.header_h, x + w, top, st.header_bg)
-    hud_bar(x, top - st.header_h, x + w, top - st.header_h + 2, st.border)
+    cxui_text("CITATION X")
+    cxui_muted("REALISM PACK", "small")
+    cxui_spacing()
+    if type(imgui.Separator) == "function" then imgui.Separator() end
+    cxui_spacing()
 
-    hud_text(x + pad, top - 25, "REALISM", 18, st.title)
-    hud_text_right(x + w - pad, top - 22, "CITATION X", 10, st.sub)
-    real_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
-
-    local y = top - st.header_h - 18
     for i = 1, #REAL_HUD_ROWS do
         local row = REAL_HUD_ROWS[i]
         local text, col = row.value()
-        col = col or st.value
+        local color = real_row_color(col)
 
-        -- every row leads with a state light, then the caption
-        local lit = (col == st.ok or col == st.warn or col == st.bad)
-        hud_led(x + pad, y + 3, col, lit)
-        hud_text(x + pad + 12, y, row.label, 12, st.label)
+        -- Action rows keep the old click-to-toggle behaviour; the rest are
+        -- plain readback. IDs are unique so ImGui never merges two rows.
+        if row.act then
+            if cxui_button(row.label .. "###real_row_" .. i, 150, CXUI.row_h) then
+                row.act()
+            end
+        else
+            cxui_text(row.label, "small")
+        end
+        if type(imgui.SameLine) == "function" then imgui.SameLine() end
+        cxui_text(text, "small", color)
 
         if row.gauge then
-            local gx = x + pad + 12 + 132
-            local gw = (x + w - pad - 66) - gx
-            local spec = row.gauge()
-            spec.color = spec.color or col
-            hud_gauge(gx, y, math.max(gw, 40), spec)
+            local spec = row.gauge() or {}
+            cxui_progress(hud_frac(spec.at, spec.lo, spec.hi), 300)
         end
-        hud_text_right(x + w - pad, y, text, 10, col)
-
-        if row.act then
-            hud_bar(x + 4, y + 5, x + 6, y + 8, st.border)
-            hud_hits[#hud_hits + 1] = {
-                x0 = x, x1 = x + w,
-                y0 = y - 4, y1 = y + 17,
-                act = row.act,
-            }
-        end
-        y = y - st.row_h
     end
 
-    local by0, by1 = cx_footer_band(bottom, st.footer_h)
-    local mid = x + w / 2
-    hud_bar(x + pad, by0, mid - 4, by1, st.footer_bg)
-    hud_bar(mid + 4, by0, x + w - pad, by1, st.footer_bg)
-    hud_text(x + pad + 9, by0 + 6, "TEST CALLOUT", 10, st.footer_fg)
-    local hide_w = measure_string("HIDE HUD", "Helvetica_10") or 44
-    hud_text(x + w - pad - 9 - hide_w, by0 + 6, "HIDE HUD", 10, st.footer_fg)
+    cxui_spacing()
+    if cxui_button("TEST CALLOUT###real_test", 150, CXUI.row_h) then
+        real_test_callout()
+    end
+    if type(imgui.SameLine) == "function" then imgui.SameLine() end
+    if cxui_button("HIDE PANEL###real_hide", 150, CXUI.row_h) then
+        real_set_hud(false)
+    end
 
-    hud_hits[#hud_hits + 1] = {
-        x0 = x + pad, x1 = mid - 4, y0 = by0, y1 = by1,
-        act = function() real_test_callout() end,
-    }
-    hud_hits[#hud_hits + 1] = {
-        x0 = mid + 4, x1 = x + w - pad, y0 = by0, y1 = by1,
-        act = function() real_set_hud(false) end,
-    }
+    cxui_end_style(style)
 end
 
+-- Kept as a no-op: older callers and harnesses still use the name, but the
+-- ImGui window owns every on-screen operation now.
+function real_draw()
+    return
+end
+
+-- ImGui owns clicks and dragging. Keep the old entry point as a no-op so
+-- external callers do not break; it consumes no mouse input at all.
 function real_mouse_click()
-    if not real_is_c750 then
-        real_drag.active = false
-        return
-    end
-    if not REAL_CONFIG.hud_enabled then
-        real_drag.active = false
-        return
-    end
+    return
+end
 
-    local mx = MOUSE_X or -1.0
-    local my = MOUSE_Y or -1.0
-    local st = REAL_STYLE
+function real_aircraft_guard()
+    if real_closed then return end
+    if type(cxui_show) ~= "function" then return end
+    cxui_show(real_wnd, (PLANE_ICAO == "C750") and REAL_CONFIG.hud_enabled)
+end
 
-    -- Drag by the header: down starts, drag moves, up ends.
-    if MOUSE_STATUS == "down" then
-        local r = real_header_rect
-        if r and mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
-            real_drag.active = true
-            real_drag.dx = mx - st.x
-            real_drag.dy = my - (st.y or my)
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    elseif MOUSE_STATUS == "drag" then
-        if real_drag.active then
-            local sw = SCREEN_WIDTH or 1920
-            local sh = SCREEN_HIGHT or 1080
-            st.x = math.max(0, math.min(mx - real_drag.dx, sw - st.width))
-            st.y = math.max(hud_height(), math.min(my - real_drag.dy, sh - 4))
-            RESUME_MOUSE_CLICK = true
-        end
-        return
-    elseif MOUSE_STATUS == "up" then
-        if real_drag.active then
-            real_drag.active = false
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    end
-
-    if MOUSE_STATUS ~= "down" then return end
-    for i = 1, #hud_hits do
-        local h = hud_hits[i]
-        if mx >= h.x0 and mx <= h.x1
-            and my >= h.y0 and my <= h.y1 then
-            h.act()
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    end
+function real_on_close(wnd)
+    local _ = wnd
+    real_wnd = nil
+    real_closed = true
+    REAL_CONFIG.hud_enabled = false
 end
 
 -- ------------------------------------------------------------- LIFECYCLE -----
@@ -1718,8 +1618,6 @@ end
 
 real_init()
 do_every_frame("real_frame()")
-do_every_draw("real_draw()")
-do_on_mouse_click("real_mouse_click()")
 do_on_exit("real_shutdown()")
 
 function real_shutdown()
@@ -1752,3 +1650,14 @@ add_macro("Citation X Realism: status report", "real_status_report()")
 add_macro("Citation X Realism: handling curve", "real_set_handling(not REAL_CONFIG.handling_enabled)")
 add_macro("Citation X Realism: realism panel", "real_set_hud(not REAL_CONFIG.hud_enabled)")
 add_macro("Citation X Realism: repair overspeed damage", "real_repair_damage()")
+
+-- ------------------------------------------------------------- IMGUI WINDOW --
+-- Created once and hidden at load. The Control Center / hub opens it through
+-- real_set_hud(); the guard hides it whenever the aircraft is not the C750.
+-- Load-order guards keep offline harnesses (Core only) working.
+if type(cxui_create_window) == "function" then
+    real_wnd = cxui_create_window(360, 560, "Citation X Realism",
+        "real_on_build", "real_on_close", 24, 60)
+end
+if type(cxui_show) == "function" then cxui_show(real_wnd, false) end
+if type(do_often) == "function" then do_often("real_aircraft_guard()") end

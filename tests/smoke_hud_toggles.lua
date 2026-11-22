@@ -88,12 +88,13 @@ function XPLMGetMouseLocationGlobal() return 0, 0 end
 function XPLMGetVirtualKeyDescription() return "" end
 
 -- ---------- load ----------
--- FlyWithLua loads Scripts/ alphabetically; the shared core always comes first.
-local core = (script:match("^(.*/)") or "") .. "CitationX_00_Core.lua"
-local core_chunk = assert(loadfile(core))
-core_chunk()
-local chunk = assert(loadfile(script))
-chunk()
+-- FlyWithLua loads Scripts/ alphabetically; the shared core and ImGui kit come
+-- first. The panels are ImGui builders now, so install a recording imgui table.
+local dir = (script:match("^(.*/)") or "")
+dofile("tests/fwl_imgui_capture.lua")
+assert(loadfile(dir .. "CitationX_00_Core.lua"))()
+assert(loadfile(dir .. "CitationX_00_ImGuiKit.lua"))()
+assert(loadfile(script))()
 
 check(type(SUITE_MODULES) == "table", "SUITE_MODULES exists")
 check(type(SUITE_STYLE) == "table", "SUITE_STYLE exists")
@@ -227,37 +228,44 @@ check(CONFIG.alt_keys_enabled == nil, "the ALT SEL keystroke layer is gone")
 check(CONFIG.input_map_enabled == nil, "the input mapper is gone")
 check(CONFIG.stick_hdg_enabled == nil, "the stick heading knob is gone")
 
--- ---------- the control panel is the only thing drawn ----------
-CONFIG.status_enabled     = false
-CONFIG.axis_monitor       = false
-citationx_sim_time        = 100.0   -- expire the toggle toasts
+-- ---------- the hub is an ImGui builder, not a GL overlay ----------
+check(type(citationx_on_build) == "function", "hub exposes an ImGui builder")
+citationx_sim_time = 100.0   -- expire the toggle toasts
+CONFIG.flow_tab = "control"
+
+ImgCap.reset()
+citationx_on_build(nil, 0, 0)
+check(ImgCap.has("MASTER SUITE"), "hub draws its title", ImgCap.joined():sub(1, 120))
+check(ImgCap.has("MODULES"), "CONTROL page lists the modules")
+check(ImgCap.has("hub_hide"), "hub has a HIDE PANEL button")
+
+-- FLOWS page renders its own controls
+citationx_set_flow_tab("flows")
+ImgCap.reset()
+citationx_on_build(nil, 0, 0)
+check(ImgCap.has("PROCEDURES"), "FLOWS page lists the procedures")
+check(ImgCap.has("hub_flow_next"), "FLOWS page has a NEXT button")
+citationx_set_flow_tab("control")
+
+-- The old GL overlay is now a no-op, so nothing can leave a stray white shape.
 primitives = 0
 citationx_overlay()
-check(primitives == 0, "overlay draws nothing when every display is off", primitives .. " primitive(s)")
+check(primitives == 0, "legacy GL overlay is inert", primitives .. " primitive(s)")
 
-CONFIG.status_enabled = true
-primitives = 0
-citationx_overlay()
-check(primitives > 20, "control panel draws content", primitives .. " primitive(s)")
-
--- ---------- nothing draws on another aircraft ------------------------------
+-- The builder draws nothing on another aircraft.
 PLANE_ICAO = "B738"
 citationx_frame()
-primitives = 0
-citationx_overlay()
-check(primitives == 0, "overlay draws nothing on a non-C750", primitives .. " primitive(s)")
+ImgCap.reset()
+citationx_on_build(nil, 0, 0)
+check(#ImgCap.text == 0 and #ImgCap.buttons == 0, "hub draws nothing on a non-C750")
 PLANE_ICAO = "C750"
 citationx_frame()
-primitives = 0
-citationx_overlay()
-check(primitives > 20, "control panel returns on the C750", primitives .. " primitive(s)")
+ImgCap.reset()
+citationx_on_build(nil, 0, 0)
+check(ImgCap.has("MASTER SUITE"), "hub returns on the C750")
 
--- ---------- draw callback survives ----------
-check(type(draw_cb) == "function", "draw callback registered")
-if draw_cb then
-  local ok, err = pcall(draw_cb)
-  check(ok, "draw callback runs without error", err)
-end
+-- ---------- ImGui draw callback no longer registered ----------
+check(type(draw_cb) ~= "function", "no GL draw callback is registered")
 
 -- ---------- status report still works without a HUD ----------
 local ok_report, err_report = pcall(citationx_status_report)

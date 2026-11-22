@@ -75,6 +75,9 @@ function do_on_exit(f) exit_cb = as_fn(f) end
 function do_on_mouse_click(f) click_cb = as_fn(f) end
 function do_on_keystroke(f) keystroke_cb = as_fn(f) end
 function do_on_mouse_wheel(f) wheel_cb = as_fn(f) end
+function do_often(f) end
+function do_every_second(f) end
+function do_sometimes(f) end
 
 local drawn = {}
 function draw_string(x, y, text) drawn[#drawn + 1] = tostring(text) end
@@ -89,8 +92,11 @@ function XPLMFindDataRef() return nil end
 function XPLMGetDataf() return 0 end
 
 local SCRIPT = arg[1] or "Scripts/CitationX_MasterSuite.lua"
--- FlyWithLua loads Scripts/ alphabetically, so the shared core always runs first.
+-- FlyWithLua loads Scripts/ alphabetically, so the shared core and ImGui kit run
+-- first. The hub is an ImGui builder now, so record its draw calls.
+dofile("tests/fwl_imgui_capture.lua")
 dofile((SCRIPT:match("^(.*/)") or "") .. "CitationX_00_Core.lua")
+dofile((SCRIPT:match("^(.*/)") or "") .. "CitationX_00_ImGuiKit.lua")
 dofile(SCRIPT)
 
 local fails = 0
@@ -307,46 +313,40 @@ for _, k in ipairs({ "input", "learn", "stick", "look" }) do
 end
 check(logged("input layer = thumbwheel"), "the status report names the wheel input")
 
--- ---------- panel ----------
--- The Control Center is the only visible surface at load; open the legacy hub
--- explicitly for these layout and click tests.
+-- ---------- hub (ImGui builder) ----------
+-- The Control Center is the only visible surface at load; open the hub
+-- explicitly for these builder and click tests. The hub is no longer a GL
+-- overlay, so its content is captured from citationx_on_build().
+check(type(citationx_on_build) == "function", "hub exposes an ImGui builder")
+check(type(draw_cb) ~= "function", "no GL draw callback is registered")
 citationx_set_status(true)
-drawn = {}
-draw_cb()
-local text = table.concat(drawn, "\n")
-check(text:find("CITATION X", 1, true) ~= nil, "the panel draws its title")
-check(text:find("MASTER SUITE", 1, true) ~= nil, "the panel shows its version")
-check(text:find("NO KEYBINDS", 1, true) ~= nil, "the panel says it owns no keybinds")
-check(text:find("AIRCRAFT TEXTURE", 1, true) ~= nil, "the texture row is on the panel")
+ImgCap.reset()
+citationx_on_build(nil, 0, 0)
+local text = ImgCap.joined()
+check(text:find("CITATION X", 1, true) ~= nil, "the hub builds its title")
+check(text:find("MASTER SUITE", 1, true) ~= nil, "the hub shows its version")
+check(text:find("MODULES", 1, true) ~= nil, "the hub lists the modules")
+check(text:find("AIRCRAFT TEXTURE", 1, true) ~= nil, "the texture row is on the hub")
 
 local h = citationx_panel_height()
-local top = SUITE_STYLE.top
-check(top - h >= 0, "the panel fits on the screen", top - h)
+check(h > 0, "the hub has a positive window height", h)
 
--- click the second row (axis optimizer) and check it toggles
-local function row_y(i)
-    local body_top = top - SUITE_STYLE.header_h
-    local first_y = body_top - SUITE_STYLE.sub_h - 15
-    local row_top = first_y + SUITE_STYLE.row_h - (i - 1) * SUITE_STYLE.row_h
-    return row_top - 11
-end
-local function click(x, y)
-    MOUSE_X, MOUSE_Y, MOUSE_STATUS = x, y, "down"
-    RESUME_MOUSE_CLICK = false
-    click_cb()
-    MOUSE_STATUS = "up"
+-- Click rows by their ImGui id; ImGui owns the hit-testing and dragging.
+local function click(id)
+    ImgCap.reset()
+    ImgCap.click(id)
+    citationx_on_build(nil, 0, 0)
 end
 
 local axis_was = CONFIG.axis_optimizer_enabled
-click(SUITE_STYLE.x + 40, row_y(2))
+click("hub_axis")
 check(CONFIG.axis_optimizer_enabled == not axis_was, "clicking the axis row toggles it")
-check(RESUME_MOUSE_CLICK == true, "the click is consumed")
-click(SUITE_STYLE.x + 40, row_y(2))
+click("hub_axis")
 check(CONFIG.axis_optimizer_enabled == axis_was, "clicking it again restores it")
 
 -- the texture row is an action, not a switch
 local n = #commands.executed
-click(SUITE_STYLE.x + 40, row_y(6))
+click("hub_texture")
 check(#commands.executed == n + 1, "clicking the texture row cycles the livery")
 
 -- AviTab row: with the plugin absent it must toast, never fire a command
@@ -356,7 +356,7 @@ check(avitab_row ~= nil, "the AviTab row is on the panel")
 check(avitab_state() == "ABSENT", "AviTab reports ABSENT while the plugin is missing")
 if avitab_row then
   local before_av = #commands.executed
-  click(SUITE_STYLE.x + 40, row_y(avitab_row))
+  click("hub_avitab")
   check(#commands.executed == before_av, "no AviTab command is fired when it is absent")
   citationx_avitab_charts()
   check(#commands.executed == before_av, "citationx_avitab_charts() is a no-op when absent")
@@ -364,30 +364,22 @@ if avitab_row then
   check(logged("AviTab is not installed"), "the report says AviTab is not installed")
 end
 
--- header drag moves the panel
-MOUSE_X, MOUSE_Y = SUITE_STYLE.x + 80, top - 10
-MOUSE_STATUS = "down"
-click_cb()
-MOUSE_X, MOUSE_Y, MOUSE_STATUS = SUITE_STYLE.x + 80 - 120, top - 10 - 40, "drag"
-click_cb()
-check(SUITE_STYLE.x < 470, "the panel follows a header drag", SUITE_STYLE.x)
-MOUSE_STATUS = "up"
-MOUSE_X, MOUSE_Y = -1, -1
-click_cb()
+-- Dragging is ImGui's job; the legacy GL hit-test handler is inert.
+MOUSE_X, MOUSE_Y, MOUSE_STATUS = 100, 100, "down"
+RESUME_MOUSE_CLICK = false
+if click_cb then click_cb() end
+check(RESUME_MOUSE_CLICK == false, "legacy GL drag handler is inert")
 
--- footer hides the panel (redraw first: the click rects are rebuilt each draw)
-top = SUITE_STYLE.top
-h = citationx_panel_height()
-drawn = {}
-draw_cb()
-local footer_y = (top - h) + 7 + 11
-click(SUITE_STYLE.x + SUITE_STYLE.width / 2, footer_y)
+-- the HIDE button closes the hub. ImGui itself skips the builder for a hidden
+-- window, so assert the window-visibility call rather than an empty build.
+local visibility = nil
+float_wnd_set_visible = function(wnd, on) visibility = on end
+click("hub_hide")
 check(CONFIG.status_enabled == false, "the hide button closes the panel")
+check(visibility == 0, "hide tells ImGui to hide the hub window", tostring(visibility))
 frame(200.0)   -- let the 2 s toast expire
-drawn = {}
-draw_cb()
-check(#drawn == 0, "a hidden panel draws nothing", #drawn)
 citationx_set_status(true)
+check(visibility == 1, "show tells ImGui to show the hub window", tostring(visibility))
 
 -- ---------- FLOWS page: six guided pages and click-through steps ----------
 check(CONFIG.flow_tab == "control", "the hub starts on the CONTROL page")
@@ -402,12 +394,13 @@ end
 
 citationx_set_flow_tab("flows")
 check(CONFIG.flow_tab == "flows", "the hub can switch to the FLOWS page")
-drawn = {}
-draw_cb()
-local flow_text = table.concat(drawn, "\n")
+ImgCap.reset()
+citationx_on_build(nil, 0, 0)
+local flow_text = ImgCap.joined()
 check(flow_text:find("FLOWS", 1, true) ~= nil, "the FLOWS tab is drawn")
 check(flow_text:find("COLD & DARK", 1, true) ~= nil, "the flow index is drawn")
 check(flow_text:find("STEP 1/5", 1, true) ~= nil, "the current step is drawn")
+check(flow_text:find("hub_flow_next", 1, true) ~= nil, "NEXT button is drawn")
 
 -- Select the TAXI flow, advance one step, then let its self-check auto-mark.
 citationx_flow_select("taxi")
@@ -429,19 +422,11 @@ citationx_flow_report()
 check(logged("FLOWS report"), "the flows report is written to the log")
 
 -- Clicking a flow row and the NEXT button must be handled by the panel.
-SUITE_STYLE.x, SUITE_STYLE.top = 470, 1416
-drawn = {}
-draw_cb()
-local ftop = SUITE_STYLE.top
-local flow_row_y = ftop - 53 - 5 * SUITE_STYLE.row_h - 11  -- row 6 (SHUTDOWN)
-click(SUITE_STYLE.x + 40, flow_row_y)
+citationx_flow_reset()
+click("hub_flow_shutdown")
 check(citationx_flow_state().active == "shutdown", "clicking a flow row selects it")
-local btn_w = (SUITE_STYLE.width - SUITE_STYLE.pad * 2 - 16) / 3
-local next_x = SUITE_STYLE.x + SUITE_STYLE.pad + btn_w + 8 + btn_w / 2
-local nav_y = ftop - 242
-click(next_x, nav_y)
+click("hub_flow_next")
 check(citationx_flow_state().step.shutdown == 2, "clicking NEXT advances the flow")
-check(RESUME_MOUSE_CLICK == true, "the FLOWS click is consumed")
 citationx_set_flow_tab("control")
 
 -- ---------- debrief CSV: one row on engine shutdown -----------------------

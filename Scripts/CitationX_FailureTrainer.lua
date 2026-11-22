@@ -1,6 +1,6 @@
 -- ============================================================================
 --  CESSNA CITATION X FAILURE TRAINER + QRH CHECKLIST
---  X-Plane 12  |  FlyWithLua NG+ (2.8+)
+--  X-Plane 12  |  FlyWithLua NG+ 2.8+ (ImGui floating window)
 -- ----------------------------------------------------------------------------
 --  Injects realistic failure scenarios into the C750 and shows the matching
 --  QRH-style checklist on screen, like the real airplane:
@@ -10,9 +10,14 @@
 --    * each step auto-checks itself [X] the moment the switch is in the
 --      correct position - verified against the aircraft's own laminar/CitX
 --      datarefs, so you really have to fly the procedure in the cockpit
---    * clicking a step row also fires its command (a "do it" shortcut)
+--    * clicking a step's check box also fires its command (a "do it" shortcut)
 --    * advisory rows (monitors) never block completion
 --    * when every mandatory step is done, click CLEAR FAILURE to restore
+--
+--  Converted 2026-11-22 to a native-decoration ImGui window: Neo Grotesque
+--  REGULAR only, square corners, no orange. Green = checked/ON, blue = active
+--  scenario, grey = pending/inactive. ImGui owns dragging and clicking; the
+--  failure, checklist and command logic below is unchanged.
 --
 --  Scenarios:
 --    ENGINE FIRE L   GENERATOR L TRIP   BLEED AIR L FAILURE
@@ -55,7 +60,6 @@ ST = {
     alert      = CX.alert,
     btn        = CX.btn,
     -- legacy aliases used by the existing drawing code
-    accent     = CX.accent,
     subhdr     = CX.sub,
     footer_bg  = CX.footer_bg,
     footer_fg  = CX.footer_fg,
@@ -441,7 +445,7 @@ local SCENARIOS = {
 local active       = nil   -- scenario table when one is active
 local step_done    = {}    -- [i] = true/false per step of the active scenario
 local proc_done    = false
-local qrh_rows     = {}    -- clickable rects, rebuilt each draw
+local qrh_wnd      = nil   -- ImGui floating window, created at load
 local toast_text   = nil
 local toast_until  = 0
 local is_c750      = (PLANE_ICAO == "C750")   -- refreshed every frame
@@ -533,6 +537,7 @@ function qrh_toggle_panel(on)
     else
         TRAINER_CONFIG.panel_enabled = (on == true)
     end
+    cxui_show(qrh_wnd, TRAINER_CONFIG.panel_enabled)
     qrh_toast("QRH PANEL: " .. (TRAINER_CONFIG.panel_enabled and "ON" or "OFF"))
 end
 
@@ -562,244 +567,111 @@ function qrh_frame()
     end
 end
 
--- ------------------------------------------------------------- DRAWING -----
-local function bar(x, y0, y1, w, color, alpha)
-    cx_bar_w(x, y0, y1, w, color, alpha)
-end
+-- ------------------------------------------------------------- ImGui PANEL --
+-- Converted 2026-11-22: the panel is a native-decoration ImGui floating window
+-- in regular Neo Grotesque. ImGui owns clicking and dragging, so the old GL
+-- hit-test, header drag and mouse handler are gone; the scenario and checklist
+-- logic above is untouched. qrh_draw stays as a no-op for existing callers.
+function qrh_draw() end
 
-local function txt(x, y, text, color, size)
-    cx_text(x, y, text, size or 12, color)
-end
+function qrh_on_build(wnd, x, y)
+    local _ = wnd
+    local _x = x
+    local _y = y
+    if PLANE_ICAO ~= "C750" then return end
+    if TRAINER_CONFIG.panel_enabled == false then return end
+    if type(imgui) ~= "table" then return end
 
-local function txt_right(right_x, y, text, color, size)
-    cx_text_right(right_x, y, text, size or 12, color)
-end
+    local style = cxui_begin_style()
+    local w = 380
 
--- Keep long QRH step labels inside the panel (the 460 px original had room;
--- the 430 px shell needs a guard for the dotted-line steps).
-local function qrh_fit(text, max_px, size)
-    local s = tostring(text or "")
-    if cx_measure(s, size or 12) <= max_px then return s end
-    while #s > 1 and cx_measure(s .. "..", size or 12) > max_px do s = s:sub(1, -2) end
-    return s .. ".."
-end
+    cxui_text("CITATION X")
+    cxui_muted("QRH TRAINER", "small")
+    cxui_spacing()
+    if type(imgui.Separator) == "function" then imgui.Separator() end
+    cxui_spacing()
 
-local qrh_header_rect = nil
-local qrh_footer_rect = nil
-local qrh_drag = { active = false, dx = 0, dy = 0 }
-
-function qrh_draw()
-    if TRAINER_CONFIG.require_c750 and not is_c750 then
-        qrh_drag.active = false
-        qrh_rows = {}
-        return
+    -- One button per scenario; the active one is BLUE, never orange/red.
+    -- Clicking is the old "select / inject" action (qrh_inject clears first).
+    cxui_section("SCENARIOS")
+    for _, sc in ipairs(SCENARIOS) do
+        local is_active = (active == sc)
+        if cxui_button(sc.title .. "###qrh_scenario_" .. sc.key, w, CXUI.row_h,
+                       is_active and CXUI.color.active or nil) then
+            qrh_inject(sc)
+        end
     end
-    if not TRAINER_CONFIG.panel_enabled then
-        qrh_drag.active = false
-        return
+    if cxui_button("RANDOM FAILURE (surprise me)###qrh_random", w, CXUI.row_h) then
+        qrh_inject_random()
     end
-    qrh_rows = {}
-
-    local cfg = TRAINER_CONFIG
-    local st  = ST
-    local w   = cfg.panel_w
-    local rh  = cfg.row_h
-    local sw  = SCREEN_WIDTH or 1920
-    local sh  = SCREEN_HIGHT or 1080
-
-    -- measure panel height from content
-    local h
-    if active then
-        h = st.header_h + 30 + (#active.steps) * rh + 20 + st.footer_h + 8
-        if proc_done then h = h + rh + 8 end
-    else
-        h = st.header_h + 20 + (#SCENARIOS + 1) * rh + st.footer_h + 8
-    end
-
-    local x = math.max(0, math.min(cfg.panel_x, sw - w))
-    local top = cfg.panel_top or (60 + h)
-    top = math.max(h + 8, math.min(top, sh - 4))
-    cfg.panel_x, cfg.panel_top = x, top
-    local bottom = top - h
-
-    XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0)
-
-    -- black shell: body, 1 px border, 34 px header
-    bar(x, bottom, top, w, st.bg)
-    bar(x, top - 1, top, w, st.border)
-    bar(x, bottom, top, 1, st.border)
-    bar(x + w - 1, bottom, top, 1, st.border)
-    bar(x, bottom, bottom + 1, w, st.border)
-    bar(x, top - st.header_h, top, w, active and st.header_act or st.header_bg)
-    bar(x, top - st.header_h, top - st.header_h + 2, w,
-        active and st.alert or st.border)
-    if active then
-        txt(x + st.pad, top - 25,
-            qrh_fit("QRH  " .. active.title, w - 2 * st.pad, 18), st.alert, 18)
-    else
-        txt(x + st.pad, top - 25, "FAILURE TRAINER", st.title, 18)
-        txt_right(x + w - st.pad, top - 22, "SELECT SCENARIO", st.sub, 10)
-    end
-    qrh_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
-
-    local y = top - st.header_h
 
     if active then
-        -- condition line
-        txt(x + st.pad, y - 16,
-            qrh_fit(active.condition, w - 2 * st.pad, 12), st.warn)
-        y = y - 30
-
+        if type(imgui.Separator) == "function" then imgui.Separator() end
+        cxui_spacing()
+        cxui_text(active.title, "small", CXUI.color.active)
+        cxui_muted(active.condition, "small")
+        cxui_spacing()
+        cxui_section("CHECKLIST")
         for i, step in ipairs(active.steps) do
-            local done = step_done[i]
-            local col
-            if step.advisory then
-                col = st.dim
-            elseif done then
-                col = st.ok
+            local done = step_done[i] == true
+            local col = step.advisory and CXUI.color.dim
+                or (done and CXUI.color.on or CXUI.color.muted)
+            local mark = step.advisory and "~" or (done and "X" or " ")
+            if step.cmd then
+                -- Same click-through as the old GL row: fire the switch command.
+                if cxui_button(mark .. "###qrh_step_" .. i, 26, 22) then
+                    command_once(step.cmd)
+                end
             else
-                col = st.value
+                cxui_text(mark, "small", col)
             end
-
-            -- check box
-            if step.advisory then
-                txt(x + st.pad - 2, y - 14, "~", st.dim)
-            elseif done then
-                txt(x + st.pad - 2, y - 14, "X", st.ok)
-            else
-                glColor4f(st.dim[1], st.dim[2], st.dim[3], 1.0)
-                glRectf(x + st.pad - 3, y - 14, x + st.pad + 6, y - 5)
-            end
-
-            txt(x + st.pad + 16, y - 14, string.format("%d.", i), st.label)
-            txt(x + st.pad + 36, y - 14,
-                qrh_fit(step.label, w - 2 * st.pad - 36, 12), col)
-
-            qrh_rows[#qrh_rows + 1] = {
-                kind = "step", step = step,
-                x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
-            }
-            y = y - rh
+            if type(imgui.SameLine) == "function" then imgui.SameLine() end
+            cxui_text(string.format("%d. %s", i, step.label), "small", col)
         end
 
+        cxui_spacing()
         if proc_done then
-            y = y - 8
-            txt(x + st.pad, y - 14, "PROCEDURE COMPLETE", st.ok)
-            y = y - rh
-            bar(x + st.pad, y - rh + 8, y + 5, w - 2 * st.pad, st.alert, 0.85)
-            txt(x + st.pad + 8, y - 14, "CLEAR FAILURE  (click)", CX.footer_fg)
-            qrh_rows[#qrh_rows + 1] = {
-                kind = "clear",
-                x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
-            }
+            cxui_text("PROCEDURE COMPLETE", "small", CXUI.color.on)
         else
-            y = y - 6
-            txt(x + st.pad, y - 14, "Fly the switches - steps self-check.", st.dim)
+            cxui_muted("Fly the switches - steps self-check.", "small")
         end
-    else
-        y = y - 16
-        for _, sc in ipairs(SCENARIOS) do
-            local col = (ft_on_ground or 0) == 1 and st.value or st.warn
-            glColor4f(st.accent[1], st.accent[2], st.accent[3], 0.8)
-            glRectf(x + st.pad - 4, y - 12, x + st.pad + 2, y - 6)
-            txt(x + st.pad + 12, y - 14,
-                qrh_fit(sc.title, w - 2 * st.pad - 72, 12), col)
-            txt_right(x + w - st.pad, y - 14, "INJECT", st.dim)
 
-            qrh_rows[#qrh_rows + 1] = {
-                kind = "scenario", sc = sc,
-                x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
-            }
-            y = y - rh
+        cxui_spacing()
+        cxui_section("ACTIONS")
+        if cxui_button("SET FAILURE###qrh_set", 176, CXUI.row_h) then
+            qrh_inject(active)
         end
-        -- random row
-        bar(x + st.pad, y - rh + 8, y + 5, w - 2 * st.pad, st.warn, 0.85)
-        txt(x + st.pad + 8, y - 14, "RANDOM FAILURE (surprise me)", CX.footer_fg)
-        qrh_rows[#qrh_rows + 1] = {
-            kind = "random",
-            x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
-        }
+        if type(imgui.SameLine) == "function" then imgui.SameLine() end
+        if cxui_button("CLEAR FAILURE###qrh_clear", 176, CXUI.row_h) then
+            qrh_clear()
+        end
     end
 
-    -- footer: drag-safe hide button (shared green bottom bar)
-    qrh_footer_rect = cx_footer_button(x, bottom, w, "HIDE PANEL", st.footer_h, st.pad)
-
-    -- toast
     if toast_text and (ft_sim_time or 0) < toast_until then
-        local tw2 = (measure_string(toast_text, "Helvetica_12")
-            or measure_string(toast_text)) + 32
-        local bx = x
-        local by = bottom - 30
-        bar(bx, by, by + 24, tw2, CX.bg)
-        bar(bx, by, by + 24, 4, st.accent)
-        txt(bx + 16, by + 7, toast_text, st.value)
+        cxui_spacing()
+        cxui_muted(toast_text, "small")
     end
+
+    cxui_spacing()
+    if cxui_button("HIDE PANEL###qrh_hide", w, CXUI.row_h) then
+        qrh_toggle_panel(false)
+    end
+    cxui_end_style(style)
 end
 
--- --------------------------------------------------------------- MOUSE -----
+-- ImGui handles every click and all dragging; kept for existing callers.
 function qrh_mouse_click()
-    if TRAINER_CONFIG.require_c750 and not is_c750 then
-        qrh_drag.active = false
-        return
-    end
-    if not TRAINER_CONFIG.panel_enabled then
-        qrh_drag.active = false
-        return
-    end
+    return
+end
 
-    local mx, my = MOUSE_X or -1, MOUSE_Y or -1
-    local cfg = TRAINER_CONFIG
+function qrh_aircraft_guard()
+    cxui_show(qrh_wnd, PLANE_ICAO == "C750" and TRAINER_CONFIG.panel_enabled)
+end
 
-    if MOUSE_STATUS == "down" then
-        local hr = qrh_header_rect
-        if hr and mx >= hr.x0 and mx <= hr.x1 and my >= hr.y0 and my <= hr.y1 then
-            qrh_drag.active = true
-            qrh_drag.dx = mx - cfg.panel_x
-            qrh_drag.dy = my - (cfg.panel_top or my)
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    elseif MOUSE_STATUS == "drag" then
-        if qrh_drag.active then
-            local sw = SCREEN_WIDTH or 1920
-            local sh = SCREEN_HIGHT or 1080
-            cfg.panel_x = math.max(0, math.min(mx - qrh_drag.dx, sw - cfg.panel_w))
-            cfg.panel_top = math.max(120, math.min(my - qrh_drag.dy, sh - 4))
-            RESUME_MOUSE_CLICK = true
-        end
-        return
-    elseif MOUSE_STATUS == "up" then
-        if qrh_drag.active then
-            qrh_drag.active = false
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    end
-
-    if MOUSE_STATUS ~= "down" then return end
-
-    local f = qrh_footer_rect
-    if f and mx >= f.x0 and mx <= f.x1 and my >= f.y0 and my <= f.y1 then
-        qrh_toggle_panel(false)
-        RESUME_MOUSE_CLICK = true
-        return
-    end
-
-    for _, r in ipairs(qrh_rows) do
-        if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
-            RESUME_MOUSE_CLICK = true
-            if r.kind == "scenario" then
-                qrh_inject(r.sc)
-            elseif r.kind == "random" then
-                qrh_inject_random()
-            elseif r.kind == "clear" then
-                qrh_clear()
-            elseif r.kind == "step" and r.step.cmd then
-                command_once(r.step.cmd)
-            end
-            return
-        end
-    end
+function qrh_on_close(wnd)
+    local _ = wnd
+    qrh_wnd = nil
+    TRAINER_CONFIG.panel_enabled = false
 end
 
 -- ------------------------------------------------------- COMMANDS + MENU ---
@@ -822,5 +694,10 @@ add_macro("Citation X QRH: clear failure", "qrh_clear()")
 math.randomseed(os.time())
 logMsg("Citation X Failure Trainer + QRH loaded")
 do_every_frame("qrh_frame()")
-do_every_draw("qrh_draw()")
-do_on_mouse_click("qrh_mouse_click()")
+
+-- Create the ImGui window once. It starts hidden; the Control Center / hub
+-- toggle opens it, and the aircraft guard hides it off the C750.
+qrh_wnd = cxui_create_window(430, 620, "Citation X QRH Trainer",
+    "qrh_on_build", "qrh_on_close", 470, 24)
+cxui_show(qrh_wnd, false)
+do_often("qrh_aircraft_guard()")

@@ -104,7 +104,10 @@ function float_wnd_destroy() end
 function XPLMGetScreenSize() return 2560, 1440 end
 
 -- ---------- load, in FlyWithLua order ----------
+-- The panels are ImGui builders now; install a recording imgui table first.
+dofile("tests/fwl_imgui_capture.lua")
 assert(loadfile("Scripts/CitationX_00_Core.lua"))()
+assert(loadfile("Scripts/CitationX_00_ImGuiKit.lua"))()
 assert(loadfile("Scripts/CitationX_FailureTrainer.lua"))()
 assert(loadfile(script))()
 assert(loadfile("Scripts/CitationX_InstructorWatch.lua"))()
@@ -223,7 +226,8 @@ check(st == 1, "opening the panel shows the lesson list", tostring(st))
 fi_brief("ils")
 st = fi_state()
 check(st == 2, "fi_brief() moves to the brief", tostring(st))
-check(type(draw_cb) == "function", "draw callback registered")
+check(type(fi_on_build) == "function", "instructor exposes an ImGui builder")
+check(type(draw_cb) ~= "function", "no GL draw callback is registered")
 
 -- SET ME UP places the aeroplane and starts the lesson without any manual
 -- Flight Configuration. The mock starts sitting on the KLAX 25L threshold.
@@ -338,9 +342,12 @@ fi_agl_m = 0
 fi_ias = 0
 frame_cb()
 check(select(3, fi_state()) == 0, "a parked aeroplane scores nothing")
-check(type(draw_cb) == "function", "draw survives the waiting state")
-local ok_draw = pcall(draw_cb)
-check(ok_draw, "panel draws while waiting for the setup")
+check(type(fi_on_build) == "function", "builder survives the waiting state")
+FI_CONFIG.panel_enabled = true
+ImgCap.reset()
+local ok_draw = pcall(fi_on_build, nil, 0, 0)
+check(ok_draw, "panel builds while waiting for the setup")
+check(ImgCap.has("FLIGHT INSTRUCTOR"), "waiting state still has its header")
 
 -- ---------- failure lifecycle is shared with the QRH ----------
 fi_menu()
@@ -386,25 +393,35 @@ check(fi_state() == 1, "hiding the panel returns to the lesson list")
 fi_toggle_panel(true)
 
 -- ---------- panel interaction ----------
+-- Drag and click are ImGui's job now; the old GL hit-test handler is inert.
 fi_toggle_panel(true)
 fi_menu()
-MOUSE_STATUS = "down"
-MOUSE_X, MOUSE_Y = FI_CONFIG.panel_x + 20,
-  (FI_CONFIG.panel_top or 500) - 10
-RESUME_MOUSE_CLICK = false
-fi_mouse_click()
-check(RESUME_MOUSE_CLICK == true, "header press is consumed")
-MOUSE_STATUS = "up"
-fi_mouse_click()
-
 MOUSE_STATUS = "down"
 MOUSE_X, MOUSE_Y = 5, 5
 RESUME_MOUSE_CLICK = false
 fi_mouse_click()
-check(RESUME_MOUSE_CLICK == false, "click outside the panel is not consumed")
+check(RESUME_MOUSE_CLICK == false, "legacy GL click handler is inert")
+
+ImgCap.reset()
+fi_on_build(nil, 0, 0)
+check(ImgCap.has("FLIGHT INSTRUCTOR"), "panel builds while open")
+check(ImgCap.has("fi_hide"), "panel has a HIDE PANEL button")
+check(ImgCap.has("fi_lesson_"), "lesson buttons are present")
+check(ImgCap.push_color == ImgCap.pop_color, "style colour stack balances")
+check(ImgCap.push_var == ImgCap.pop_var, "style variable stack balances")
+check(ImgCap.push_font == ImgCap.pop_font, "font stack balances")
+for _, id in ipairs({ 3, 7, 12, 17, 18, 21 }) do
+  check(ImgCap.vars[id] == 0, "square corners: style var " .. id .. " is 0")
+end
+for name, _ in pairs(ImgCap.fonts) do
+  check(name == "CCBody" or name == "CCSmall", "regular font only: " .. name)
+end
 
 fi_toggle_panel(false)
 check(FI_CONFIG.panel_enabled == false, "panel closes")
+ImgCap.reset()
+fi_on_build(nil, 0, 0)
+check(#ImgCap.text == 0 and #ImgCap.buttons == 0, "closed panel builds nothing")
 
 -- ---------- inert on another aircraft --------------------------------------
 fi_toggle_panel(true)

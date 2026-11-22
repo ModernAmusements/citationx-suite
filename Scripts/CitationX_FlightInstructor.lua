@@ -1,7 +1,12 @@
 -- ============================================================================
 --  CESSNA CITATION X FLIGHT INSTRUCTOR
---  X-Plane 12  |  FlyWithLua NG+ (2.8+)
+--  X-Plane 12  |  FlyWithLua NG+ 2.8+ (ImGui floating window)
 -- ----------------------------------------------------------------------------
+--  The panel is a native ImGui window styled by CitationX_00_ImGuiKit.lua:
+--  Neo Grotesque REGULAR, square corners, and a neutral palette (green = ON,
+--  blue = ACTIVE, grey = off). ImGui owns clicking and dragging; the lesson
+--  state machine and scoring below are unchanged.
+--
 --  A graded lesson panel, not a telemetry mirror. Pick a lesson, read the
 --  brief, fly the aeroplane exactly as the AFM asks, and the instructor scores
 --  the items that matter - then shows you what you missed.
@@ -65,7 +70,6 @@ FI_STYLE = {
     ok        = CX.ok,
     warn      = CX.warn,
     bad       = CX.bad,
-    accent    = CX.accent,
     btn       = CX.btn,
     footer_bg = CX.footer_bg,
     footer_fg = CX.footer_fg,
@@ -1105,15 +1109,24 @@ local FI_LESSONS = {
 -- ---------------------------------------------------------------- STATE -----
 local inst_state     = FI_STATE.MENU
 local inst_lesson    = nil       -- lesson table being briefed/flown
-local inst_rows      = {}        -- clickable rects, rebuilt each draw
-local inst_header_rect = nil
-local inst_footer_rect = nil
-local inst_drag      = { active = false, dx = 0, dy = 0 }
 local inst_toast_text = nil
 local inst_toast_until = 0
 local inst_is_c750   = (PLANE_ICAO == "C750")   -- refreshed every frame
-local inst_scroll    = 0         -- menu scroll offset (whole rows)
 local inst_setup_msg = "NOT RUN" -- last SET ME UP result, shown in the brief
+
+-- ImGui window lifecycle. ImGui handles position, decoration, click and drag;
+-- FI_CONFIG.panel_enabled remains the single on/off flag used by the hub, the
+-- Control Center and the InstructorWatch CSV.
+local fi_wnd = nil
+local FI_WINDOW_W = 460
+local FI_WINDOW_H = 640
+
+local function fi_create_window()
+    if fi_wnd then return fi_wnd end
+    fi_wnd = cxui_create_window(FI_WINDOW_W, FI_WINDOW_H,
+        "Citation X Flight Instructor", "fi_on_build", "fi_on_close", 470, 24)
+    return fi_wnd
+end
 
 -- Per-lesson run state.
 local S = {}
@@ -1324,17 +1337,38 @@ function fi_toggle_panel(on)
         FI_CONFIG.panel_enabled = (on == true)
     end
     if not FI_CONFIG.panel_enabled then
-        inst_drag.active = false
         -- Hiding the panel abandons the run: the frame loop must not keep
         -- grading (or keep a lesson's failure injected) behind a hidden panel.
         if inst_state == FI_STATE.FLYING or inst_state == FI_STATE.BRIEF then
             fi_menu()
         end
+        cxui_show(fi_wnd, false)
     else
         -- Opening the panel always shows the lesson list.
         inst_state = FI_STATE.MENU
+        fi_create_window()
+        cxui_show(fi_wnd, true)
+        if type(float_wnd_bring_to_front) == "function" then
+            float_wnd_bring_to_front(fi_wnd)
+        end
     end
     fi_toast("FLIGHT INSTRUCTOR: " .. (FI_CONFIG.panel_enabled and "ON" or "OFF"))
+end
+
+-- FlyWithLua keeps scripts loaded across aircraft changes. Hide the ImGui
+-- window off the C750 and restore it (only if the user left it on) on return.
+function fi_aircraft_guard()
+    if PLANE_ICAO ~= "C750" then
+        cxui_show(fi_wnd, false)
+    else
+        cxui_show(fi_wnd, FI_CONFIG.panel_enabled == true)
+    end
+end
+
+function fi_on_close(wnd)
+    local _ = wnd
+    fi_wnd = nil
+    FI_CONFIG.panel_enabled = false
 end
 
 function fi_reset_progress()
@@ -1501,20 +1535,14 @@ function fi_frame()
     end
 end
 
--- -------------------------------------------------------------- DRAWING -----
-local function bar(x, y0, y1, w, col, alpha)
-    cx_bar_w(x, y0, y1, w, col, alpha)
-end
+-- ------------------------------------------------------------ ImGui PANEL ----
+-- Converted 2026-11-22. Everything below is presentation only: the lesson
+-- tables, scoring, state machine and commands above are untouched. The ImGui
+-- window is native-decorated; ImGui owns clicking, scrolling and dragging.
+-- Neo Grotesque REGULAR and square corners come from cxui_begin_style().
 
-local function txt(x, y, text, size, col)
-    cx_text(x, y, text, size or 12, col)
-end
-
-local function txt_right(right_x, y, text, size, col)
-    cx_text_right(right_x, y, text, size or 12, col)
-end
-
--- Panel height for the current screen, so the shell never clips.
+-- Read-only helpers kept for the offline geometry harness; the ImGui browser
+-- builds its own sections from fi_section_list().
 local function fi_menu_rows()
     local rows = {}
     for _, section in ipairs(fi_section_list()) do
@@ -1529,7 +1557,6 @@ local function fi_menu_rows()
     return rows
 end
 
--- Height of the panel in its current state; also used by the geometry harness.
 function fi_panel_height()
     local cfg = FI_CONFIG
     if inst_state == FI_STATE.MENU then
@@ -1561,358 +1588,257 @@ function fi_panel_height()
     end
 end
 
-local function fi_button(x, y, w, label, col, fg)
-    bar(x, y - 22, y, w, col)
-    local tw = cx_measure(label, 12)
-    txt(math.floor(x + (w - tw) / 2 + 0.5), y - 16, label, 12, fg or CX.footer_fg)
-    return { x0 = x, x1 = x + w, y0 = y - 22, y1 = y }
-end
-
-local function fi_draw_menu(cfg, st, x, top, w)
-    local rows = fi_menu_rows()
-    local y = top - cfg.header_h - 14
-
-    local sum, flown = 0, 0
-    for _, lesson in ipairs(FI_LESSONS) do
-        local b = inst_progress[lesson.key]
-        if b then sum = sum + b flown = flown + 1 end
-    end
-    local avg = flown > 0 and math.floor(sum / flown + 0.5) or 0
-    txt(x + cfg.pad, y - 13, string.format(
-        "AVERAGE %d%%   %d OF %d FLOWN", avg, flown, #FI_LESSONS), 10, st.sub)
-    bar(x + cfg.pad, y - 17, y - 16, w - 2 * cfg.pad, st.hairline, 0.5)
-    y = y - 18
-
-    for _, row in ipairs(rows) do
-        if row.kind == "section" then
-            txt(x + cfg.pad, y - 13, row.label, 10, st.sub)
-            bar(x + cfg.pad, y - 17, y - 16, w - 2 * cfg.pad, st.hairline, 0.5)
-        elseif row.kind == "lesson" then
-            local best = inst_progress[row.lesson.key]
-            txt(x + cfg.pad, y - 14,
-                cx_fit(row.lesson.title, w - 2 * cfg.pad - 54, 12), 12, st.value)
-            if best then
-                txt_right(x + w - cfg.pad, y - 14,
-                    string.format("%d%%", best), 12, best >= 70 and st.ok or st.warn)
-            else
-                txt_right(x + w - cfg.pad, y - 14, "NEW", 10, st.dim)
-            end
-            inst_rows[#inst_rows + 1] = {
-                kind = "lesson", key = row.lesson.key,
-                x0 = x, x1 = x + w, y0 = y - 18, y1 = y + 2,
-            }
-        else
-            txt(x + cfg.pad, y - 14, row.label, 12, st.bad)
-            inst_rows[#inst_rows + 1] = {
-                kind = "reset", x0 = x, x1 = x + w, y0 = y - 18, y1 = y + 2,
-            }
-        end
-        y = y - cfg.row_h
-    end
-end
-
-local function fi_draw_brief(cfg, st, x, top, w, lesson)
-    local y = top - cfg.header_h - 16
-
-    for _, line in ipairs(lesson.brief) do
-        txt(x + cfg.pad, y, cx_fit(line, w - 2 * cfg.pad, 12), 12, st.value)
-        y = y - 15
-    end
-    y = y - 8
-
-    -- What the aeroplane actually weighs and the speeds that follow from it.
-    txt(x + cfg.pad, y, cx_fit(string.format(
-        "GW %d LB   VREF %d   VR %d   V2 %d",
-        math.floor((S.weight_lb or 0) + 0.5),
-        math.floor((S.vref or 0) + 0.5),
-        math.floor((S.vr or 0) + 0.5),
-        math.floor((S.v2 or 0) + 0.5)), w - 2 * cfg.pad, 10), 10, st.sub)
-    y = y - 14
-
-    txt(x + cfg.pad, y, "SETUP", 10, st.sub)
-    y = y - 15
-    for _, line in ipairs(lesson.setup) do
-        txt(x + cfg.pad, y, cx_fit(line, w - 2 * cfg.pad, 12), 12, st.label)
-        y = y - 15
-    end
-    y = y - 8
-
-    txt(x + cfg.pad, y, "GRADED ITEMS", 10, st.sub)
-    y = y - 15
-    for i, c in ipairs(lesson.criteria) do
-        txt(x + cfg.pad, y, string.format("%d.", i), 12, st.dim)
-        txt(x + cfg.pad + 16, y, cx_fit(c.label, w - 2 * cfg.pad - 16, 12), 12, st.value)
-        y = y - 15
-    end
-    y = y - 8
-
-    txt(x + cfg.pad, y, "TECHNIQUE", 10, st.sub)
-    y = y - 15
-    for _, line in ipairs(lesson.detail or {}) do
-        txt(x + cfg.pad, y, cx_fit(line, w - 2 * cfg.pad, 12), 12, st.dim)
-        y = y - 14
-    end
-    y = y - 8
-
-    local setup_col = st.warn
-    if inst_setup_msg:find("^PLACED") then setup_col = st.ok end
-    if inst_setup_msg:find("^FAILED") then setup_col = st.bad end
-    txt(x + cfg.pad, y, cx_fit("SETUP: " .. inst_setup_msg,
-        w - 2 * cfg.pad, 10), 10, setup_col)
-    y = y - 10
-
-    local bw = (w - 2 * cfg.pad - 20) / 3
-    inst_rows[#inst_rows + 1] = { kind = "setup",
-        rect = fi_button(x + cfg.pad, y, bw, "SET ME UP", st.ok) }
-    inst_rows[#inst_rows + 1] = { kind = "start",
-        rect = fi_button(x + cfg.pad + bw + 10, y, bw, "START", st.btn, st.value) }
-    inst_rows[#inst_rows + 1] = { kind = "back",
-        rect = fi_button(x + cfg.pad + 2 * bw + 20, y, bw, "BACK", st.btn, st.value) }
-end
-
 local function fi_coach_text(lesson)
     local unmet = {}
     for i, c in ipairs(lesson.criteria) do
         if not S.met[i] then unmet[#unmet + 1] = c end
     end
-    if #unmet == 0 then return "ALL ITEMS MET - FINISH TO GRADE", CX.ok end
-    return "NEXT: " .. unmet[1].hint, CX.warn
+    if #unmet == 0 then return "ALL ITEMS MET - FINISH TO GRADE", CXUI.color.on end
+    return "NEXT: " .. unmet[1].hint, CXUI.color.active
 end
 
-local function fi_draw_flying(cfg, st, x, top, w, lesson)
-    local y = top - cfg.header_h - 16
-    local V = fi_snapshot()
+local FI_BTN_W    = 420
+local FI_ACTION_W = 132
 
-    if not S.armed then
-        txt(x + cfg.pad, y, "ARMED - " .. (lesson.waiting or "fly the setup"),
-            12, st.warn)
-        y = y - 22
-    else
-        local text, col = fi_coach_text(lesson)
-        txt(x + cfg.pad, y, cx_fit(text, w - 2 * cfg.pad, 12), 12, col)
-        y = y - 18
-        local readout = lesson.readout and lesson.readout(V, S) or ""
-        txt(x + cfg.pad, y, cx_fit(readout, w - 2 * cfg.pad, 10), 10, st.sub)
-        y = y - 16
+local function fi_divider()
+    if type(imgui) == "table" and type(imgui.Separator) == "function" then
+        imgui.Separator()
+    end
+end
+
+local function fi_same_line()
+    if type(imgui) == "table" and type(imgui.SameLine) == "function" then
+        imgui.SameLine()
+    end
+end
+
+local function fi_action(label, id, w, fn, col)
+    if cxui_button(label .. "###" .. id, w, CXUI.row_h, col) then
+        if type(fn) == "function" then fn() end
+    end
+end
+
+-- ------------------------------------------------------------- LESSON LIST --
+local function fi_build_menu()
+    local sum, flown = 0, 0
+    for _, lesson in ipairs(FI_LESSONS) do
+        local best = inst_progress[lesson.key]
+        if best then
+            sum = sum + best
+            flown = flown + 1
+        end
+    end
+    local avg = flown > 0 and math.floor(sum / flown + 0.5) or 0
+    cxui_text(string.format("AVERAGE %d%%   %d OF %d FLOWN",
+        avg, flown, #FI_LESSONS), "small", CXUI.color.muted)
+    fi_divider()
+
+    for _, section in ipairs(fi_section_list()) do
+        cxui_section(section)
+        for _, lesson in ipairs(FI_LESSONS) do
+            if lesson.section == section then
+                local best = inst_progress[lesson.key]
+                local selected = inst_lesson and lesson.key == inst_lesson.key
+                local col = nil
+                if selected then
+                    col = CXUI.color.active
+                elseif best then
+                    col = CXUI.color.on
+                end
+                local label = lesson.title
+                if best then
+                    label = label .. string.format("  %d%%", best)
+                end
+                if cxui_button(label .. "###fi_lesson_" .. tostring(lesson.key),
+                        FI_BTN_W, CXUI.row_h, col) then
+                    fi_brief(lesson.key)
+                end
+            end
+        end
     end
 
-    local met = 0
-    for i = 1, #lesson.criteria do if S.met[i] then met = met + 1 end end
-    txt(x + cfg.pad, y, cx_fit(string.format(
-        "GW %d  GEAR %s  FLAP %s  AP %s  NAV %s  |  %d/%d",
+    cxui_spacing()
+    fi_action("RESET PROGRESS", "fi_reset", FI_BTN_W, fi_reset_progress)
+end
+
+-- ------------------------------------------------------------------- BRIEF --
+local function fi_build_brief(lesson)
+    cxui_text(lesson.title)
+    cxui_muted("BRIEF / OBJECTIVE", "small")
+    fi_divider()
+    for _, line in ipairs(lesson.brief) do cxui_text(line, "small") end
+    cxui_spacing()
+
+    -- The speeds the pilot will actually fly, from the current aeroplane weight.
+    cxui_text(string.format("GW %d LB   VREF %d   VR %d   V2 %d",
+        math.floor((S.weight_lb or 0) + 0.5),
+        math.floor((S.vref or 0) + 0.5),
+        math.floor((S.vr or 0) + 0.5),
+        math.floor((S.v2 or 0) + 0.5)), "small", CXUI.color.muted)
+    cxui_spacing()
+
+    cxui_section("SETUP")
+    for _, line in ipairs(lesson.setup) do cxui_text(line, "small") end
+
+    cxui_section("GRADED ITEMS")
+    for i, c in ipairs(lesson.criteria) do
+        cxui_text(string.format("%d. %s", i, c.label), "small")
+    end
+
+    cxui_section("TECHNIQUE")
+    for _, line in ipairs(lesson.detail or {}) do cxui_muted(line, "small") end
+
+    local setup_col = CXUI.color.muted
+    if inst_setup_msg:find("^PLACED") then setup_col = CXUI.color.on end
+    if inst_setup_msg:find("^FAILED") then setup_col = CXUI.color.dim end
+    cxui_text("SETUP: " .. inst_setup_msg, "small", setup_col)
+    cxui_spacing()
+
+    fi_action("SET ME UP", "fi_setup", FI_ACTION_W, function()
+        fi_setup(lesson.key)
+    end)
+    fi_same_line()
+    fi_action("START", "fi_start", FI_ACTION_W, function()
+        fi_start(lesson.key)
+    end, CXUI.color.active)
+    fi_same_line()
+    fi_action("ABANDON", "fi_abandon_brief", FI_ACTION_W, fi_menu)
+end
+
+-- ------------------------------------------------------------------ FLYING --
+local function fi_build_flying(lesson)
+    cxui_text(lesson.title)
+    cxui_muted("FLYING", "small")
+    fi_divider()
+
+    local V = fi_snapshot()
+    if not S.armed then
+        cxui_text("ARMED - " .. (lesson.waiting or "fly the setup"),
+            "small", CXUI.color.active)
+    else
+        local text = fi_coach_text(lesson)
+        local met_all = true
+        for i = 1, #lesson.criteria do
+            if not S.met[i] then met_all = false break end
+        end
+        cxui_text(text, "small", met_all and CXUI.color.on or CXUI.color.active)
+        local readout = lesson.readout and lesson.readout(V, S) or ""
+        cxui_muted(readout, "small")
+    end
+
+    cxui_muted(string.format(
+        "GW %d  GEAR %s  FLAP %s  AP %s  NAV %s",
         math.floor((S.weight_lb or 0) + 0.5),
         (V.gear_handle == 1) and "DN" or "UP",
         fi_flap_name(V.flap),
         (V.ap_on == 1) and "ON" or "OFF",
-        (V.nav1_h == 1) and "SIG" or "---",
-        met, #lesson.criteria), w - 2 * cfg.pad, 10), 10, st.dim)
-    y = y - 16
+        (V.nav1_h == 1) and "SIG" or "---"), "small")
 
+    cxui_section("GRADED ITEMS")
+    local met = 0
     for i, c in ipairs(lesson.criteria) do
         local done = S.met[i]
-        txt(x + cfg.pad - 2, y, done and "X" or "-", 12, done and st.ok or st.dim)
-        txt(x + cfg.pad + 14, y,
-            cx_fit(c.label, w - 2 * cfg.pad - 14, 12), 12,
-            done and st.ok or st.label)
-        y = y - cfg.row_h
+        if done then met = met + 1 end
+        cxui_text(string.format("%s  %d. %s",
+            done and "DONE" or "    ", i, c.label),
+            "small", done and CXUI.color.on or CXUI.color.dim)
     end
+    cxui_progress(met / #lesson.criteria, FI_BTN_W)
+    cxui_spacing()
 
-    y = y - 10
-    local bw = (w - 2 * cfg.pad - 10) / 2
-    inst_rows[#inst_rows + 1] = { kind = "finish",
-        rect = fi_button(x + cfg.pad, y, bw, "FINISH & GRADE", st.warn) }
-    inst_rows[#inst_rows + 1] = { kind = "abort",
-        rect = fi_button(x + cfg.pad + bw + 10, y, bw, "ABORT", st.btn, st.value) }
+    fi_action("FINISH & GRADE", "fi_finish", FI_ACTION_W, fi_finish,
+        CXUI.color.active)
+    fi_same_line()
+    fi_action("ABANDON", "fi_abandon_fly", FI_ACTION_W, fi_menu)
 end
 
-local function fi_draw_debrief(cfg, st, x, top, w, lesson)
-    local pct = fi_score_percent()
+-- ----------------------------------------------------------------- DEBRIEF --
+local function fi_build_debrief(lesson)
+    local pct    = fi_score_percent()
     local letter = fi_grade_letter(pct)
-    local y = top - cfg.header_h - 30
+    cxui_text(lesson.title)
+    cxui_muted("DEBRIEF / GRADE", "small")
+    fi_divider()
 
-    txt(x + cfg.pad, y, "GRADE", 10, st.sub)
-    txt_right(x + w - cfg.pad, y, string.format("%d%%", pct), 10, st.sub)
-    y = y - 24
-    local col = pct >= 70 and st.ok or (pct >= 50 and st.warn or st.bad)
-    txt(x + cfg.pad, y, letter, 18, col)
+    cxui_text(string.format("GRADE  %d%%", pct), "small", CXUI.color.muted)
     local got, total = 0, 0
     for i = 1, #lesson.criteria do
         total = total + 1
         if S.met[i] then got = got + 1 end
     end
-    txt(x + cfg.pad + 34, y, string.format("%d OF %d ITEMS", got, total), 12, st.dim)
-    y = y - 18
+    local col = pct >= 70 and CXUI.color.on
+        or (pct >= 50 and CXUI.color.active or CXUI.color.dim)
+    cxui_text(string.format("%s   %d OF %d ITEMS", letter, got, total), nil, col)
     local best = inst_progress[lesson.key] or 0
-    txt(x + cfg.pad, y, string.format("BEST %d%%%s", best,
-        (pct >= best) and "  NEW BEST" or ""), 10, st.dim)
-    y = y - 18
+    cxui_muted(string.format("BEST %d%%%s", best,
+        (pct >= best) and "   NEW BEST" or ""), "small")
+    cxui_progress(pct / 100, FI_BTN_W)
+    fi_divider()
 
     for i, c in ipairs(lesson.criteria) do
         local done = S.met[i]
-        txt(x + cfg.pad, y, done and "PASS" or "MISS", 10, done and st.ok or st.bad)
-        txt(x + cfg.pad + 40, y,
-            cx_fit(c.label, w - 2 * cfg.pad - 40, 12), 12,
-            done and st.label or st.dim)
-        y = y - 18
+        cxui_text(string.format("%s  %s",
+            done and "PASS" or "MISS", c.label),
+            "small", done and CXUI.color.on or CXUI.color.dim)
     end
 
-    y = y - 14
-    local bw = (w - 2 * cfg.pad - 10) / 2
-    inst_rows[#inst_rows + 1] = { kind = "retry",
-        rect = fi_button(x + cfg.pad, y, bw, "RETRY", st.ok) }
-    inst_rows[#inst_rows + 1] = { kind = "next",
-        rect = fi_button(x + cfg.pad + bw + 10, y, bw, "NEXT LESSON", st.btn, st.value) }
+    cxui_spacing()
+    fi_action("RETRY", "fi_retry", FI_ACTION_W, fi_retry, CXUI.color.on)
+    fi_same_line()
+    fi_action("NEXT LESSON", "fi_next", FI_ACTION_W, fi_next)
+    fi_same_line()
+    fi_action("LESSON LIST", "fi_menu", FI_ACTION_W, fi_menu)
 end
 
-function fi_draw()
-    -- C750-only: FlyWithLua keeps every script loaded across aircraft changes,
-    -- so the panel must disappear when another aeroplane is selected.
-    if FI_CONFIG.require_c750 and not inst_is_c750 then
-        inst_drag.active = false
-        inst_rows = {}
-        return
-    end
-    if not FI_CONFIG.panel_enabled then
-        inst_drag.active = false
-        return
-    end
-    inst_rows = {}
+-- ----------------------------------------------------------------- BUILDER --
+-- Called by FlyWithLua every frame while the floating window is visible.
+function fi_on_build(wnd, x, y)
+    local _ = wnd
+    local _x = x
+    local _y = y
+    if PLANE_ICAO ~= "C750" then return end
+    if FI_CONFIG.panel_enabled == false then return end
+    if type(imgui) ~= "table" then return end
 
-    local cfg = FI_CONFIG
-    local st  = FI_STYLE
-    local w   = cfg.panel_w
-    local sw  = SCREEN_WIDTH or 1920
-    local sh  = SCREEN_HIGHT or 1080
+    local style = cxui_begin_style()
 
-    local h = fi_panel_height()
-    local x = cfg.panel_x or (sw - w - 24)
-    x = math.max(0, math.min(x, sw - w))
-    local top = cfg.panel_top or (60 + h)
-    top = math.max(h + 8, math.min(top, sh - 4))
-    cfg.panel_x, cfg.panel_top = x, top
-    local bottom = top - h
-
-    XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0)
-
-    bar(x, bottom, top, w, st.bg)
-    bar(x, top - 1, top, w, st.border)
-    bar(x, bottom, top, 1, st.border)
-    bar(x + w - 1, bottom, top, 1, st.border)
-    bar(x, bottom, bottom + 1, w, st.border)
-    bar(x, top - cfg.header_h, top, w,
-        inst_state == FI_STATE.FLYING and st.header_act or st.header_bg)
-    bar(x, top - cfg.header_h, top - cfg.header_h + 2, w,
-        inst_state == FI_STATE.FLYING and st.accent or st.border)
-
-    txt(x + cfg.pad, top - 25,
-        cx_fit(inst_lesson and inst_lesson.title or "FLIGHT INSTRUCTOR",
-            w - 2 * cfg.pad - 70, 18), 18, st.title)
-    local caption = "12 GRADED LESSONS"
-    if inst_state == FI_STATE.FLYING then
-        caption = inst_setup_msg:find("^PLACED") and "SETUP OK" or "LESSON"
-    elseif inst_state == FI_STATE.DEBRIEF then caption = "DEBRIEF"
-    elseif inst_state == FI_STATE.BRIEF then caption = "BRIEF" end
-    txt_right(x + w - cfg.pad, top - 22, caption, 10, st.sub)
-
-    inst_header_rect = { x0 = x, x1 = x + w, y0 = top - cfg.header_h, y1 = top }
+    cxui_text("CITATION X")
+    cxui_muted("FLIGHT INSTRUCTOR", "small")
+    fi_divider()
 
     if inst_state == FI_STATE.MENU then
-        fi_draw_menu(cfg, st, x, top, w)
+        fi_build_menu()
     elseif inst_state == FI_STATE.BRIEF and inst_lesson then
-        fi_draw_brief(cfg, st, x, top, w, inst_lesson)
+        fi_build_brief(inst_lesson)
     elseif inst_state == FI_STATE.FLYING and inst_lesson then
-        fi_draw_flying(cfg, st, x, top, w, inst_lesson)
+        fi_build_flying(inst_lesson)
     elseif inst_state == FI_STATE.DEBRIEF and inst_lesson then
-        fi_draw_debrief(cfg, st, x, top, w, inst_lesson)
+        fi_build_debrief(inst_lesson)
+    else
+        cxui_muted("NO LESSON SELECTED", "small")
     end
 
-    inst_footer_rect = cx_footer_button(x, bottom, w, "HIDE PANEL", cfg.footer_h, cfg.pad)
-
+    -- Transient toasts are now part of the window, not a GL shell below it.
     if inst_toast_text and fi_now() < inst_toast_until then
-        local tw2 = (measure_string(inst_toast_text, "Helvetica_12")
-            or measure_string(inst_toast_text)) + 32
-        local by = bottom - 30
-        bar(x, by, by + 24, tw2, CX.bg)
-        bar(x, by, by + 24, 4, st.accent)
-        txt(x + 16, by + 7, inst_toast_text, 12, st.value)
+        cxui_spacing()
+        cxui_text(inst_toast_text, "small", CXUI.color.on)
     end
+
+    cxui_spacing()
+    fi_action("HIDE PANEL", "fi_hide", FI_BTN_W, function()
+        fi_toggle_panel(false)
+    end)
+    cxui_end_style(style)
 end
 
--- ----------------------------------------------------------------- MOUSE ----
+-- Kept as global no-ops: other suite files and the offline harnesses still
+-- call these names, but ImGui owns all drawing, hit-testing and dragging now.
+function fi_draw()
+    return
+end
+
 function fi_mouse_click()
-    if FI_CONFIG.require_c750 and not inst_is_c750 then
-        inst_drag.active = false
-        return
-    end
-    if not FI_CONFIG.panel_enabled then
-        inst_drag.active = false
-        return
-    end
-
-    local mx, my = MOUSE_X or -1, MOUSE_Y or -1
-    local cfg = FI_CONFIG
-
-    if MOUSE_STATUS == "down" then
-        local hr = inst_header_rect
-        if hr and mx >= hr.x0 and mx <= hr.x1 and my >= hr.y0 and my <= hr.y1 then
-            inst_drag.active = true
-            inst_drag.dx = mx - cfg.panel_x
-            inst_drag.dy = my - (cfg.panel_top or my)
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    elseif MOUSE_STATUS == "drag" then
-        if inst_drag.active then
-            local sw = SCREEN_WIDTH or 1920
-            local sh = SCREEN_HIGHT or 1080
-            cfg.panel_x = math.max(0, math.min(mx - inst_drag.dx, sw - cfg.panel_w))
-            cfg.panel_top = math.max(120, math.min(my - inst_drag.dy, sh - 4))
-            RESUME_MOUSE_CLICK = true
-        end
-        return
-    elseif MOUSE_STATUS == "up" then
-        if inst_drag.active then
-            inst_drag.active = false
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    end
-
-    if MOUSE_STATUS ~= "down" then return end
-
-    local f = inst_footer_rect
-    if f and mx >= f.x0 and mx <= f.x1 and my >= f.y0 and my <= f.y1 then
-        fi_toggle_panel(false)
-        RESUME_MOUSE_CLICK = true
-        return
-    end
-
-    for _, r in ipairs(inst_rows) do
-        local rect = r.rect or r
-        if mx >= rect.x0 and mx <= rect.x1 and my >= rect.y0 and my <= rect.y1 then
-            RESUME_MOUSE_CLICK = true
-            if r.kind == "lesson" then
-                fi_brief(r.key)
-            elseif r.kind == "reset" then
-                fi_reset_progress()
-            elseif r.kind == "setup" then
-                if inst_lesson then fi_setup(inst_lesson.key) end
-            elseif r.kind == "start" then
-                fi_start(inst_lesson.key)
-            elseif r.kind == "back" then
-                fi_menu()
-            elseif r.kind == "finish" then
-                fi_finish()
-            elseif r.kind == "abort" then
-                fi_menu()
-            elseif r.kind == "retry" then
-                fi_retry()
-            elseif r.kind == "next" then
-                fi_next()
-            end
-            return
-        end
-    end
+    return
 end
 
 -- ------------------------------------------------------- COMMANDS + MENU ---
@@ -1942,6 +1868,11 @@ fi_reset_run(nil)
 logMsg("Citation X Flight Instructor loaded ("
     .. tostring(#FI_LESSONS) .. " graded lessons)")
 do_every_frame("fi_frame()")
-do_every_draw("fi_draw()")
-do_on_mouse_click("fi_mouse_click()")
 do_on_exit("fi_save_progress()")
+
+-- Create the ImGui window once. It starts hidden; the Control Center / hub
+-- toggle opens it and the aircraft guard hides it off the C750.
+fi_wnd = cxui_create_window(460, 640, "Citation X Flight Instructor",
+    "fi_on_build", "fi_on_close", 470, 24)
+cxui_show(fi_wnd, false)
+do_often("fi_aircraft_guard()")

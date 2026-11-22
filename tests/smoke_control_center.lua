@@ -45,6 +45,7 @@ function do_often(cb) often_cb = cb end
 function do_every_frame() end
 function do_every_draw() end
 function do_on_exit() end
+function do_on_mouse_click() end
 
 local windows = {}
 function float_wnd_create(w, h, decoration, use_imgui)
@@ -62,7 +63,7 @@ function float_wnd_destroy() end
 
 -- ------------------------------------------------------------- mock ImGui ----
 local captured = {
-  buttons = {}, text = {}, fonts = {},
+  buttons = {}, text = {}, fonts = {}, vars = {},
   push_color = 0, pop_color = 0,
   push_var = 0, pop_var = 0,
   push_font = 0, pop_font = 0,
@@ -74,6 +75,7 @@ local function reset_capture()
   captured.buttons = {}
   captured.text = {}
   captured.fonts = {}
+  captured.vars = {}
   captured.push_color, captured.pop_color = 0, 0
   captured.push_var, captured.pop_var = 0, 0
   captured.push_font, captured.pop_font = 0, 0
@@ -90,16 +92,17 @@ imgui = {
     StyleVar = {
       WindowPadding = 2, WindowRounding = 3, ChildRounding = 7,
       FramePadding = 11, FrameRounding = 12, ItemSpacing = 14,
+      ScrollbarRounding = 17, GrabRounding = 18, TabRounding = 21,
     },
   },
 }
 function imgui.get_font_list()
-  return { "CCTitle", "CCHeading", "CCBody", "CCSmall" }
+  return { "CCBody", "CCSmall" }
 end
 function imgui.PushStyleColor() captured.push_color = captured.push_color + 1 end
 function imgui.PopStyleColor() captured.pop_color = captured.pop_color + 1 end
-function imgui.PushStyleVar() captured.push_var = captured.push_var + 1 end
-function imgui.PushStyleVar_2() captured.push_var = captured.push_var + 1 end
+function imgui.PushStyleVar(id, v) captured.push_var = captured.push_var + 1 captured.vars[id] = v end
+function imgui.PushStyleVar_2(id, a, b) captured.push_var = captured.push_var + 1 captured.vars[id] = a end
 function imgui.PopStyleVar() captured.pop_var = captured.pop_var + 1 end
 function imgui.PushFont(name)
   captured.push_font = captured.push_font + 1
@@ -111,6 +114,7 @@ function imgui.PopFont()
   captured.font_stack[#captured.font_stack] = nil
 end
 function imgui.TextUnformatted(text) captured.text[#captured.text + 1] = tostring(text) end
+function imgui.ProgressBar() end
 function imgui.Spacing() end
 function imgui.Separator() end
 function imgui.SameLine() end
@@ -121,6 +125,9 @@ function imgui.Button(label, w, h)
 end
 
 -- ------------------------------------------------------------------- load ----
+-- The shared kit loads first in the real FlyWithLua alphabetical order.
+assert(loadfile("Scripts/CitationX_00_Core.lua"))()
+assert(loadfile("Scripts/CitationX_00_ImGuiKit.lua"))()
 local chunk = assert(loadfile(script))
 chunk()
 
@@ -132,7 +139,8 @@ check(wnd.title == "Citation X Control Center", "window has an Apple-style title
 check(wnd.builder == "cc_on_build", "ImGui builder is registered", wnd.builder)
 check(wnd.onclose == "cc_on_close", "close callback is registered", wnd.onclose)
 check(type(wnd.x) == "number" and wnd.y > 24, "window is placed on screen", tostring(wnd.y))
-check(wnd.visible == true, "window is visible on the C750")
+check(wnd.visible == 1 or wnd.visible == true, "window is visible on the C750",
+  tostring(wnd.visible))
 check(type(often_cb) == "string" and often_cb:find("cc_aircraft_guard", 1, true) ~= nil,
   "aircraft guard runs often", tostring(often_cb))
 check(#commands == 1 and commands[1] == "CitationXSuite/control_center",
@@ -140,17 +148,24 @@ check(#commands == 1 and commands[1] == "CitationXSuite/control_center",
 check(#macros == 1 and macros[1] == "Citation X Control Center: show",
   "show macro is registered", table.concat(macros, ","))
 
--- ImGui packs colours as 0xAABBGGRR; a plain RGB literal silently turns the
--- amber WAIT pill blue. Decode the bytes and assert the accent hues survived.
+-- ImGui packs colours as 0xAABBGGRR. The shared palette must be green/blue/
+-- grey only — no orange accent anywhere, and all rounding values must be 0.
 local function cc_rgb(v)
   return v % 256, math.floor(v / 256) % 256, math.floor(v / 65536) % 256
 end
-local r, g, b = cc_rgb(CC.color.on)
+local r, g, b = cc_rgb(CXUI.color.on)
 check(g > r and g > b, "ON state pill is green after ABGR packing",
   string.format("#%02X%02X%02X", r, g, b))
-r, g, b = cc_rgb(CC.color.wait)
-check(r > b and g > b, "WAIT state pill is amber after ABGR packing",
+r, g, b = cc_rgb(CXUI.color.active)
+check(b > r and b > g, "ACTIVE state pill is blue, not orange",
   string.format("#%02X%02X%02X", r, g, b))
+for _, key in ipairs({ "window", "surface", "text", "muted", "dim",
+                       "button", "hover", "pressed", "separator", "track" }) do
+  local rr, gg, bb = cc_rgb(CXUI.color[key])
+  check(math.max(rr, gg, bb) - math.min(rr, gg, bb) <= 8,
+    "palette entry is neutral grey: " .. key,
+    string.format("#%02X%02X%02X", rr, gg, bb))
+end
 
 -- --------------------------------------------------- module registry stub ----
 local panel_state = {
@@ -208,8 +223,14 @@ check(blob:find("OFF###cc_status_state", 1, true) ~= nil, "states are rendered i
 check(blob:find("HIDDEN###cc_landperf_state", 1, true) ~= nil,
   "landing report uses its SHOWN/HIDDEN state")
 
-for _, alias in ipairs({ "CCTitle", "CCHeading", "CCBody", "CCSmall" }) do
-  check(captured.fonts[alias] == true, "Neo Grotesque alias is used: " .. alias)
+for _, alias in ipairs({ "CCBody", "CCSmall" }) do
+  check(captured.fonts[alias] == true, "Neo Grotesque REGULAR alias is used: " .. alias)
+end
+check(captured.fonts.CCTitle == nil and captured.fonts.CCHeading == nil,
+  "no bold font alias is pushed")
+for _, id in ipairs({ 3, 7, 12, 17, 18, 21 }) do
+  check(captured.vars[id] == 0, "square corners: style var " .. id .. " is 0",
+    tostring(captured.vars[id]))
 end
 check(captured.push_font == captured.pop_font and #captured.font_stack == 0,
   "font stack balances", captured.push_font .. " push / " .. captured.pop_font .. " pop")
@@ -259,13 +280,15 @@ check(textures_cycled == 1, "TEXTURE shortcut cycles the livery")
 -- ------------------------------------------------------------ C750 guard ----
 PLANE_ICAO = "MD80"
 cc_aircraft_guard()
-check(wnd.visible == false, "window hides on another aircraft")
+check(wnd.visible == 0 or wnd.visible == false, "window hides on another aircraft",
+  tostring(wnd.visible))
 reset_capture()
 cc_on_build(wnd, 0, 0)
 check(#captured.buttons == 0, "no suite controls are drawn on another aircraft")
 PLANE_ICAO = "C750"
 cc_aircraft_guard()
-check(wnd.visible == true, "window returns with the Citation X")
+check(wnd.visible == 1 or wnd.visible == true, "window returns with the Citation X",
+  tostring(wnd.visible))
 
 -- ------------------------------------------------------------- close/reopen --
 cc_on_close(wnd)

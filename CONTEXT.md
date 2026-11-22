@@ -2,6 +2,43 @@
 
 Last updated: 2026-11-22
 
+## 2026-11-22 (later) — every panel converted to ImGui, square corners, no orange
+
+The user followed up: "style all panel like the main panel but dont use border raduis or bold
+fonts", then reported an "offset orange background" in the Suite Hub and a "white shape" in the
+AXIS MONITOR. All legacy GL panels were therefore converted to ImGui floating windows built from
+one shared kit, `Scripts/CitationX_00_ImGuiKit.lua` (`CXUI` / `cxui_*`).
+
+- **Shared kit:** `Scripts/CitationX_00_ImGuiKit.lua` loads after Core and before every panel.
+  It owns the neutral dark palette (`CXUI.color`: green `on`, blue `active`, grey for off), the
+  regular-only font aliases (`CCBody`, `CCSmall`), `cxui_begin_style()`/`cxui_end_style()` which
+  push **all rounding style variables to 0**, and the window helpers. There is no orange anywhere
+  in the palette; the hub's old `CX.accent` `#ff6600` orange tab marker and NEXT button are gone.
+- **Converted panels:** hub (`CitationX_MasterSuite.lua`), realism (`CitationX_Realism.lua`),
+  cabin (`CitationX_CabinOps.lua`), QRH (`CitationX_FailureTrainer.lua`) and flight instructor
+  (`CitationX_FlightInstructor.lua`). Each now exposes a `*_on_build(wnd, x, y)` builder, a
+  `*_aircraft_guard()`, `*_on_close()` and a `cxui_create_window()` call at the bottom. The old
+  `*_draw()` / `*_mouse_click()` globals remain as no-ops for compatibility; ImGui owns dragging
+  and click hit-testing. All non-UI state, datarefs, commands, macros and functions are unchanged.
+- **AXIS MONITOR white shape:** the old `draw_axis_monitor()` GL box with its near-white
+  `CX.border` outline was deleted entirely. The diagnostic is now a dark `cxui_section("AXIS
+  MONITOR")` in the hub window with green `cxui_progress` bars and grey labels — no filled
+  rectangle, no border, no GL call.
+- **Fonts:** `fwl_prefs.ini` no longer declares `CCTitle` or `CCHeading` (no bold aliases).
+  `UseCustomFonts = 1` plus `ImguiCustomFont1 = Neo_Grotesque.ttf` makes the default ImGui face
+  regular Neo Grotesque too, so the untracked standalone `Scripts/LandingPerformance.lua` window
+  matches the suite. These paths are machine-local runtime state and remain untracked.
+- **Tests:** added `tests/fwl_imgui_mock.lua` (full shared builder harness) and
+  `tests/fwl_imgui_capture.lua` (compact recorder for the existing behaviour harnesses).
+  `smoke_control_center.lua` now checks the square-corner vars, regular-only fonts and neutral
+  palette. `smoke_panel_geometry.lua` was rewritten around the ImGui builders. The master, hub,
+  realism, instructor and control-panel harnesses were updated to drive builders instead of GL
+  draw callbacks. Final: `smoke_control_center.lua` 62 checks, `smoke_panel_geometry.lua` 216
+  checks; all other smoke tests pass.
+
+**Not yet confirmed in-sim:** reload Lua and visually verify square corners, regular Neo
+Grotesque, no orange on any panel (especially the hub) and no white shape in the AXIS MONITOR.
+
 ## 2026-11-22 — one ImGui Control Center, Neo Grotesque, quarantine cleared
 
 The user asked for three small UI/housekeeping changes: clear the remaining quarantined script,
@@ -214,10 +251,12 @@ Textures still need *Developer → Reload Aircraft* (or a restart), not a Lua re
   reshapes pitch/roll only (deadzone + expo + smoothing). X-Plane's own profile is the single
   source of truth for the pad and the keyboard. Toggle anything from the control panel, the
   macro menu (`CitationX Suite: <row>`) or `CitationXSuite/toggle_<key>`.
-- **Panels:** since 2026-11-22 the ImGui Control Center is the only surface drawn at load;
-  the MasterSuite hub, realism panel, instructor, CabinOps, QRH and LandingPerformance all
-  start hidden and are opened from its rows. The legacy panels share the MA dark palette and
-  a green bottom bar (§37).
+- **Panels:** the ImGui Control Center is the only surface drawn at load; the MasterSuite hub,
+  realism panel, instructor, CabinOps, QRH and LandingPerformance all start hidden and are opened
+  from its rows. Every first-party panel is now an ImGui window in regular Neo Grotesque with
+  square corners and the neutral `CXUI` palette — green = ON, blue = ACTIVE, grey = off, no
+  orange (see the 2026-11-22 "later" section at the top). §37's MA dark palette and green bottom
+  bar describe the superseded GL panels and are kept only as history.
 - **QRH trainer:** 14 scenarios — engine fire L, generator L trip, bleed air L, boost pump L,
   flameout L, APU fire, hydraulic A, hydraulic B, flap actuator, gear indication, APU
   fail-to-start, pitot/static blockage, elevator trim runaway and slow cabin decompression —

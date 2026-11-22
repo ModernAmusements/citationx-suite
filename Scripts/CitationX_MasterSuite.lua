@@ -1,8 +1,13 @@
 -- ============================================================================
 --  CESSNA CITATION X MASTER SUITE
---  X-Plane 12  |  FlyWithLua NG+ (2.8+)
+--  X-Plane 12  |  FlyWithLua NG+ (2.8+, ImGui floating window)
 --  Version 3.0
 -- ----------------------------------------------------------------------------
+--  The hub is now a native-decoration ImGui window in the shared Apple style
+--  (CXUI / cxui_* from CitationX_00_ImGuiKit.lua): Neo Grotesque REGULAR only,
+--  square corners, green = ON, blue = ACTIVE, grey = off/inactive. ImGui owns
+--  clicking and dragging; the legacy GL hit-test and shell are gone.
+--
 --  This is the suite hub and nothing else. It deliberately contains NO
 --  keyboard layer: no do_on_keystroke, no controller-button map and no
 --  axis-to-heading-bug knob. X-Plane's own keyboard / joystick profile is the
@@ -29,8 +34,9 @@
 --
 --  There is deliberately NO telemetry overlay and NO C750 systems readback:
 --  the aircraft's own PFD, EICAS and synoptics already show airspeed, altitude,
---  heading, Mach, G, fuel flow, electrics, fuel and anti-ice. The only surfaces
---  drawn here are the control panel, the opt-in AXIS MONITOR and a 2 s toast.
+--  heading, Mach, G, fuel flow, electrics, fuel and anti-ice. The only surface
+--  drawn here is the ImGui hub, with its opt-in AXIS MONITOR section and the
+--  2 s status line. All non-UI logic below is unchanged by the ImGui port.
 --
 --  Verified against DataRefs.txt, Commands.txt and the aircraft's own xLua
 --  scripts (plugins/xlua/scripts/*.lua).
@@ -125,7 +131,6 @@ SUITE_STYLE = {
     warn         = CX.warn,
     alert        = CX.alert,
     btn          = CX.btn,
-    accent       = CX.accent,
     subhdr       = CX.sub,
     footer_bg    = CX.footer_bg,
     footer_fg    = CX.footer_fg,
@@ -192,6 +197,20 @@ local optimizer_active = false
 local emergency_left   = 0.0
 local emergency_armed  = true
 local is_c750          = (PLANE_ICAO == "C750")
+
+-- The hub is an ImGui floating window created once at the bottom of this file.
+-- Declared here so citationx_set_status() (defined below) can show/hide it.
+local hub_wnd    = nil
+local hub_closed = false
+local HUB_W      = 446
+local HUB_H      = 620
+
+-- Guards keep the file loadable in the offline harnesses, which do not load
+-- CitationX_00_ImGuiKit.lua. In X-Plane the kit is always present, so the real
+-- cxui_show / cxui_create_window calls are used unchanged.
+local function hub_show(wnd, on)
+    if type(cxui_show) == "function" then cxui_show(wnd, on) end
+end
 
 -- --------------------------------------------------- TEXTURE (LIVERY) NAME --
 -- acf_livery_path is a *slow* dataref (it builds a string), and the panel asks
@@ -435,13 +454,6 @@ local debrief = {
 local toast            -- forward declaration: FLOWS controls call it above
 local toast_text       = nil
 local toast_until      = 0.0
-local status_rects     = {}
-local panel_tab_rects  = {}
-local flow_rects       = {}
-local panel_footer_rect = nil
-local panel_header_rect = nil
-local panel_drag = { active = false, dx = 0, dy = 0 }
-local control_panel_height   -- forward declaration (used by the mouse handler)
 
 -- ---------------------------------------------------------------- HELPERS ---
 local LOG_HEADER = "Time_Sec,Altitude_FT,Mach,IAS_KTS,Pitch_Deg,Roll_Deg,G_Load,FuelFlow_KgH\n"
@@ -983,6 +995,7 @@ end
 -- -------------------------------------------------------- SUITE CONTROL -----
 function citationx_set_status(on)
     CONFIG.status_enabled = (on == true)
+    hub_show(hub_wnd, CONFIG.status_enabled)
     toast_state("CONTROL PANEL", CONFIG.status_enabled)
 end
 
@@ -1316,386 +1329,210 @@ function citationx_frame()
     end
 end
 
--- --------------------------------------------------------- ON-SCREEN PANEL ----
--- The only thing the suite draws is the control panel (plus the opt-in axis
--- monitor and a 2 s toast). No telemetry, no systems mirror.
-local function draw_bar(x, y_bottom, y_top, w, color, alpha)
-    cx_bar_w(x, y_bottom, y_top, w, color, alpha)
-end
-
-local function fit_text(text, max_px)
-    return cx_fit(text, max_px)
-end
-
-local function suite_text(x, y, text, size, color)
-    cx_text(x, y, text, size, color)
-end
-
-local function suite_text_right(right_x, y, text, size, color)
-    cx_text_right(right_x, y, text, size, color)
-end
-
--- Shell: body, 1 px border, 2 px header rule, title and right caption.
-local function draw_shell(x, top, w, h, title, sub)
-    local st = SUITE_STYLE
-    local bottom = top - h
-    draw_bar(x, bottom, top, w, st.bg)
-    draw_bar(x, top - 1, top, w, st.border)
-    draw_bar(x, bottom, top, 1, st.border)
-    draw_bar(x + w - 1, bottom, top, 1, st.border)
-    draw_bar(x, bottom, bottom + 1, w, st.border)
-    draw_bar(x, top - st.header_h, top, w, st.header_bg)
-    -- inner hairline under the header: reads crisper than a thick border
-    draw_bar(x, top - st.header_h, top - st.header_h + 1, w, st.border)
-    draw_bar(x, top - st.header_h - 1, top - st.header_h, w, st.hairline)
-    suite_text(x + st.pad, top - 27, title, 18, st.title)
-    if sub and sub ~= "" then
-        suite_text_right(x + w - st.pad, top - 24, sub, 10, st.sub)
+-- -------------------------------------------------------------- ImGui HUB ----
+-- Converted 2026-11-22: the hub is a native-decoration ImGui floating window
+-- in the shared Apple style. ImGui owns every click and all dragging; the old
+-- GL shell, hit rectangles and draw callbacks are gone. Everything above this
+-- marker (recorder, optimizer, flows, emergency, AviTab, commands) is unchanged.
+local function hub_sameline()
+    if type(imgui) == "table" and type(imgui.SameLine) == "function" then
+        imgui.SameLine()
     end
 end
 
-local function draw_footer_button(x, bottom, w, label)
-    local st = SUITE_STYLE
-    return cx_footer_button(x, bottom, w, label, st.footer_h, st.pad)
-end
-
--- Flow page geometry. `top` is the panel's top edge (FlyWithLua y grows up).
--- The same layout drives drawing and hit testing, so a clicked row is always
--- the row the pilot sees.
-local function flow_layout(st, top)
-    local first_y = top - st.header_h - st.sub_h - 15
-    local rows = {}
-    for i = 1, #CONFIG.flows do
-        rows[i] = first_y + st.row_h - (i - 1) * st.row_h   -- row top edge
-    end
-    local last_bottom = rows[#rows] - st.row_h
-    local prompt_y = last_bottom - 16
-    local check_y  = prompt_y - 18
-    local nav_top  = check_y - 16
-    local nav_bottom = nav_top - (st.row_h - 8)
-    local footer_top = nav_bottom - 14
-    return {
-        first_y = first_y, rows = rows,
-        prompt_y = prompt_y, check_y = check_y,
-        nav_top = nav_top, nav_bottom = nav_bottom,
-        footer_top = footer_top,
-        bottom = footer_top - st.footer_h - 8,
-    }
-end
-
--- Control page: header + sub-header + rows + footer + padding.
--- Flows page: the shared layout above decides the bottom edge.
+-- Kept for callers outside this file (harnesses and sibling panels). The ImGui
+-- window has a fixed height now, so the old geometry math is no longer needed.
 function control_panel_height()
-    local st = SUITE_STYLE
-    if CONFIG.flow_tab == "flows" then
-        return -flow_layout(st, 0).bottom
-    end
-    return st.header_h + st.sub_h + 14
-        + #SUITE_MODULES * st.row_h + st.footer_h + 8
+    return HUB_H
 end
 
--- Public mirror of the panel height (the local forward declaration above
--- shadows the function inside this file; other suite scripts and the tests
--- ask through this name).
+-- Public mirror of the panel height.
 function citationx_panel_height()
     return control_panel_height()
 end
 
-local function draw_control_panel(screen_h)
-    local st = SUITE_STYLE
-    local w, pad = st.width, st.pad
-    local x = st.x
-
-    if st.top == nil then st.top = screen_h - 24 end
-    x = math.max(8, math.min(x, (SCREEN_WIDTH or 1920) - w - 8))
-    st.x = x
-    local h = control_panel_height()
-    local top = math.max(h + 8, math.min(st.top, screen_h - 8))
-    st.top = top
-    local bottom = top - h
-    local body_top = top - st.header_h
-
-    status_rects, panel_tab_rects, flow_rects = {}, {}, {}
-
-    draw_shell(x, top, w, h, "CITATION X", "MASTER SUITE 3.0")
-
-    -- Sub-header: the two hub pages. CONTROL keeps the original module rows;
-    -- FLOWS shows the guided normal procedures. Neither page owns a keybind.
-    local sub_y = body_top - 15
-    suite_text(x + pad, sub_y, "HUB", 10, st.dim)
-    local tab_x = x + pad + cx_measure("HUB", 10) + 12
-    local function add_tab(label, key)
-        local tw = cx_measure(label, 10)
-        local active = (CONFIG.flow_tab == key)
-        suite_text(tab_x, sub_y, label, 10, active and st.accent or st.sub)
-        if active then
-            draw_bar(tab_x, body_top - st.sub_h + 2, tab_x + tw,
-                body_top - st.sub_h + 3, st.accent, 1.0)
-        end
-        panel_tab_rects[#panel_tab_rects + 1] = {
-            key = key, x0 = tab_x - 4, x1 = tab_x + tw + 4,
-            y0 = body_top - st.sub_h, y1 = body_top,
-        }
-        tab_x = tab_x + tw + 18
+-- ImGui page helpers. No GL geometry and no hit rectangles: ImGui supplies the
+-- click semantics, and the palette comes from CXUI (no orange, no bold faces).
+local function hub_tab(label, key, w)
+    local active = (CONFIG.flow_tab == key)
+    if cxui_button(label .. "###hub_tab_" .. key, w, CXUI.row_h,
+            active and CXUI.color.active or CXUI.color.button) then
+        citationx_set_flow_tab(key)
     end
-    add_tab("CONTROL", "control")
-    add_tab("FLOWS", "flows")
+end
 
-    local note = "MOUSE ONLY - NO KEYBINDS"
-    local nw = measure_string(note, "Helvetica_10") or measure_string(note)
-    suite_text(x + w - pad - nw, sub_y, note, 10, st.dim)
-    draw_bar(x, body_top - st.sub_h, body_top, w, st.hairline, 0.45)
+local function hub_module_row(m, w)
+    local text = tostring(m.state())
+    if cxui_row(m.label, text, "hub_" .. m.key, w,
+            CXUI.label_w, CXUI.state_w) then
+        -- Exactly the old row behaviour: cycle actions fire, toggles invert.
+        if m.cycle then m.set(true) else m.set(not m.get()) end
+    end
+end
+
+local function hub_flow_row(f, i, active, w)
+    local done_all = flow_all_done(f.key)
+    local marks = 0
+    for s = 1, #f.steps do
+        if flow_step_done(f.key, s) then marks = marks + 1 end
+    end
+    local label = string.format("%d. %s", i, f.label)
+    local state = done_all and "DONE" or string.format("%d/%d", marks, #f.steps)
+
+    -- Blue = the visible flow, green = a completed flow, grey/plain otherwise.
+    local col = active and CXUI.color.active
+        or (done_all and CXUI.color.on or CXUI.color.text)
+    local ptext = cxui_push_color("Text", col)
+    local pbtn = cxui_push_color("Button", active and CXUI.color.surface2
+        or CXUI.color.button)
+    local clicked = cxui_button(label .. "###hub_flow_" .. f.key, w - 108,
+        CXUI.row_h)
+    cxui_pop_color(pbtn and 1 or 0)
+    cxui_pop_color(ptext and 1 or 0)
+
+    hub_sameline()
+    local pstate = cxui_push_color("Text", done_all and CXUI.color.on
+        or CXUI.color.muted)
+    if cxui_button(state .. "###hub_flow_state_" .. f.key, 100, CXUI.row_h) then
+        clicked = true
+    end
+    cxui_pop_color(pstate and 1 or 0)
+    if clicked then citationx_flow_select(f.key) end
+end
+
+-- The AXIS MONITOR used to draw a GL box with a near-white outline (the "white
+-- shape" the pilot saw). It is now a plain dark ImGui section with green bars;
+-- there is no filled rectangle, no border and no legacy GL call at all.
+local function hub_axis_bar(raw, w)
+    local pushed = false
+    if type(cxui_push_color) == "function" then
+        pushed = cxui_push_color("PlotHistogram", CXUI.color.on)
+    end
+    if type(cxui_progress) == "function" then cxui_progress(raw, w) end
+    if pushed then cxui_pop_color(1) end
+end
+
+function citationx_on_build(wnd, x, y)
+    local _ = wnd
+    local _x = x
+    local _y = y
+    if PLANE_ICAO ~= "C750" then return end
+    if type(cxui_begin_style) ~= "function" then return end
+    local style = cxui_begin_style()
+
+    cxui_text("CITATION X")
+    cxui_muted("MASTER SUITE 3.0", "small")
+    cxui_spacing()
+
+    -- The two hub pages. Active is blue (CXUI.color.active), never orange.
+    cxui_section("PAGES")
+    hub_tab("CONTROL", "control", 104)
+    hub_sameline()
+    hub_tab("FLOWS", "flows", 104)
+    cxui_spacing()
 
     if CONFIG.flow_tab == "flows" then
-        -- Flow index rows ---------------------------------------------------
-        local L = flow_layout(st, top)
+        cxui_section("PROCEDURES")
         local flow = flow_by_key(flow_current_key())
-        for i = 1, #CONFIG.flows do
-            local f = CONFIG.flows[i]
-            local row_top = L.rows[i]
-            local y = row_top - 15
-            local active = (f.key == flow.key)
-            local done_all = flow_all_done(f.key)
-            local col = active and st.accent or (done_all and st.ok or st.label)
-            if active or i % 2 == 0 then
-                draw_bar(x + 1, row_top - st.row_h, row_top, w - 2,
-                    st.bg_alt, active and 0.85 or 0.55)
-            end
-            glColor4f(col[1], col[2], col[3], 1.0)
-            glRectf(x + pad, y - 1, x + pad + 5, y + 8)
-            suite_text(x + pad + 12, y,
-                fit_text(string.format("%d. %s", i, f.label), w * 0.52), 12, col)
-            local marks = 0
-            for s = 1, #f.steps do
-                if flow_step_done(f.key, s) then marks = marks + 1 end
-            end
-            suite_text_right(x + w - pad, y,
-                done_all and "DONE" or string.format("%d/%d", marks, #f.steps),
-                12, done_all and st.ok or st.dim)
-            flow_rects[#flow_rects + 1] = {
-                key = f.key, x0 = x, x1 = x + w,
-                y0 = row_top - st.row_h, y1 = row_top,
-            }
+        for i, f in ipairs(CONFIG.flows) do
+            hub_flow_row(f, i, f.key == flow.key, HUB_W - 48)
         end
 
-        -- Current step and its optional self-check --------------------------
+        cxui_section("CURRENT STEP")
         local idx = flow_step_index(flow.key)
         local step = flow.steps[idx]
-        suite_text(x + pad + 16, L.prompt_y,
-            fit_text(string.format("STEP %d/%d  %s", idx, #flow.steps, step.text),
-                w - pad * 2 - 32), 12, st.label)
+        cxui_text(string.format("STEP %d/%d", idx, #flow.steps), "small",
+            CXUI.color.active)
+        cxui_text(step.text)
         local check_ok = flow_step_check(flow.key, idx)
-        local check_line
+        local line
         if step.check then
-            check_line = (check_ok and "[X] " or "[ ] ") .. step.check_label
+            line = (check_ok and "[X] " or "[ ] ") .. step.check_label
         else
-            check_line = "[ ] VISUAL CHECK - VERIFY ON COCKPIT DISPLAYS"
+            line = "[ ] VISUAL CHECK - VERIFY ON COCKPIT DISPLAYS"
         end
-        local check_col = step.check and (check_ok and st.ok or st.sub) or st.dim
-        suite_text(x + pad + 16, L.check_y,
-            fit_text(check_line, w - pad * 2 - 32), 10, check_col)
-
-        -- Navigation buttons -----------------------------------------------
-        local labels = { "BACK", "NEXT", "RESET" }
-        local gap, btn_w = 8, (w - pad * 2 - 16) / 3
-        for i, label in ipairs(labels) do
-            local bx = x + pad + (i - 1) * (btn_w + gap)
-            draw_bar(bx, L.nav_bottom, L.nav_top, btn_w, st.btn)
-            draw_bar(bx, L.nav_top - 1, L.nav_top, btn_w, st.hairline, 0.6)
-            local bcol = label == "NEXT" and st.accent or st.label
-            suite_text(bx + (btn_w - cx_measure(label, 10)) / 2,
-                L.nav_bottom + 6, label, 10, bcol)
-            flow_rects[#flow_rects + 1] = {
-                key = string.lower(label), x0 = bx, x1 = bx + btn_w,
-                y0 = L.nav_bottom, y1 = L.nav_top,
-            }
+        cxui_text(line, "small",
+            step.check and (check_ok and CXUI.color.on or CXUI.color.muted)
+                or CXUI.color.dim)
+        cxui_spacing()
+        if cxui_button("BACK###hub_flow_back", 116, CXUI.row_h) then
+            citationx_flow_back()
+        end
+        hub_sameline()
+        if cxui_button("NEXT###hub_flow_next", 116, CXUI.row_h,
+                CXUI.color.active) then
+            citationx_flow_next()
+        end
+        hub_sameline()
+        if cxui_button("RESET###hub_flow_reset", 116, CXUI.row_h) then
+            citationx_flow_reset()
         end
     else
-        local first_y = body_top - st.sub_h - 15
-        for i = 1, #SUITE_MODULES do
-            local m = SUITE_MODULES[i]
-            local row_top = first_y + st.row_h - (i - 1) * st.row_h
-            local y = row_top - 15
-            local text = m.state()
-            local col  = m.cycle and st.value or state_color(text)
-
-            -- alternating body tone keeps the rows readable at a glance
-            if i % 2 == 0 then
-                draw_bar(x + 1, row_top - st.row_h, row_top, w - 2, st.bg_alt, 0.55)
-            end
-
-            -- status dot (a 5x5 square reads sharper than a circle at this size)
-            glColor4f(col[1], col[2], col[3], 1.0)
-            glRectf(x + pad, y - 1, x + pad + 5, y + 8)
-
-            suite_text(x + pad + 12, y, m.label, 12, st.label)
-            local value_max = w - pad * 2 - 12 - measure_string(m.label) - 16
-            local shown = fit_text(tostring(text), math.max(60, value_max))
-            suite_text_right(x + w - pad, y, shown, 12, col)
-
-            status_rects[#status_rects + 1] = {
-                key = m.key,
-                x0 = x, x1 = x + w,
-                y0 = row_top - st.row_h, y1 = row_top,
-            }
+        cxui_section("MODULES")
+        for _, m in ipairs(SUITE_MODULES) do
+            hub_module_row(m, HUB_W - 48)
         end
-    end
-
-    panel_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
-    panel_footer_rect = draw_footer_button(x, bottom, w, "HIDE PANEL")
-end
-
-local function draw_axis_monitor()
-    local st = SUITE_STYLE
-    local rows = {}
-    for i = 0, 63 do
-        local a = joy_raw_assign[i] or 0
-        local v = joy_raw_axes[i]
-        if v ~= nil and (a ~= 0 or math.abs((v or 0.5) - 0.5) > 0.05) then
-            rows[#rows + 1] = { idx = i, assign = a, raw = v }
-        end
-    end
-
-    local box_w = 336
-    local box_x = 20
-    local box_y = 20
-    local box_h = 48 + (#rows + 1) * 18
-    draw_bar(box_x, box_y, box_y + box_h, box_w, st.mon_bg)
-    draw_bar(box_x, box_y + box_h - 1, box_y + box_h, box_w, st.border)
-    draw_bar(box_x, box_y, box_x + 1, box_h, st.border)
-    draw_bar(box_x + box_w - 1, box_y, box_x + box_w, box_h, st.border)
-    draw_bar(box_x, box_y, box_x + box_w, box_y + 1, st.border)
-    suite_text(box_x + 12, box_y + box_h - 22, "AXIS MONITOR", 10, st.mon)
-    suite_text(box_x + 12, box_y + box_h - 38, "RAW  FUNCTION                 VALUE",
-        10, st.sub)
-
-    local ry = box_y + box_h - 58
-    for _, a in ipairs(rows) do
-        suite_text(box_x + 12, ry, string.format("%3d", a.idx), 12, st.label)
-        suite_text(box_x + 56, ry, fit_text(axis_assign_name(a.assign), 120),
-            12, st.label)
-        local cx = box_x + 196
-        draw_bar(cx - 40, ry + 3, ry + 6, 80, st.dim, 1.0)
-        glColor4f(st.mon[1], st.mon[2], st.mon[3], 1.0)
-        glRectf(cx - 40, ry + 2, cx - 40 + (a.raw or 0.0) * 80, ry + 7)
-        suite_text(box_x + 244, ry, string.format("%.2f", a.raw or 0.0), 12, st.mon)
-        ry = ry - 18
-    end
-end
-
-function citationx_overlay()
-    if not is_c750 then return end
-    local screen_w = SCREEN_WIDTH  or 1920
-    local screen_h = SCREEN_HIGHT or 1080
-
-    if CONFIG.status_enabled then
-        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
-        draw_control_panel(screen_h)
     end
 
     if CONFIG.axis_monitor then
-        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
-        draw_axis_monitor()
+        cxui_spacing()
+        cxui_section("AXIS MONITOR")
+        cxui_muted("RAW   FUNCTION               VALUE", "small")
+        for i = 0, 63 do
+            local a = joy_raw_assign[i] or 0
+            local v = joy_raw_axes[i]
+            if v ~= nil and (a ~= 0 or math.abs((v or 0.5) - 0.5) > 0.05) then
+                local raw = tonumber(v) or 0.0
+                cxui_text(string.format("%3d  %-18s  %.2f", i,
+                    axis_assign_name(a), raw), "small", CXUI.color.muted)
+                hub_sameline()
+                hub_axis_bar(raw, 90)
+            end
+        end
+        if cxui_button("HIDE MONITOR###hub_axmon_hide", 160, CXUI.row_h) then
+            citationx_set_axis_monitor(false)
+        end
     end
 
-    if toast_text and (citationx_sim_time or 0.0) < toast_until then
-        XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0)
-        local text_w = measure_string(toast_text)
-        local box_w  = text_w + 34
-        local box_x  = (screen_w - box_w) / 2
-        local box_y  = screen_h - 96
-        draw_bar(box_x, box_y - 8, box_y + 22, box_w, CX.bg)
-        draw_bar(box_x, box_y - 8, box_y + 22, 3, SUITE_STYLE.accent, 1.0)
-        suite_text(box_x + 16, box_y + 3, toast_text, 12, SUITE_STYLE.value)
+    -- The existing 2 s toast state, now shown inline instead of as a GL box.
+    if toast_text and tonumber(citationx_sim_time or 0) < toast_until then
+        cxui_spacing()
+        cxui_text(toast_text, "small", CXUI.color.muted)
     end
+
+    cxui_spacing()
+    if cxui_button("HIDE PANEL###hub_hide", 180, CXUI.row_h) then
+        citationx_set_status(false)
+    end
+
+    cxui_end_style(style)
+end
+
+function citationx_overlay()
+    -- The hub is a floating ImGui window now; kept as a compatibility no-op.
+    return
 end
 
 -- ------------------------------------------------------------- MOUSE (UI) ---
--- Panel dragging and clickable rows only. No keystroke handler and no button
--- remap; the wheel is handled separately, and only wheels 1 and 2 are consumed.
+-- ImGui owns clicking, dragging and hit testing. This entry point is retained
+-- only so anything still calling it stays safe; it deliberately does nothing.
 function citationx_mouse_click()
-    if not is_c750 then
-        panel_drag.active = false
-        return
-    end
-    if not CONFIG.status_enabled then
-        panel_drag.active = false
-        return
-    end
+    return
+end
 
-    local mx = MOUSE_X or -1.0
-    local my = MOUSE_Y or -1.0
-    local st = SUITE_STYLE
+-- ------------------------------------------------------- ImGui WINDOW LIFE --
+-- Hide the hub whenever the aircraft changes away from the C750 and restore it
+-- (only if the pilot had it open) when the Citation X comes back.
+function citationx_aircraft_guard()
+    if hub_closed then return end
+    hub_show(hub_wnd, (PLANE_ICAO == "C750") and CONFIG.status_enabled)
+end
 
-    if MOUSE_STATUS == "down" then
-        local r = panel_header_rect
-        if r and mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
-            panel_drag.active = true
-            panel_drag.dx = mx - st.x
-            panel_drag.dy = my - (st.top or my)
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    elseif MOUSE_STATUS == "drag" then
-        if panel_drag.active then
-            local sw = SCREEN_WIDTH or 1920
-            local sh = SCREEN_HIGHT or 1080
-            local h  = control_panel_height()
-            st.x = math.max(0, math.min(mx - panel_drag.dx, sw - st.width))
-            st.top = math.max(h, math.min(my - panel_drag.dy, sh))
-            RESUME_MOUSE_CLICK = true
-        end
-        return
-    elseif MOUSE_STATUS == "up" then
-        if panel_drag.active then
-            panel_drag.active = false
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    end
-
-    if not CONFIG.status_clickable or MOUSE_STATUS ~= "down" then return end
-
-    -- Hub tabs are part of the same draggable panel.
-    for i = 1, #panel_tab_rects do
-        local r = panel_tab_rects[i]
-        if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
-            citationx_set_flow_tab(r.key)
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    end
-
-    local f = panel_footer_rect
-    if f and mx >= f.x0 and mx <= f.x1 and my >= f.y0 and my <= f.y1 then
-        citationx_set_status(false)
-        RESUME_MOUSE_CLICK = true
-        return
-    end
-
-    if CONFIG.flow_tab == "flows" then
-        for i = 1, #flow_rects do
-            local r = flow_rects[i]
-            if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
-                if r.key == "back" then citationx_flow_back()
-                elseif r.key == "next" then citationx_flow_next()
-                elseif r.key == "reset" then citationx_flow_reset()
-                else citationx_flow_select(r.key) end
-                RESUME_MOUSE_CLICK = true
-                return
-            end
-        end
-        return
-    end
-
-    for i = 1, #status_rects do
-        local r = status_rects[i]
-        if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
-            citationx_toggle_module(r.key)
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    end
+function citationx_on_close(wnd)
+    local _ = wnd
+    hub_wnd = nil
+    hub_closed = true
+    CONFIG.status_enabled = false
 end
 
 -- --------------------------------------------------------------- LIFECYCLE --
@@ -1722,10 +1559,18 @@ end
 
 citationx_init()
 do_every_frame("citationx_frame()")
-do_every_draw("citationx_overlay()")
 do_on_exit("citationx_shutdown()")
-do_on_mouse_click("citationx_mouse_click()")
 do_on_mouse_wheel("citationx_mouse_wheel()")
+
+-- Create the hub once as a native-decoration ImGui floating window. It starts
+-- hidden (CONFIG.status_enabled is false at load); the Control Center's SUITE
+-- HUB row opens it. The guard keeps it off every other aircraft.
+if type(cxui_create_window) == "function" then
+    hub_wnd = cxui_create_window(446, 620, "Citation X Master Suite",
+        "citationx_on_build", "citationx_on_close", 24, 24)
+end
+if type(cxui_show) == "function" then cxui_show(hub_wnd, false) end
+do_often("citationx_aircraft_guard()")
 
 -- ------------------------------------------------ COMMANDS + MACRO MENU -----
 -- Each subsystem is a real X-Plane command (bind it yourself if you ever want

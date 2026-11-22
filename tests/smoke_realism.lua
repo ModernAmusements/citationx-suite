@@ -88,48 +88,50 @@ local YOKE_PITCH = "sim/joystick/yoke_pitch_ratio"
 local YOKE_ROLL  = "sim/joystick/yoke_roll_ratio"
 
 -- ---------- load ----------
--- FlyWithLua loads Scripts/ alphabetically; the shared core always comes first.
-local core = (script:match("^(.*/)") or "") .. "CitationX_00_Core.lua"
-assert(loadfile(core))()
+-- FlyWithLua loads Scripts/ alphabetically; the shared core and ImGui kit come
+-- first. The panel is an ImGui builder now, so install a recording imgui table.
+local dir = (script:match("^(.*/)") or "")
+dofile("tests/fwl_imgui_capture.lua")
+assert(loadfile(dir .. "CitationX_00_Core.lua"))()
+assert(loadfile(dir .. "CitationX_00_ImGuiKit.lua"))()
 local chunk = assert(loadfile(script))
 chunk()
 
 check(type(REAL_CONFIG) == "table", "REAL_CONFIG exists")
 check(REAL_CONFIG.hud_enabled == false, "realism panel is hidden at load; the Control Center opens it")
 check(REAL_CONFIG.enabled == true, "the realism pack itself stays armed")
-check(draw_registered == true, "realism panel registers its draw callback")
+check(type(real_on_build) == "function", "realism panel exposes an ImGui builder")
+check(draw_registered ~= true, "no GL draw callback is registered")
 check(has("callout sounds loaded"), "callout WAVs were loaded", logs[1])
 check(has("(fmod bus)"), "FMOD bus is preferred when the API is present")
 check(#fmod_loaded == 22, "all 22 callouts loaded through load_fmod_sound", #fmod_loaded)
 check(toasts[#toasts] == "REALISM PACK READY", "load announces itself in the toast slot", toasts[#toasts])
 
--- ---------- the black sans-serif panel ----------
-drawn = {}
+-- ---------- the ImGui realism panel ----------
+ImgCap.reset()
 real_set_hud(true)
-real_draw()
-local joined = table.concat(drawn, "\n")
-check(#drawn > 40, "realism panel draws content", #drawn)
-check(joined:find("REALISM", 1, true) ~= nil, "panel has its title")
-check(joined:find("CALLOUTS", 1, true) ~= nil, "panel lists CALLOUTS")
-check(joined:find("HANDLING CURVE", 1, true) ~= nil, "panel lists HANDLING CURVE")
-check(joined:find("CTRL CHECK", 1, true) ~= nil, "panel lists CTRL CHECK")
-check(joined:find("TEST CALLOUT", 1, true) ~= nil, "panel has the test button")
+real_on_build(nil, 0, 0)
+check(#ImgCap.text + #ImgCap.buttons > 25, "realism panel builds content",
+  #ImgCap.text + #ImgCap.buttons)
+check(ImgCap.has("REALISM"), "panel has its title")
+check(ImgCap.has("CALLOUTS"), "panel lists CALLOUTS")
+check(ImgCap.has("HANDLING CURVE"), "panel lists HANDLING CURVE")
+check(ImgCap.has("CTRL CHECK"), "panel lists CTRL CHECK")
+check(ImgCap.has("TEST CALLOUT"), "panel has the test button")
 
--- rows are clickable: first row is REALISM PACK at y = 1002 on a 1080 screen
-MOUSE_STATUS, MOUSE_X, MOUSE_Y = "down", 200, 1002
-RESUME_MOUSE_CLICK = false
-real_mouse_click()
-check(RESUME_MOUSE_CLICK == true, "HUD row consumes the click")
-check(REAL_CONFIG.enabled == false, "clicking REALISM PACK switches it off")
-RESUME_MOUSE_CLICK = false
-real_mouse_click()
-check(REAL_CONFIG.enabled == true, "clicking it again switches it back on")
+-- The panel is toggled through its button id, not a GL hit rectangle. The
+-- underlying row still switches REAL_CONFIG.enabled through the existing action.
+check(ImgCap.has("real_hide"), "panel has a HIDE PANEL button")
+local enabled_before = REAL_CONFIG.enabled
+real_set_enabled(not enabled_before)
+check(REAL_CONFIG.enabled == (not enabled_before), "row action toggles the pack")
+real_set_enabled(enabled_before)
 
-MOUSE_STATUS = "up"
 real_set_hud(false)
-drawn = {}
-real_draw()
-check(#drawn == 0, "hidden panel draws nothing", #drawn)
+ImgCap.reset()
+real_on_build(nil, 0, 0)
+check(#ImgCap.text == 0 and #ImgCap.buttons == 0, "hidden panel builds nothing",
+  #ImgCap.text + #ImgCap.buttons)
 real_set_hud(true)
 
 -- frame helper: advance sim time past the 0.1 s gate
@@ -515,15 +517,15 @@ check(#played == 1, "legacy play_sound used for the test callout", #played)
 -- ---------- inert on another aircraft --------------------------------------
 PLANE_ICAO = "B738"
 real_frame()
-drawn = {}
-real_draw()
-check(#drawn == 0, "panel stays hidden on another aircraft", #drawn)
+ImgCap.reset()
+real_on_build(nil, 0, 0)
+check(#ImgCap.text == 0 and #ImgCap.buttons == 0, "panel stays hidden on another aircraft")
 PLANE_ICAO = "C750"
 real_set_hud(true)   -- the reload above reset the panel to its hidden default
 real_frame()
-drawn = {}
-real_draw()
-check(#drawn > 40, "panel returns on the C750", #drawn)
+ImgCap.reset()
+real_on_build(nil, 0, 0)
+check(#ImgCap.text + #ImgCap.buttons > 25, "panel returns on the C750")
 
 -- ---------- report ----------
 print("")

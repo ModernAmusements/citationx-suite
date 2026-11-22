@@ -49,7 +49,6 @@ CS = {
     bad       = CX.bad,
     btn       = CX.btn,
     -- legacy aliases used by the existing drawing code
-    accent    = CX.accent,
     footer_bg = CX.footer_bg,
     footer_fg = CX.footer_fg,
     header_h  = 34,
@@ -225,15 +224,6 @@ function cab_reset()
     cb_toast("CABIN OPS: RESET")
 end
 
-function cab_toggle_panel(on)
-    if on == nil then
-        CAB_CONFIG.panel_enabled = not CAB_CONFIG.panel_enabled
-    else
-        CAB_CONFIG.panel_enabled = (on == true)
-    end
-    cb_toast("CABIN OPS PANEL: " .. (CAB_CONFIG.panel_enabled and "ON" or "OFF"))
-end
-
 -- ----------------------------------------------------------- FRAME LOOP ----
 function cab_frame()
     is_c750 = (PLANE_ICAO == "C750")
@@ -299,48 +289,48 @@ function cab_frame()
     end
 end
 
--- ------------------------------------------------------------- DRAWING -----
-local function bar(x, y0, y1, w, color, alpha)
-    cx_bar_w(x, y0, y1, w, color, alpha)
-end
+-- ------------------------------------------------------------ ImGui PANEL ----
+-- Converted 2026-11-22: the panel is a native ImGui floating window in regular
+-- Neo Grotesque. ImGui owns clicking and dragging, so the old GL hit-test and
+-- mouse handler are gone; the state machine above is untouched.
+CAB_ACTIONS = {
+    start   = cab_start_boarding,
+    skip    = cab_skip_boarding,
+    gpu     = cab_toggle_gpu,
+    cabin   = cab_toggle_cabin_lights,
+    seatbelt= cab_toggle_seatbelt,
+    beacon  = cab_toggle_beacon,
+    nav     = cab_toggle_nav,
+    trucks  = cab_request_trucks,
+    reset   = cab_reset,
+}
 
-local function txt(x, y, text, color, size)
-    cx_text(x, y, text, size or 12, color)
-end
+local cab_wnd = nil
+local cab_closed = false
 
-local function txt_right(right_x, y, text, color, size)
-    cx_text_right(right_x, y, text, size or 12, color)
-end
-
-local function state_word(v)
-    if (v or 0) > 0.5 then return "ON", CS.ok end
-    return "OFF", CS.dim
-end
-
-local cab_header_rect = nil
-local cab_footer_rect = nil
-local cab_drag = { active = false, dx = 0, dy = 0 }
-
-function cab_draw()
-    if CAB_CONFIG.require_c750 and not is_c750 then
-        cab_drag.active = false
-        cb_rows = {}
-        return
+function cab_toggle_panel(on)
+    if on == nil then
+        CAB_CONFIG.panel_enabled = not CAB_CONFIG.panel_enabled
+    else
+        CAB_CONFIG.panel_enabled = (on == true)
     end
-    if not CAB_CONFIG.panel_enabled then
-        cab_drag.active = false
-        return
-    end
-    cb_rows = {}
+    cxui_show(cab_wnd, CAB_CONFIG.panel_enabled)
+    cb_toast("CABIN OPS PANEL: " .. (CAB_CONFIG.panel_enabled and "ON" or "OFF"))
+end
 
-    local cfg = CAB_CONFIG
-    local st  = CS
-    local w   = cfg.panel_w
-    local rh  = cfg.row_h
-    local sw  = SCREEN_WIDTH or 1920
-    local sh  = SCREEN_HIGHT or 1080
+function cab_aircraft_guard()
+    if cab_closed then return end
+    cxui_show(cab_wnd, is_c750 and CAB_CONFIG.panel_enabled)
+end
 
-    -- status / action rows (built first: the panel height follows the content)
+function cab_on_close(wnd)
+    local _ = wnd
+    cab_wnd = nil
+    cab_closed = true
+    CAB_CONFIG.panel_enabled = false
+end
+
+local function cab_panel_rows()
     local rows = {}
     if phase == PHASE_STANDBY then
         rows[#rows + 1] = { "START BOARDING", "start", true, true }
@@ -356,161 +346,58 @@ function cab_draw()
     if phase ~= PHASE_STANDBY then
         rows[#rows + 1] = { "RESET", "reset", false }
     end
-
-    local h = st.header_h + 44 + #rows * rh + st.footer_h + 8
-
-    local x = cfg.panel_x or (sw - w - 24)
-    x = math.max(0, math.min(x, sw - w))
-    local top = cfg.panel_top or (sh - 24)
-    top = math.max(h, math.min(top, sh - 4))
-    cfg.panel_x, cfg.panel_top = x, top
-    local bottom = top - h
-
-    XPLMSetGraphicsState(0, 0, 0, 1, 1, 0, 0)
-
-    -- black shell: body, 1 px border, 34 px header
-    bar(x, bottom, top, w, st.bg)
-    bar(x, top - 1, top, w, st.border)
-    bar(x, bottom, top, 1, st.border)
-    bar(x + w - 1, bottom, top, 1, st.border)
-    bar(x, bottom, bottom + 1, w, st.border)
-    bar(x, top - st.header_h, top, w, st.header_bg)
-    bar(x, top - st.header_h, top - st.header_h + 2, w, st.border)
-    txt(x + st.pad, top - 25, "CABIN / GROUND", st.title, 18)
-    txt_right(x + w - st.pad, top - 22, PHASE_NAME[phase + 1],
-        phase == PHASE_STANDBY and st.dim or st.ok, 10)
-    cab_header_rect = { x0 = x, x1 = x + w, y0 = top - st.header_h, y1 = top }
-
-    local y = top - st.header_h
-
-    -- pax progress
-    txt(x + st.pad, y - 15, string.format("PAX  %d / %d",
-        math.floor(pax_boarded + 0.5), cfg.pax_total), st.value)
-    if phase == PHASE_DEPARTED then
-        txt_right(x + w - st.pad, y - 15, "ALL ABOARD", st.ok)
-    elseif phase == PHASE_PREP then
-        txt_right(x + w - st.pad, y - 15, "PREFLIGHT", st.warn)
-    else
-        txt_right(x + w - st.pad, y - 15,
-            string.format("%d%%", math.floor(100 * pax_boarded / cfg.pax_total + 0.5)),
-            st.accent)
-    end
-    local pbx, pby, pbw = x + st.pad, y - 32, w - 2 * st.pad
-    bar(pbx, pby, pby + 8, pbw, CX.track, 0.9)
-    local frac = pax_boarded / cfg.pax_total
-    if frac > 0 then bar(pbx, pby, pby + 8, pbw * frac, st.ok, 0.95) end
-    y = y - 44
-
-    for _, r in ipairs(rows) do
-        local name, key, on = r[1], r[2], r[3]
-        local full = r[4]
-
-        if full then
-            bar(x + st.pad, y - rh + 6, y + 4, w - 2 * st.pad,
-                key == "start" and st.ok or st.warn, 0.85)
-            txt(x + st.pad + 8, y - 13, name, CX.footer_fg)
-        else
-            glColor4f((on == true) and st.ok[1] or st.dim[1],
-                      (on == true) and st.ok[2] or st.dim[2],
-                      (on == true) and st.ok[3] or st.dim[3], 1.0)
-            glRectf(x + st.pad, y - 12, x + st.pad + 6, y - 6)
-            txt(x + st.pad + 16, y - 12, name, st.label)
-            if key ~= "trucks" then
-                txt_right(x + w - st.pad, y - 12, on == true and "ON" or "OFF",
-                    on == true and st.ok or st.dim)
-            end
-        end
-
-        cb_rows[#cb_rows + 1] = {
-            key = key, x0 = x, x1 = x + w, y0 = y - rh + 4, y1 = y + 4,
-        }
-        y = y - rh
-    end
-
-    -- footer: drag-safe hide button (shared green bottom bar)
-    cab_footer_rect = cx_footer_button(x, bottom, w, "HIDE PANEL", st.footer_h, st.pad)
-
-    -- toast
-    if cb_toast_text and (cab_sim_time or 0) < cb_toast_until then
-        local tw2 = (measure_string(cb_toast_text, "Helvetica_12")
-            or measure_string(cb_toast_text)) + 32
-        local by = bottom - 30
-        bar(x + w - tw2, by, by + 24, tw2, CX.bg)
-        bar(x + w - tw2, by, by + 24, 4, st.ok)
-        txt(x + w - tw2 + 16, by + 7, cb_toast_text, st.value)
-    end
+    return rows
 end
 
--- --------------------------------------------------------------- MOUSE -----
-local CAB_ACTIONS = {
-    start   = cab_start_boarding,
-    skip    = cab_skip_boarding,
-    gpu     = cab_toggle_gpu,
-    cabin   = cab_toggle_cabin_lights,
-    seatbelt= cab_toggle_seatbelt,
-    beacon  = cab_toggle_beacon,
-    nav     = cab_toggle_nav,
-    trucks  = cab_request_trucks,
-    reset   = cab_reset,
-}
+function cab_on_build(wnd, x, y)
+    local _ = wnd
+    local _x = x
+    local _y = y
+    if PLANE_ICAO ~= "C750" then return end
+    local style = cxui_begin_style()
 
-function cab_mouse_click()
-    if CAB_CONFIG.require_c750 and not is_c750 then
-        cab_drag.active = false
-        return
+    cxui_text("CABIN / GROUND")
+    cxui_muted(PHASE_NAME[phase + 1], "small")
+    cxui_spacing()
+
+    -- passenger progress, now an ImGui ProgressBar
+    cxui_text(string.format("PAX  %d / %d",
+        math.floor(pax_boarded + 0.5), CAB_CONFIG.pax_total))
+    if phase == PHASE_DEPARTED then
+        cxui_text("ALL ABOARD", "small", CXUI.color.on)
+    elseif phase == PHASE_PREP then
+        cxui_text("PREFLIGHT", "small", CXUI.color.active)
+    else
+        cxui_text(string.format("%d%%",
+            math.floor(100 * pax_boarded / CAB_CONFIG.pax_total + 0.5)),
+            "small", CXUI.color.muted)
     end
-    if not CAB_CONFIG.panel_enabled then
-        cab_drag.active = false
-        return
-    end
+    cxui_progress(pax_boarded / CAB_CONFIG.pax_total, 300)
+    cxui_spacing()
 
-    local mx, my = MOUSE_X or -1, MOUSE_Y or -1
-    local cfg = CAB_CONFIG
-    local st  = CS
-
-    if MOUSE_STATUS == "down" then
-        local hr = cab_header_rect
-        if hr and mx >= hr.x0 and mx <= hr.x1 and my >= hr.y0 and my <= hr.y1 then
-            cab_drag.active = true
-            cab_drag.dx = mx - (cfg.panel_x or mx)
-            cab_drag.dy = my - (cfg.panel_top or my)
-            RESUME_MOUSE_CLICK = true
-            return
+    cxui_section("ACTIONS")
+    for _, r in ipairs(cab_panel_rows()) do
+        local name, key, on, full = r[1], r[2], r[3], r[4]
+        local clicked
+        if full then
+            clicked = cxui_button(name .. "###cab_" .. key, 300, CXUI.row_h)
+        elseif key == "trucks" then
+            clicked = cxui_button(name .. "###cab_" .. key, 300, CXUI.row_h)
+        else
+            clicked = cxui_row(name, on and "ON" or "OFF", "cab_" .. key,
+                300, CXUI.label_w, CXUI.state_w)
         end
-    elseif MOUSE_STATUS == "drag" then
-        if cab_drag.active then
-            local sw = SCREEN_WIDTH or 1920
-            local sh = SCREEN_HIGHT or 1080
-            cfg.panel_x = math.max(0, math.min(mx - cab_drag.dx, sw - cfg.panel_w))
-            cfg.panel_top = math.max(120, math.min(my - cab_drag.dy, sh - 4))
-            RESUME_MOUSE_CLICK = true
-        end
-        return
-    elseif MOUSE_STATUS == "up" then
-        if cab_drag.active then
-            cab_drag.active = false
-            RESUME_MOUSE_CLICK = true
-            return
-        end
-    end
-
-    if MOUSE_STATUS ~= "down" then return end
-
-    local f = cab_footer_rect
-    if f and mx >= f.x0 and mx <= f.x1 and my >= f.y0 and my <= f.y1 then
-        cab_toggle_panel(false)
-        RESUME_MOUSE_CLICK = true
-        return
-    end
-
-    for _, r in ipairs(cb_rows) do
-        if mx >= r.x0 and mx <= r.x1 and my >= r.y0 and my <= r.y1 then
-            RESUME_MOUSE_CLICK = true
-            local fn = CAB_ACTIONS[r.key]
+        if clicked then
+            local fn = CAB_ACTIONS[key]
             if fn then fn() end
-            return
         end
     end
+
+    cxui_spacing()
+    if cxui_button("HIDE PANEL###cab_hide", 300, CXUI.row_h) then
+        cab_toggle_panel(false)
+    end
+    cxui_end_style(style)
 end
 
 -- ------------------------------------------------------- COMMANDS + MENU ---
@@ -534,5 +421,13 @@ add_macro("Cabin Ops: reset flow", "cab_reset()")
 
 logMsg("Cabin & Ground Ops loaded")
 do_every_frame("cab_frame()")
-do_every_draw("cab_draw()")
-do_on_mouse_click("cab_mouse_click()")
+
+-- Create the ImGui window once. It starts hidden; the hub / Control Center
+-- toggle opens it, and the aircraft guard hides it off the C750.
+local cab_sw = tonumber(SCREEN_WIDTH) or 1920
+local cab_sh = tonumber(SCREEN_HIGHT) or 1080
+cab_wnd = cxui_create_window(430, 470, "Citation X Cabin Ops",
+    "cab_on_build", "cab_on_close",
+    math.max(8, cab_sw - 438), math.max(8, cab_sh - 494))
+cxui_show(cab_wnd, false)
+do_often("cab_aircraft_guard()")
