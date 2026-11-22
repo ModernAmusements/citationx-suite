@@ -36,8 +36,9 @@ one shared kit, `Scripts/CitationX_00_ImGuiKit.lua` (`CXUI` / `cxui_*`).
   draw callbacks. Final: `smoke_control_center.lua` 62 checks, `smoke_panel_geometry.lua` 216
   checks; all other smoke tests pass.
 
-**Not yet confirmed in-sim:** reload Lua and visually verify square corners, regular Neo
-Grotesque, no orange on any panel (especially the hub) and no white shape in the AXIS MONITOR.
+**Confirmed in-sim 2026-11-22:** the user reloaded Lua and reported "LOOK GOOD" — square corners,
+regular Neo Grotesque, no orange on any panel (including the hub) and no white shape in the AXIS
+MONITOR.
 
 ## 2026-11-22 — one ImGui Control Center, Neo Grotesque, quarantine cleared
 
@@ -71,9 +72,9 @@ with the Desktop's Neo Grotesque in an Apple-like surface.
   hub, realism, instructor and geometry harnesses for the new load state.
 
 Validated: `luac -p`, `probe_load_order.lua` (152 bindings, 0 load failures, 0 binding problems),
-all smoke tests and `smoke_panel_geometry.lua` (226 checks). **Not yet confirmed in-sim:**
-reload Lua, verify the Control Center opens in Neo Grotesque with only that window visible, and
-confirm the quarantine popup is gone.
+all smoke tests and `smoke_panel_geometry.lua` (226 checks). In-sim UI confirmed 2026-11-22
+("LOOK GOOD"): the Control Center opens in Neo Grotesque as the only visible suite window. The
+quarantine folder had no `.lua` files, so no popup can be raised.
 
 **2026-11-17 — the suite is C750-only at runtime, not just at load.** FlyWithLua keeps every
 script loaded when the aircraft changes, so the instructor panel (visible at load) and the
