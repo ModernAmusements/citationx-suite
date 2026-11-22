@@ -308,6 +308,9 @@ end
 check(logged("input layer = thumbwheel"), "the status report names the wheel input")
 
 -- ---------- panel ----------
+-- The Control Center is the only visible surface at load; open the legacy hub
+-- explicitly for these layout and click tests.
+citationx_set_status(true)
 drawn = {}
 draw_cb()
 local text = table.concat(drawn, "\n")

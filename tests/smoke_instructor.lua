@@ -111,7 +111,7 @@ assert(loadfile("Scripts/CitationX_InstructorWatch.lua"))()
 
 check(type(FI_CONFIG) == "table", "FI_CONFIG exists")
 check(type(FI_STYLE) == "table", "FI_STYLE exists")
-check(FI_CONFIG.panel_enabled == true, "instructor panel is visible at load")
+check(FI_CONFIG.panel_enabled == false, "instructor panel is hidden at load; the Control Center opens it")
 
 -- A realistic loaded aeroplane: 35,733 lb, most of it fuel and payload.
 fi_weight_kg, fi_fuel_kg, fi_payload_kg = 16208, 3040, 1400

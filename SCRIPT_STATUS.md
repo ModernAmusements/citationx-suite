@@ -1,4 +1,4 @@
-# Script status — verified 2026-11-14 (v3.0, MA dark theme, no EFB, 14 QRH scenarios, flight instructor)
+# Script status — verified 2026-11-22 (v3.0, ImGui Control Center, MA dark legacy panels, no EFB, 14 QRH scenarios, flight instructor)
 
 Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 `tests/check_kpcrew_modules.lua`, `tests/smoke_mastersuite.lua`, `tests/smoke_hud_toggles.lua`,
@@ -9,6 +9,7 @@ Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 | Script | State | Evidence / purpose |
 | --- | --- | --- |
 | `CitationX_00_Core.lua` | ✅ tests | Shared core, loaded first: the MA dark palette (`CX`) and the `cx_*` bar/text/fit/footer primitives every panel uses. No datarefs, commands or callbacks, so it cannot quarantine a panel. |
+| `CitationX_01_ControlCenter.lua` | ✅ tests | New 2026-11-22. The only surface at load: a native-decoration ImGui window in Neo Grotesque (aliases in `fwl_prefs.ini`, TTFs in `Custom_Fonts/`). PANELS rows toggle the hub, realism panel, cabin, QRH, instructor and landing report through `SUITE_MODULES`; SHOW ALL / HIDE ALL, the axis monitor and two shortcuts sit below. No datarefs; hides itself off the C750. `tests/smoke_control_center.lua` checks 45 behaviours including the font/style stack balance. |
 | `CitationX_MasterSuite.lua` | ✅ tests | v3.0 hub. `status report` says `input layer = mouse wheel -> ALT SEL`. **No `do_on_keystroke`, no wheel/button map, no axis-to-heading knob any more** — the only pilot input the suite reads is the mouse wheel: the thumbwheel (wheel 1) moves the heading bug and wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. The wheel numbers and steps are configurable. Axis optimizer ON (pitch/roll deadzone + expo + smoothing, no key mapping), flight recorder, emergency generator, opt-in axis monitor, texture cycler (`sim/operation/next_livery`), AviTab app shortcuts, and the 13-row draggable hub at `SUITE_STYLE.x = 470`. `smoke_mastersuite.lua` pins the whole contract; `smoke_hud_toggles.lua` checks the registry; `smoke_panel_geometry.lua` renders the panel. |
 | `CitationX_FailureTrainer.lua` | ✅ tests | 14 QRH-style scenarios: engine fire L, generator L trip, bleed air L, boost pump L, flameout L, APU fire, hydraulic A/B, flap actuator, gear indication, APU fail-to-start, pitot/static, elevator trim runaway and slow cabin decompression, plus RANDOM. Every step self-checks against `sim/...` and `laminar/CitX/...`; `rel_flap_act` is written through XPLM because the Realism pack owns that writable binding. |
 | `CitationX_FlightInstructor.lua` | ✅ tests | New 2026-11-14; passes the offline harnesses, in-sim confirmation pending. 12 graded lessons in four sections: normal takeoff, rejected takeoff, engine failure at 400 ft, visual pattern, visual approach, crosswind, flaps-15 jam, ILS, RNAV, single-engine ILS, go-around and emergency descent. Menu → brief → flying → debrief, each item self-checked and held for a moment, Vref/VR/V2 from actual weight, best score in `CitationX_TrainingProgress.txt`. `SET ME UP` places and configures the aeroplane at the lesson start (threshold, final, downwind or FL350) from X-Plane's own apt.dat coordinates, and the brief shows weight, Vref/VR/V2, technique notes and the setup result. Three lessons inject their own failure through the QRH trainer and grade its real checklist state. `tests/smoke_instructor.lua` drives a clean ILS (100%), a bad run, the failure lifecycle and the panel; `docs/FLIGHT_TRAINING.md` is the written syllabus. |
@@ -26,8 +27,10 @@ Evidence: `Log.txt` last Lua cycle, `luac -p`, `tests/check_datarefs.lua`,
 
 KPCrew's own `kpcrew23.lua`, `kppanels.lua` and `kpxbrief.lua` are **not** in `Scripts/` any
 more — they were moved to `Scripts (disabled)/` on 2026-11-12. They are not running, but they
-do load cleanly (verified in one shared state), and `Scripts (Quarantine)/` is now empty, so
-FlyWithLua no longer shows its quarantine popup.
+do load cleanly (verified in one shared state). On 2026-11-22 the stale
+`CitationX_InstructorWatch.lua` in `Scripts (Quarantine)/` (an old copy with the invalid
+`do_every_second`) was moved to the Trash; `Scripts (Quarantine)/` now holds only
+`PlaceHolder.txt`, so FlyWithLua no longer shows its quarantine popup.
 
 ## Deleted
 

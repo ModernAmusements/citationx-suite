@@ -189,8 +189,10 @@ print("== CitationX_MasterSuite.lua ==")
 do
   local chunk = assert(loadfile("Scripts/CitationX_MasterSuite.lua"))
   chunk()
-  -- The hub is visible at load, next to the realism panel.
-  check(CONFIG.status_enabled == true, "control panel is visible at load")
+  -- The ImGui Control Center is the only surface at load; open the legacy hub
+  -- explicitly for the layout sweep below.
+  check(CONFIG.status_enabled == false, "legacy hub is hidden at load")
+  CONFIG.status_enabled = true
 
   reset()
   citationx_overlay()
@@ -513,6 +515,7 @@ print("== CitationX_Realism.lua ==")
 do
   local chunk = assert(loadfile("Scripts/CitationX_Realism.lua"))
   chunk()
+  real_set_hud(true)  -- the Control Center keeps it closed at load
   reset()
   real_draw()
   check(#drawn > 40, "realism panel draws content", #drawn)

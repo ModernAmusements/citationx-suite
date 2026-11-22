@@ -49,7 +49,9 @@
 
 REAL_CONFIG = {
     enabled            = true,
-    hud_enabled        = true,   -- the one black, sans-serif realism panel
+    -- Hidden at load: the ImGui Control Center is the only visible surface.
+    -- The pack itself stays armed; this switch only controls its panel.
+    hud_enabled        = false,
 
     -- Callouts ---------------------------------------------------------------
     callouts_enabled   = true,

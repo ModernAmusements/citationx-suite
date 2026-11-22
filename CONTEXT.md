@@ -1,6 +1,42 @@
 # FlyWithLua / Citation X Suite — session context
 
-Last updated: 2026-11-17
+Last updated: 2026-11-22
+
+## 2026-11-22 — one ImGui Control Center, Neo Grotesque, quarantine cleared
+
+The user asked for three small UI/housekeeping changes: clear the remaining quarantined script,
+make **one main panel** that toggles every other panel, and replace the hard-to-read Helvetica
+with the Desktop's Neo Grotesque in an Apple-like surface.
+
+- **Quarantine:** `Scripts (Quarantine)/CitationX_InstructorWatch.lua` was the stale 2026-11-15
+  copy (it still called the invalid `do_every_second`). It was moved to
+  `~/.Trash/CitationX_InstructorWatch.lua.quarantine-2026-11-22`; the live, fixed copy in
+  `Scripts/` is untouched. `PlaceHolder.txt` remains, so the folder is still non-empty but has
+  no `.lua` for FlyWithLua to quarantine.
+- **New surface:** `Scripts/CitationX_01_ControlCenter.lua` creates one native-decoration ImGui
+  floating window. It is the only suite surface at load; PANELS rows drive the legacy hub,
+  realism panel, cabin, QRH, instructor and landing report through `SUITE_MODULES`, with SHOW
+  ALL / HIDE ALL, AXIS MONITOR and two shortcuts underneath. It binds no datarefs and returns
+  early off the C750; `cc_aircraft_guard()` hides the window off-type and restores it on return.
+- **Font:** FlyWithLua 2.8.20 can load custom TTFs **only into ImGui**, not into the existing
+  `draw_string_Helvetica_*` panels (confirmed against the plugin strings and font guide). The
+  Desktop regular and bold faces were copied to `Custom_Fonts/Neo_Grotesque.ttf` and
+  `Custom_Fonts/Neo_Grotesque-Bold.ttf`; `fwl_prefs.ini` declares `CCTitle`, `CCHeading`,
+  `CCBody` and `CCSmall` aliases. These two paths are **machine-local runtime state** and are
+  intentionally untracked. The legacy panels keep Helvetica by design; the Control Center is
+  the smooth, readable surface.
+- **Defaults:** `CONFIG.status_enabled`, `REAL_CONFIG.hud_enabled` and `FI_CONFIG.panel_enabled`
+  now start false. Cabin and QRH were already hidden. The realism **pack** stays armed — only
+  its panel is hidden — and the `realism` hub row now calls `real_set_hud()` rather than
+  `real_set_enabled()`.
+- **Tests:** added `tests/smoke_control_center.lua` (45 checks: rows, state pills, click-through,
+  SHOW/HIDE ALL, font and style stack balance, C750 guard, close/reopen). Updated the master,
+  hub, realism, instructor and geometry harnesses for the new load state.
+
+Validated: `luac -p`, `probe_load_order.lua` (152 bindings, 0 load failures, 0 binding problems),
+all smoke tests and `smoke_panel_geometry.lua` (226 checks). **Not yet confirmed in-sim:**
+reload Lua, verify the Control Center opens in Neo Grotesque with only that window visible, and
+confirm the quarantine popup is gone.
 
 **2026-11-17 — the suite is C750-only at runtime, not just at load.** FlyWithLua keeps every
 script loaded when the aircraft changes, so the instructor panel (visible at load) and the
@@ -178,9 +214,10 @@ Textures still need *Developer → Reload Aircraft* (or a restart), not a Lua re
   reshapes pitch/roll only (deadzone + expo + smoothing). X-Plane's own profile is the single
   source of truth for the pad and the keyboard. Toggle anything from the control panel, the
   macro menu (`CitationX Suite: <row>`) or `CitationXSuite/toggle_<key>`.
-- **Panels:** the realism panel and the MasterSuite hub (`status`) are the only two drawn at
-  load; CabinOps, QRH and LandingPerformance start hidden. All four share the MA dark palette
-  and a green bottom bar (§37).
+- **Panels:** since 2026-11-22 the ImGui Control Center is the only surface drawn at load;
+  the MasterSuite hub, realism panel, instructor, CabinOps, QRH and LandingPerformance all
+  start hidden and are opened from its rows. The legacy panels share the MA dark palette and
+  a green bottom bar (§37).
 - **QRH trainer:** 14 scenarios — engine fire L, generator L trip, bleed air L, boost pump L,
   flameout L, APU fire, hydraulic A, hydraulic B, flap actuator, gear indication, APU
   fail-to-start, pitot/static blockage, elevator trim runaway and slow cabin decompression —

@@ -95,6 +95,8 @@ local chunk = assert(loadfile(script))
 chunk()
 
 check(type(REAL_CONFIG) == "table", "REAL_CONFIG exists")
+check(REAL_CONFIG.hud_enabled == false, "realism panel is hidden at load; the Control Center opens it")
+check(REAL_CONFIG.enabled == true, "the realism pack itself stays armed")
 check(draw_registered == true, "realism panel registers its draw callback")
 check(has("callout sounds loaded"), "callout WAVs were loaded", logs[1])
 check(has("(fmod bus)"), "FMOD bus is preferred when the API is present")
@@ -103,6 +105,7 @@ check(toasts[#toasts] == "REALISM PACK READY", "load announces itself in the toa
 
 -- ---------- the black sans-serif panel ----------
 drawn = {}
+real_set_hud(true)
 real_draw()
 local joined = table.concat(drawn, "\n")
 check(#drawn > 40, "realism panel draws content", #drawn)
@@ -516,6 +519,7 @@ drawn = {}
 real_draw()
 check(#drawn == 0, "panel stays hidden on another aircraft", #drawn)
 PLANE_ICAO = "C750"
+real_set_hud(true)   -- the reload above reset the panel to its hidden default
 real_frame()
 drawn = {}
 real_draw()

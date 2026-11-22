@@ -1,13 +1,14 @@
 # Citation X Suite for FlyWithLua (X-Plane 12)
 
-Five FlyWithLua NG+ scripts for the Laminar Research Cessna Citation X (C750), a
-flight-instructor syllabus with twelve graded lessons, and a standalone landing-performance
-scorer.
+The FlyWithLua NG+ suite for the Laminar Research Cessna Citation X (C750): one
+ImGui Control Center that opens every other panel, a flight-instructor syllabus with twelve
+graded lessons, and a standalone landing-performance scorer.
 
 > ⚠️ **WORK IN PROGRESS** — v3.0 is being verified in-sim. What has never been seen in
-> X-Plane yet: the restored AviTab cockpit screen (2026-10-31), callout timing in flight,
-> the 16-row black realism panel, the expanded 14-scenario QRH trainer, the 12-lesson
-> flight instructor, and the 8K dark cockpit textures under the simulator's texture cap.
+> X-Plane yet: the Neo Grotesque ImGui Control Center (2026-11-22), the restored AviTab
+> cockpit screen (2026-10-31), callout timing in flight, the 16-row black realism panel,
+> the expanded 14-scenario QRH trainer, the 12-lesson flight instructor, and the 8K dark
+> cockpit textures under the simulator's texture cap.
 > Every script passes the offline harnesses (see *Development and validation*); the
 > remaining items are recorded in `CONTEXT.md`.
 
@@ -18,9 +19,10 @@ wheel — and everything else is a panel, a diagnostic or a command you can bind
 
 ### The panels (rendered offline from the actual draw calls)
 
-The suite's on-screen surfaces: the Master Suite hub, the realism pack panel and the
-flight-instructor lesson list at load, plus the cabin-ops and QRH panels opened from the
-hub. There is no telemetry HUD —
+The legacy Helvetica panels: the Master Suite hub, the realism pack panel, the
+flight-instructor lesson list, cabin ops and the QRH trainer. They are now **hidden at load**;
+the only visible surface is the Neo Grotesque ImGui Control Center, which cannot be rendered
+by the offline draw-call harness. There is no telemetry HUD —
 airspeed, altitude, heading, Mach, G, fuel flow, electrics, fuel and anti-ice stay on the
 aircraft's own PFD, EICAS and synoptics.
 
@@ -60,6 +62,7 @@ transplant is backed up. **The textures themselves live in the aircraft mod**
 | File | Purpose |
 | --- | --- |
 | `Scripts/CitationX_00_Core.lua` | Shared core, loaded first: the MA dark palette (`CX`) and the `cx_*` bar/text/fit/footer helpers. No datarefs, commands or callbacks. |
+| `Scripts/CitationX_01_ControlCenter.lua` | ImGui Control Center: the one surface shown at load. Apple-like grouped rows in Neo Grotesque open or close the legacy hub, realism, cabin, QRH, instructor and landing-report panels; the axis monitor and two shortcuts sit below. Uses the existing `SUITE_MODULES` mapping, binds no datarefs, and hides itself off the C750. |
 | `Scripts/CitationX_MasterSuite.lua` | The hub. Axis optimizer (pitch/roll deadzone, expo, smoothing), 1 Hz flight recorder CSV, simulated bleed-air/pressurization emergency, opt-in axis monitor, aircraft texture cycler (X-Plane's own next/previous livery), AviTab app shortcuts, and the draggable control panel. The thumbwheel moves the heading bug and wheel 2 moves ALT SEL; the main wheel stays with X-Plane's view zoom. Taxi and landing lights are published as commands. No keystrokes, no button map, no telemetry HUD. |
 | `Scripts/CitationX_FailureTrainer.lua` | 14 QRH-style failure scenarios (engine fire, generator trip, bleed air, boost pump, flameout, APU fire, hydraulic A/B, flap actuator, gear indication, APU fail-to-start, pitot/static, trim runaway, cabin decompression) with checklists that self-check against the aircraft's own datarefs. |
 | `Scripts/CitationX_FlightInstructor.lua` | 12 graded lessons in four sections (departure, pattern & landing, instrument, emergency), each with a written brief and a sim setup, graded against the sim's own datarefs and held for a moment so a lucky frame does not score. Speeds from actual weight; best score per lesson in `CitationX_TrainingProgress.txt`; three lessons inject their own failure through the QRH trainer. Written syllabus: [`docs/FLIGHT_TRAINING.md`](docs/FLIGHT_TRAINING.md). |
@@ -69,8 +72,11 @@ transplant is backed up. **The textures themselves live in the aircraft mod**
 
 ## Control panel
 
-**Three panels are on screen at load: the black realism panel, the Master Suite hub and the
-flight-instructor lesson list.**
+**One panel is on screen at load: the ImGui Control Center.** Its PANELS rows open the legacy
+hub, realism, cabin, QRH, instructor and landing-report panels; SHOW ALL / HIDE ALL work on
+those six. Reopen the Control Center with `CitationXSuite/control_center` or the FlyWithLua
+macro *Citation X Control Center: show* if you close it.
+
 The suite registers no keystroke handler and no controller-button map, so every key and every
 button belongs to X-Plane's own profiles. It reads exactly one pilot input — the mouse wheel —
 and only to move the two autopilot selectors:
@@ -95,15 +101,18 @@ Options+, SteerMouse, …) at `CitationXSuite/taxi_light_toggle` and
 your driver can only send a keystroke, bind that keystroke **in X-Plane** to the command; the
 suite never reads a key.
 
-All panels share the realism panel's language: black body, grey 1 px border, white Helvetica 18
+The Control Center uses **Neo Grotesque** (regular for rows, bold for the title), a dark
+native window, rounded grouped buttons and green/amber state pills. The font lives in
+`Custom_Fonts/` and is registered through `fwl_prefs.ini` aliases (`CCTitle`, `CCHeading`,
+`CCBody`, `CCSmall`); FlyWithLua reloads the font atlas when you reload all Lua scripts. The
+legacy panels keep their MA-dark language: black body, grey 1 px border, white Helvetica 18
 title, grey 10 px sub-header, 12 px rows, 22 px row pitch and a 34 px footer with a **HIDE
 PANEL** button. **Drag any panel by its header** to move it; the position is kept for the
-session. The realism panel starts at the top-left; the hub sits beside it
-(`SUITE_STYLE.x = 470`).
+session.
 
-The hub lists every subsystem with a live state. Click a row to toggle it.
-The same toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as
-FlyWithLua macro menu entries.
+The legacy hub lists every subsystem with a live state. Click a row to toggle it. The same
+toggles are available as X-Plane commands (`CitationXSuite/toggle_<key>`) and as FlyWithLua
+macro menu entries. Its realism row now switches the **panel**, not the background pack.
 
 The MasterSuite panel is the only surface *it* draws. There is no telemetry HUD and no C750
 systems readback: the aircraft's PFD, EICAS and synoptics already show airspeed, altitude,
@@ -124,7 +133,7 @@ nothing.
 | QRH TRAINER | `qrh` | `CitationX_FailureTrainer` panel |
 | FLIGHT INSTRUCTOR | `instructor` | `CitationX_FlightInstructor` lesson panel |
 | LANDING PERF | `landperf` | `LandingPerformance` result card |
-| REALISM PACK | `realism` | `CitationX_Realism` callouts and load manager |
+| REALISM PANEL | `realism` | `CitationX_Realism` panel (the pack stays armed) |
 
 The sibling rows are nil-guarded: if that script is not installed the row shows
 `ABSENT` and clicking it does nothing.
@@ -269,6 +278,7 @@ luajit tests/probe_load_order.lua ../../plugins/DataRefs.txt Scripts
 
 # mock-FlyWithLua smoke tests (luajit, never lua: the suite is Lua 5.1)
 export TMPDIR="$(mktemp -d)/"
+luajit tests/smoke_control_center.lua Scripts/CitationX_01_ControlCenter.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_mastersuite.lua Scripts/CitationX_MasterSuite.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_hud_toggles.lua Scripts/CitationX_MasterSuite.lua
 HOME="$TMPDIR" TMPDIR="$TMPDIR" luajit tests/smoke_realism.lua Scripts/CitationX_Realism.lua

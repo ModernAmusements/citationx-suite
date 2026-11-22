@@ -35,9 +35,9 @@
 -- ============================================================================
 
 FI_CONFIG = {
-    -- Visible at load so the lesson list is one glance away; the hub row and
-    -- the macro still toggle it, and hiding it abandons the run.
-    panel_enabled = true,
+    -- Hidden at load: the ImGui Control Center opens the lesson list. The hub
+    -- row and the macro still toggle it, and hiding it abandons the run.
+    panel_enabled = false,
     panel_x       = nil,     -- nil = bottom-right on first draw (the QRH keeps
                              -- the bottom-left, so a failure lesson shows both)
     panel_top     = nil,     -- nil = bottom-left (60 px) on first draw

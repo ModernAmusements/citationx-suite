@@ -98,8 +98,8 @@ chunk()
 check(type(SUITE_MODULES) == "table", "SUITE_MODULES exists")
 check(type(SUITE_STYLE) == "table", "SUITE_STYLE exists")
 
--- ---------- at load only the hub is on screen ------------------------------
-check(CONFIG.status_enabled == true, "control panel is visible at load")
+-- ---------- at load only the ImGui Control Center is on screen -------------
+check(CONFIG.status_enabled == false, "legacy hub is hidden at load")
 check(CONFIG.axis_monitor == false, "axis monitor starts hidden")
 check(CONFIG.flow_tab == "control", "the hub starts on the CONTROL page")
 check(type(citationx_set_flow_tab) == "function", "the FLOWS page has a public tab switch")
@@ -122,8 +122,8 @@ for i = 1, #SUITE_MODULES do
   if m.state() == "ON" then on_at_load[#on_at_load + 1] = m.key end
 end
 table.sort(on_at_load)
-check(#on_at_load == 2 and on_at_load[1] == "status" and on_at_load[2] == "wheel",
-  "only the hub and the wheel row start ON",
+check(#on_at_load == 1 and on_at_load[1] == "wheel",
+  "only the wheel row starts ON",
   table.concat(on_at_load, ","))
 
 -- ---------- the duplicate cockpit readouts must not come back ----------
@@ -162,6 +162,25 @@ for _, key in ipairs(expected) do
 end
 for _, key in ipairs({ "hud", "systems" }) do
   check(seen[key] == nil, "display-only module removed: " .. key)
+end
+
+-- The realism row is now a panel switch for the Control Center; the background
+-- pack stays armed independently, so silencing the panel cannot kill callouts.
+local realism_module
+for _, m in ipairs(SUITE_MODULES) do
+  if m.key == "realism" then realism_module = m end
+end
+check(realism_module ~= nil, "realism module exists")
+if realism_module then
+  check(realism_module.label == "REALISM PANEL", "realism row is the panel switch",
+    realism_module.label)
+  REAL_CONFIG = { enabled = true, hud_enabled = false }
+  function real_set_hud(on) REAL_CONFIG.hud_enabled = (on == true) end
+  check(realism_module.state() == "OFF", "realism panel starts OFF")
+  realism_module.set(true)
+  check(REAL_CONFIG.hud_enabled == true, "realism row opens the panel")
+  check(REAL_CONFIG.enabled == true, "realism row leaves the pack armed")
+  realism_module.set(false)
 end
 
 -- ---------- sibling-panel toggles present ----------

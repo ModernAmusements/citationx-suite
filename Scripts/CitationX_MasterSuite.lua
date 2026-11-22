@@ -43,7 +43,9 @@ CONFIG = {
     log_to_desktop         = true,
 
     -- Control panel ---------------------------------------------------------
-    status_enabled         = true,    -- the hub is the one panel shown at load
+    -- The ImGui Control Center is the only surface shown at load. The legacy
+    -- hub stays available for FLOWS and the full module list, but starts hidden.
+    status_enabled         = false,
     status_clickable       = true,    -- click a row to toggle / cycle it
     flow_tab               = "control", -- "control" = module rows, "flows" = procedures
 
@@ -366,16 +368,18 @@ SUITE_MODULES = {
         end,
     },
     {
-        key = "realism", label = "REALISM PACK", macro = "realism pack",
+        -- The Control Center needs the panel switch, not the background pack
+        -- (which stays armed so the callouts and advisories keep working).
+        key = "realism", label = "REALISM PANEL", macro = "realism panel",
         get = function()
-            return (type(REAL_CONFIG) == "table") and REAL_CONFIG.enabled or false
+            return (type(REAL_CONFIG) == "table") and REAL_CONFIG.hud_enabled or false
         end,
         set = function(on)
-            if type(real_set_enabled) == "function" then real_set_enabled(on) end
+            if type(real_set_hud) == "function" then real_set_hud(on) end
         end,
         state = function()
             if type(REAL_CONFIG) ~= "table" then return "ABSENT" end
-            return REAL_CONFIG.enabled and "ON" or "OFF"
+            return REAL_CONFIG.hud_enabled and "ON" or "OFF"
         end,
     },
 }
